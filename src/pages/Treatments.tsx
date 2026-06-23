@@ -192,7 +192,7 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
     setSaving(true)
 
     try {
-      const { error } = await supabase.from('treatments').insert([{
+      const { error } = await supabase.from('treatments').insert({
         patient_id: formData.patient_id,
         tooth_number: formData.tooth_number ? parseInt(formData.tooth_number) : null,
         treatment_type: formData.treatment_type,
@@ -200,7 +200,7 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
         status: formData.status,
         cost: parseFloat(formData.cost) || 0,
         notes: formData.notes || null,
-      }])
+      })
 
       if (error) throw error
       onSave()

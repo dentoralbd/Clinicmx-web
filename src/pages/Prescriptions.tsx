@@ -217,13 +217,13 @@ function PrescriptionModal({ onClose, onSave }: { onClose: () => void; onSave: (
     setSaving(true)
 
     try {
-      const { error } = await supabase.from('prescriptions').insert([{
+      const { error } = await supabase.from('prescriptions').insert({
         patient_id: formData.patient_id,
         medications: medications.filter(m => m.name),
         diagnosis: formData.diagnosis || null,
         notes: formData.notes || null,
         prescribed_date: formData.prescribed_date,
-      }])
+      })
 
       if (error) throw error
       onSave()
