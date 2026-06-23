@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, Lightbulb, X } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
@@ -37,6 +37,7 @@ export function Prescriptions() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showMedTemplates, setShowMedTemplates] = useState(false)
   const [showInvTemplates, setShowInvTemplates] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const [localMeds, setLocalMeds] = useState<any[]>([])
   const [localInvs, setLocalInvs] = useState<any[]>([])
@@ -99,63 +100,31 @@ export function Prescriptions() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await supabase.from('prescriptions').insert([
-        {
-          patient_id: formData.patient_id,
-          diagnosis: formData.diagnosis,
-          notes: formData.notes,
-          prescribed_date: formData.prescribed_date,
-          medications: formData.medications.filter((m) => m.name.trim()),
-          investigations: formData.investigations.filter((i) => i.name.trim()),
-        },
-      ])
-
-      for (const med of formData.medications) {
-        if (med.name.trim()) {
-          const existing = medicationTemplates.find(
-            (t) => t.name.toLowerCase() === med.name.toLowerCase()
-          )
-          if (existing) {
-            await supabase
-              .from('medication_templates')
-              .update({ usage_count: existing.usage_count + 1 })
-              .eq('id', existing.id)
-          } else {
-            await supabase.from('medication_templates').insert([
-              {
-                name: med.name,
-                dosage: med.dosage,
-                frequency: med.frequency,
-                duration: med.duration,
-                instructions: med.instructions,
-                usage_count: 1,
-              },
-            ])
-          }
-          saveLocalItem(LOCAL_MEDS_KEY, med)
-        }
+      const payload = {
+        patient_id: formData.patient_id,
+        diagnosis: formData.diagnosis,
+        notes: formData.notes,
+        prescribed_date: formData.prescribed_date,
+        medications: formData.medications.filter((m) => m.name.trim()),
+        investigations: formData.investigations.filter((i) => i.name.trim()),
       }
 
-      for (const inv of formData.investigations) {
-        if (inv.name.trim()) {
-          const existing = investigationTemplates.find(
-            (t) => t.name.toLowerCase() === inv.name.toLowerCase()
-          )
-          if (existing) {
-            await supabase
-              .from('investigation_templates')
-              .update({ usage_count: existing.usage_count + 1 })
-              .eq('id', existing.id)
-          } else {
-            await supabase.from('investigation_templates').insert([
-              {
-                name: inv.name,
-                description: inv.description,
-                usage_count: 1,
-              },
-            ])
-          }
-          saveLocalItem(LOCAL_INVS_KEY, inv)
+      if (editingId) {
+        // UPDATE existing
+        await supabase
+          .from('prescriptions')
+          .update(payload)
+          .eq('id', editingId)
+      } else {
+        // CREATE new
+        await supabase.from('prescriptions').insert([payload])
+
+        // Save to local memory only for new prescriptions
+        for (const med of formData.medications) {
+          if (med.name.trim()) saveLocalItem(LOCAL_MEDS_KEY, med)
+        }
+        for (const inv of formData.investigations) {
+          if (inv.name.trim()) saveLocalItem(LOCAL_INVS_KEY, inv)
         }
       }
 
@@ -163,15 +132,50 @@ export function Prescriptions() {
       resetForm()
       loadPrescriptions()
       loadTemplates()
-      setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
-      setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
+      if (!editingId) {
+        setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
+        setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
+      }
     } catch (error) {
-      console.error('Error creating prescription:', error)
-      alert('Failed to create prescription')
+      console.error('Error saving prescription:', error)
+      alert('Failed to save prescription')
+    }
+  }
+
+  function startEdit(prescription: any) {
+    setEditingId(prescription.id)
+    setFormData({
+      patient_id: prescription.patient_id || '',
+      diagnosis: prescription.diagnosis || '',
+      notes: prescription.notes || '',
+      prescribed_date: prescription.prescribed_date
+        ? format(new Date(prescription.prescribed_date), 'yyyy-MM-dd')
+        : format(new Date(), 'yyyy-MM-dd'),
+      medications:
+        Array.isArray(prescription.medications) && prescription.medications.length > 0
+          ? prescription.medications
+          : [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+      investigations:
+        Array.isArray(prescription.investigations) && prescription.investigations.length > 0
+          ? prescription.investigations
+          : [{ name: '', description: '' }],
+    })
+    setShowForm(true)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Are you sure you want to delete this prescription?')) return
+    try {
+      await supabase.from('prescriptions').delete().eq('id', id)
+      loadPrescriptions()
+    } catch (error) {
+      console.error('Error deleting prescription:', error)
+      alert('Failed to delete prescription')
     }
   }
 
   function resetForm() {
+    setEditingId(null)
     setFormData({
       patient_id: '',
       diagnosis: '',
@@ -296,7 +300,7 @@ export function Prescriptions() {
           <h1 className="text-2xl font-bold">Prescriptions</h1>
           <p className="text-text-secondary">Manage patient prescriptions and investigations</p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={() => { resetForm(); setShowForm(true) }}>
           <Plus className="w-4 h-4 mr-2" />
           New Prescription
         </Button>
@@ -326,6 +330,7 @@ export function Prescriptions() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Diagnosis</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Medications</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Investigations</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -350,6 +355,26 @@ export function Prescriptions() {
                         ? `${prescription.investigations.length} test(s)`
                         : 'None'}
                     </td>
+                    <td className="px-6 py-4 text-sm">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(prescription)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(prescription.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -362,7 +387,9 @@ export function Prescriptions() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold">New Prescription</h2>
+              <h2 className="text-xl font-bold">
+                {editingId ? 'Edit Prescription' : 'New Prescription'}
+              </h2>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -666,7 +693,7 @@ export function Prescriptions() {
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" className="flex-1">
-                  Create Prescription
+                  {editingId ? 'Update Prescription' : 'Create Prescription'}
                 </Button>
                 <Button
                   type="button"
