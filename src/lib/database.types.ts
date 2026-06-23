@@ -14,18 +14,41 @@ export interface Database {
           id: string
           first_name: string
           last_name: string
-          phone: string | null
-          email: string | null
-          date_of_birth: string | null
-          gender: string | null
+          phone: string
+          email: string
+          date_of_birth: string
+          gender: string
           address: string | null
           medical_history: string | null
           notes: string | null
           created_at: string
-          updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['patients']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['patients']['Insert']>
+        Insert: {
+          id?: string
+          first_name: string
+          last_name: string
+          phone: string
+          email: string
+          date_of_birth: string
+          gender: string
+          address?: string | null
+          medical_history?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          first_name?: string
+          last_name?: string
+          phone?: string
+          email?: string
+          date_of_birth?: string
+          gender?: string
+          address?: string | null
+          medical_history?: string | null
+          notes?: string | null
+          created_at?: string
+        }
       }
       appointments: {
         Row: {
@@ -38,8 +61,26 @@ export interface Database {
           notes: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['appointments']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['appointments']['Insert']>
+        Insert: {
+          id?: string
+          patient_id: string
+          date_time: string
+          duration?: number
+          type: string
+          status?: string
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          date_time?: string
+          duration?: number
+          type?: string
+          status?: string
+          notes?: string | null
+          created_at?: string
+        }
       }
       treatments: {
         Row: {
@@ -53,8 +94,28 @@ export interface Database {
           notes: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['treatments']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['treatments']['Insert']>
+        Insert: {
+          id?: string
+          patient_id: string
+          tooth_number?: number | null
+          treatment_type: string
+          description?: string | null
+          status?: string
+          cost?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          tooth_number?: number | null
+          treatment_type?: string
+          description?: string | null
+          status?: string
+          cost?: number
+          notes?: string | null
+          created_at?: string
+        }
       }
       prescriptions: {
         Row: {
@@ -66,8 +127,24 @@ export interface Database {
           prescribed_date: string
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['prescriptions']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['prescriptions']['Insert']>
+        Insert: {
+          id?: string
+          patient_id: string
+          medications: Json
+          diagnosis?: string | null
+          notes?: string | null
+          prescribed_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          medications?: Json
+          diagnosis?: string | null
+          notes?: string | null
+          prescribed_date?: string
+          created_at?: string
+        }
       }
       invoices: {
         Row: {
@@ -80,8 +157,26 @@ export interface Database {
           due_date: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['invoices']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['invoices']['Insert']>
+        Insert: {
+          id?: string
+          patient_id: string
+          items: Json
+          total_amount: number
+          paid_amount?: number
+          status?: string
+          due_date?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          items?: Json
+          total_amount?: number
+          paid_amount?: number
+          status?: string
+          due_date?: string | null
+          created_at?: string
+        }
       }
       dental_records: {
         Row: {
@@ -90,11 +185,24 @@ export interface Database {
           tooth_number: number
           condition: string
           notes: string | null
-          recorded_date: string
-          updated_at: string
+          created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['dental_records']['Row'], 'id' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['dental_records']['Insert']>
+        Insert: {
+          id?: string
+          patient_id: string
+          tooth_number: number
+          condition: string
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          tooth_number?: number
+          condition?: string
+          notes?: string | null
+          created_at?: string
+        }
       }
     }
   }
