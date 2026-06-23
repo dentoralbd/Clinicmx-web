@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Calendar as CalendarIcon, Clock, User } from 'lucide-react'
+import { Plus, Calendar as CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
+import { format, addDays, startOfWeek } from 'date-fns'
 
 interface Appointment {
   id: string
@@ -12,6 +12,7 @@ interface Appointment {
   type: string
   status: string
   notes: string | null
+  created_at: string
   patients: {
     first_name: string
     last_name: string
@@ -20,9 +21,9 @@ interface Appointment {
 
 export function Appointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [selectedDate, setSelectedDate] = useState(new Date())
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
   useEffect(() => {
     loadAppointments()
@@ -31,15 +32,16 @@ export function Appointments() {
   async function loadAppointments() {
     try {
       setLoading(true)
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const { data, error } = await supabase
         .from('appointments')
         .select(`
           *,
           patients (first_name, last_name)
         `)
-        .gte('date_time', `${selectedDate}T00:00:00`)
-        .lt('date_time', `${selectedDate}T23:59:59`)
-        .order('date_time', { ascending: true })
+        .gte('date_time', `${dateStr}T00:00:00`)
+        .lt('date_time', `${dateStr}T23:59:59`)
+        .order('date_time')
 
       if (error) throw error
       setAppointments(data || [])
@@ -50,18 +52,25 @@ export function Appointments() {
     }
   }
 
-  async function deleteAppointment(id: string) {
+  async function cancelAppointment(id: string) {
     if (!confirm('Cancel this appointment?')) return
 
     try {
-      const { error } = await supabase.from('appointments').delete().eq('id', id)
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'Cancelled' })
+        .eq('id', id)
+
       if (error) throw error
-      setAppointments(appointments.filter((a) => a.id !== id))
+      loadAppointments()
     } catch (error) {
-      console.error('Error deleting appointment:', error)
+      console.error('Error cancelling appointment:', error)
       alert('Failed to cancel appointment')
     }
   }
+
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
   return (
     <div className="space-y-6">
@@ -77,32 +86,77 @@ export function Appointments() {
       </div>
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-4 mb-6">
-          <CalendarIcon className="w-5 h-5 text-primary" />
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-          <span className="text-sm text-text-secondary">
-            {appointments.length} appointment{appointments.length !== 1 ? 's' : ''}
-          </span>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold">Week View</h3>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedDate(addDays(selectedDate, -7))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedDate(new Date())}
+            >
+              Today
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedDate(addDays(selectedDate, 7))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-2">
+          {weekDays.map((day) => {
+            const isSelected = format(day, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd')
+            const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+            return (
+              <button
+                key={day.toISOString()}
+                onClick={() => setSelectedDate(day)}
+                className={`p-3 rounded-lg text-center transition-colors ${
+                  isSelected
+                    ? 'bg-primary text-white'
+                    : isToday
+                    ? 'bg-blue-50 text-primary border border-primary'
+                    : 'hover:bg-gray-100'
+                }`}
+              >
+                <div className="text-xs font-medium">{format(day, 'EEE')}</div>
+                <div className="text-lg font-bold mt-1">{format(day, 'd')}</div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="bg-card rounded-lg shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="font-semibold">
+            Appointments for {format(selectedDate, 'MMMM d, yyyy')}
+          </h3>
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-text-secondary">Loading appointments...</div>
+          <div className="p-8 text-center text-text-secondary">Loading appointments...</div>
         ) : appointments.length === 0 ? (
-          <div className="text-center py-8 text-text-secondary">
-            No appointments scheduled for this date
+          <div className="p-8 text-center text-text-secondary">
+            No appointments for this day
           </div>
         ) : (
-          <div className="space-y-3">
-            {appointments.map((apt) => (
-              <AppointmentCard
-                key={apt.id}
-                appointment={apt}
-                onDelete={() => deleteAppointment(apt.id)}
+          <div className="divide-y divide-gray-200">
+            {appointments.map((appointment) => (
+              <AppointmentRow
+                key={appointment.id}
+                appointment={appointment}
+                onCancel={() => cancelAppointment(appointment.id)}
               />
             ))}
           </div>
@@ -111,17 +165,16 @@ export function Appointments() {
 
       {showModal && (
         <AppointmentModal
+          selectedDate={selectedDate}
           onClose={() => setShowModal(false)}
           onSave={() => { loadAppointments(); setShowModal(false) }}
-          defaultDate={selectedDate}
         />
       )}
     </div>
   )
 }
 
-function AppointmentCard({ appointment, onDelete }: { appointment: Appointment; onDelete: () => void }) {
-  const time = format(new Date(appointment.date_time), 'h:mm a')
+function AppointmentRow({ appointment, onCancel }: { appointment: Appointment; onCancel: () => void }) {
   const statusColors: Record<string, string> = {
     Scheduled: 'bg-blue-100 text-blue-700',
     Confirmed: 'bg-green-100 text-green-700',
@@ -130,46 +183,41 @@ function AppointmentCard({ appointment, onDelete }: { appointment: Appointment; 
   }
 
   return (
-    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-      <div className="flex-shrink-0">
-        <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white font-semibold">
-          {appointment.patients.first_name[0]}{appointment.patients.last_name[0]}
-        </div>
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <p className="font-medium">
-            {appointment.patients.first_name} {appointment.patients.last_name}
+    <div className="p-4 hover:bg-gray-50 transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="font-medium">
+              {appointment.patients.first_name} {appointment.patients.last_name}
+            </p>
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[appointment.status] || 'bg-gray-100'}`}>
+              {appointment.status}
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary mt-1">
+            {format(new Date(appointment.date_time), 'h:mm a')} • {appointment.duration} min • {appointment.type}
           </p>
-          <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[appointment.status] || 'bg-gray-100'}`}>
-            {appointment.status}
-          </span>
+          {appointment.notes && (
+            <p className="text-sm text-text-secondary mt-1">{appointment.notes}</p>
+          )}
         </div>
-        <div className="flex items-center gap-4 mt-1 text-sm text-text-secondary">
-          <span className="flex items-center gap-1">
-            <Clock className="w-4 h-4" />
-            {time} ({appointment.duration} min)
-          </span>
-          <span>{appointment.type}</span>
-        </div>
-        {appointment.notes && (
-          <p className="text-sm text-text-secondary mt-1">{appointment.notes}</p>
+        {appointment.status !== 'Cancelled' && appointment.status !== 'Completed' && (
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
         )}
       </div>
-      <Button variant="outline" size="sm" onClick={onDelete}>
-        Cancel
-      </Button>
     </div>
   )
 }
 
-function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => void; onSave: () => void; defaultDate: string }) {
+function AppointmentModal({ selectedDate, onClose, onSave }: any) {
   const [patients, setPatients] = useState<any[]>([])
   const [formData, setFormData] = useState({
     patient_id: '',
-    date: defaultDate,
+    date: format(selectedDate, 'yyyy-MM-dd'),
     time: '09:00',
-    duration: 30,
+    duration: '30',
     type: 'Checkup',
     status: 'Scheduled',
     notes: '',
@@ -193,14 +241,14 @@ function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => voi
     setSaving(true)
 
     try {
-      const { error } = await supabase.from('appointments').insert([{
+      const { error } = await supabase.from('appointments').insert({
         patient_id: formData.patient_id,
         date_time: `${formData.date}T${formData.time}:00`,
-        duration: formData.duration,
+        duration: parseInt(formData.duration),
         type: formData.type,
         status: formData.status,
         notes: formData.notes || null,
-      }])
+      })
 
       if (error) throw error
       onSave()
@@ -239,7 +287,7 @@ function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => voi
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Date *</label>
+              <label className="block text-sm font-medium mb-1">Date</label>
               <input
                 type="date"
                 required
@@ -249,7 +297,7 @@ function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => voi
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Time *</label>
+              <label className="block text-sm font-medium mb-1">Time</label>
               <input
                 type="time"
                 required
@@ -263,12 +311,18 @@ function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => voi
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Duration (min)</label>
-              <input
-                type="number"
+              <select
                 value={formData.duration}
-                onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              >
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="45">45 min</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
@@ -283,6 +337,7 @@ function AppointmentModal({ onClose, onSave, defaultDate }: { onClose: () => voi
                 <option>Root Canal</option>
                 <option>Extraction</option>
                 <option>Consultation</option>
+                <option>Follow-up</option>
               </select>
             </div>
           </div>

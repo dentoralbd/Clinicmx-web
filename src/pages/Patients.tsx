@@ -1,29 +1,29 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Edit2, Trash2, X } from 'lucide-react'
+import { Plus, Search, Mail, Phone, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { format } from 'date-fns'
 
 interface Patient {
   id: string
   first_name: string
   last_name: string
-  phone: string | null
-  email: string | null
-  date_of_birth: string | null
-  gender: string | null
+  phone: string
+  email: string
+  date_of_birth: string
+  gender: string
   address: string | null
   medical_history: string | null
   notes: string | null
   created_at: string
-  updated_at: string
 }
 
 export function Patients() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     loadPatients()
@@ -35,20 +35,19 @@ export function Patients() {
       const { data, error } = await supabase
         .from('patients')
         .select('*')
-        .order('last_name', { ascending: true })
+        .order('created_at', { ascending: false })
 
       if (error) throw error
       setPatients(data || [])
     } catch (error) {
       console.error('Error loading patients:', error)
-      alert('Failed to load patients')
     } finally {
       setLoading(false)
     }
   }
 
   async function deletePatient(id: string) {
-    if (!confirm('Are you sure you want to delete this patient?')) return
+    if (!confirm('Delete this patient? This will also delete all related records.')) return
 
     try {
       const { error } = await supabase.from('patients').delete().eq('id', id)
@@ -64,8 +63,8 @@ export function Patients() {
     (p) =>
       p.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.phone?.includes(searchQuery) ||
-      p.email?.toLowerCase().includes(searchQuery.toLowerCase())
+      p.phone.includes(searchQuery) ||
+      p.email.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   return (
@@ -73,7 +72,7 @@ export function Patients() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Patients</h1>
-          <p className="text-text-secondary mt-1">Manage your patient records</p>
+          <p className="text-text-secondary mt-1">Manage patient records</p>
         </div>
         <Button onClick={() => { setEditingPatient(null); setShowModal(true) }}>
           <Plus className="w-4 h-4 mr-2" />
@@ -99,7 +98,7 @@ export function Patients() {
           <div className="p-8 text-center text-text-secondary">Loading patients...</div>
         ) : filteredPatients.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
-            {searchQuery ? 'No patients found matching your search' : 'No patients yet. Click "Add Patient" to get started.'}
+            {searchQuery ? 'No patients found' : 'No patients yet. Click "Add Patient" to get started.'}
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
@@ -129,24 +128,37 @@ export function Patients() {
 function PatientRow({ patient, onEdit, onDelete }: { patient: Patient; onEdit: () => void; onDelete: () => void }) {
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white font-semibold text-lg">
-          {patient.first_name[0]}{patient.last_name[0]}
-        </div>
-        <div className="flex-1">
-          <p className="font-medium">{patient.first_name} {patient.last_name}</p>
-          <div className="flex gap-4 mt-1">
-            {patient.phone && <span className="text-sm text-text-secondary">{patient.phone}</span>}
-            {patient.email && <span className="text-sm text-text-secondary">{patient.email}</span>}
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white font-semibold text-lg">
+            {patient.first_name[0]}{patient.last_name[0]}
+          </div>
+          <div>
+            <p className="font-medium text-lg">
+              {patient.first_name} {patient.last_name}
+            </p>
+            <div className="flex flex-col gap-1 mt-1">
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <Phone className="w-4 h-4" />
+                {patient.phone}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <Mail className="w-4 h-4" />
+                {patient.email}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <Calendar className="w-4 h-4" />
+                Born: {format(new Date(patient.date_of_birth), 'MMM d, yyyy')}
+              </div>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onEdit}>
-            <Edit2 className="w-4 h-4 mr-1" />
             Edit
           </Button>
           <Button variant="outline" size="sm" onClick={onDelete}>
-            <Trash2 className="w-4 h-4" />
+            Delete
           </Button>
         </div>
       </div>
@@ -161,7 +173,7 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
     phone: patient?.phone || '',
     email: patient?.email || '',
     date_of_birth: patient?.date_of_birth || '',
-    gender: patient?.gender || '',
+    gender: patient?.gender || 'Male',
     address: patient?.address || '',
     medical_history: patient?.medical_history || '',
     notes: patient?.notes || '',
@@ -174,17 +186,38 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
 
     try {
       if (patient) {
-        // Update existing patient
         const { error } = await supabase
           .from('patients')
-          .update(formData)
+          .update({
+            first_name: formData.first_name,
+            last_name: formData.last_name,
+            phone: formData.phone,
+            email: formData.email,
+            date_of_birth: formData.date_of_birth,
+            gender: formData.gender,
+            address: formData.address,
+            medical_history: formData.medical_history,
+            notes: formData.notes,
+          })
           .eq('id', patient.id)
+
         if (error) throw error
       } else {
-        // Create new patient
-        const { error } = await supabase.from('patients').insert([formData])
+        const { error } = await supabase.from('patients').insert({
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          phone: formData.phone,
+          email: formData.email,
+          date_of_birth: formData.date_of_birth,
+          gender: formData.gender,
+          address: formData.address,
+          medical_history: formData.medical_history,
+          notes: formData.notes,
+        })
+
         if (error) throw error
       }
+
       onSave()
     } catch (error) {
       console.error('Error saving patient:', error)
@@ -195,13 +228,10 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8">
+        <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold">{patient ? 'Edit Patient' : 'Add New Patient'}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -230,18 +260,20 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Phone</label>
+              <label className="block text-sm font-medium mb-1">Phone *</label>
               <input
                 type="tel"
+                required
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
+              <label className="block text-sm font-medium mb-1">Email *</label>
               <input
                 type="email"
+                required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -251,9 +283,10 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Date of Birth</label>
+              <label className="block text-sm font-medium mb-1">Date of Birth *</label>
               <input
                 type="date"
+                required
                 value={formData.date_of_birth}
                 onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -266,10 +299,9 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
                 onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="">Select...</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
+                <option>Male</option>
+                <option>Female</option>
+                <option>Other</option>
               </select>
             </div>
           </div>
@@ -287,7 +319,7 @@ function PatientModal({ patient, onClose, onSave }: { patient: Patient | null; o
           <div>
             <label className="block text-sm font-medium mb-1">Medical History</label>
             <textarea
-              rows={3}
+              rows={2}
               value={formData.medical_history}
               onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
