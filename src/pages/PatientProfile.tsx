@@ -6,25 +6,32 @@ import { AppointmentModal } from '@/components/AppointmentModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
-// ─── LOCAL MEMORY HELPERS ─────────────────────────────
+// ─── SESSION MEMORY HELPERS ───────────────────────────
 const LOCAL_MEDS_KEY = 'clinicmx_local_medications'
 const LOCAL_INVS_KEY = 'clinicmx_local_investigations'
+const inMemoryMeds: any[] = []
+const inMemoryInvs: any[] = []
 
 function getLocalItems(key: string): any[] {
-  try {
-    return JSON.parse(localStorage.getItem(key) || '[]')
-  } catch {
-    return []
+  if (key === LOCAL_MEDS_KEY) {
+    return [...inMemoryMeds]
   }
+  if (key === LOCAL_INVS_KEY) {
+    return [...inMemoryInvs]
+  }
+  return []
 }
 
 function saveLocalItem(key: string, item: any) {
-  const items = getLocalItems(key)
+  if (!item.name?.trim()) return
+  const target = key === LOCAL_MEDS_KEY ? inMemoryMeds : inMemoryInvs
+  if (!target) return
+  const items = [...target]
   const exists = items.some(
     (i: any) => i.name?.toLowerCase() === item.name?.toLowerCase()
   )
-  if (!exists && item.name?.trim()) {
-    localStorage.setItem(key, JSON.stringify([item, ...items].slice(0, 30)))
+  if (!exists) {
+    target.splice(0, target.length, ...[item, ...items].slice(0, 30))
   }
 }
 // ─────────────────────────────────────────────────────
