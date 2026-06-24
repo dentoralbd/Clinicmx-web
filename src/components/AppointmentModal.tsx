@@ -34,17 +34,27 @@ export function AppointmentModal({
     phone: '',
   })
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     loadPatients()
   }, [])
 
   async function loadPatients() {
-    const { data } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name, patient_code')
-      .order('last_name')
-    setPatients(data || [])
+    try {
+      setLoadError(null)
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, first_name, last_name, patient_code')
+        .order('last_name')
+
+      if (error) throw error
+      setPatients(data || [])
+    } catch (error) {
+      console.error('Error loading patients:', error)
+      setLoadError('Unable to load patients right now. You can still create a new appointment for a new patient.')
+      setPatients([])
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -182,6 +192,9 @@ export function AppointmentModal({
           {patientMode === 'existing' && (
             <div>
               <label className="block text-sm font-medium mb-1">Patient *</label>
+              {loadError && (
+                <p className="text-sm text-red-600 mb-2">{loadError}</p>
+              )}
               <select
                 required
                 value={formData.patient_id}
