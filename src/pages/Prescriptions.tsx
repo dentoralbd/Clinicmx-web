@@ -1,67 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, Lightbulb, X, Clock, Star, Zap, ChevronDown } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
-
-// ─── LOCAL MEMORY HELPERS ─────────────────────────────
-const LOCAL_MEDS_KEY = 'clinicmx_local_medications'
-const LOCAL_INVS_KEY = 'clinicmx_local_investigations'
-const LOCAL_FAV_MEDS_KEY = 'clinicmx_favorite_medications'
-const LOCAL_FAV_INVS_KEY = 'clinicmx_favorite_investigations'
-
-function getLocalItems(key: string): any[] {
-  try {
-    const items = JSON.parse(localStorage.getItem(key) || '[]')
-    console.log(`[Memory] Retrieved ${key}: ${items.length} items`)
-    return items
-  } catch {
-    console.warn(`[Memory] Error reading ${key}`)
-    return []
-  }
-}
-
-function saveLocalItem(key: string, item: any) {
-  const items = getLocalItems(key)
-  const exists = items.some(
-    (i: any) => i.name?.toLowerCase() === item.name?.toLowerCase()
-  )
-  if (!exists && item.name?.trim()) {
-    const updated = [item, ...items].slice(0, 30)
-    localStorage.setItem(key, JSON.stringify(updated))
-    console.log(`[Memory] ✅ Saved to ${key}: "${item.name}" (total: ${updated.length})`)
-  } else if (exists) {
-    console.log(`[Memory] ⚠️ Item already exists: "${item.name}"`)
-  }
-}
-
-function addToFavorites(key: string, item: any) {
-  const favorites = getLocalItems(key)
-  const exists = favorites.some((i: any) => i.name?.toLowerCase() === item.name?.toLowerCase())
-  if (!exists && item.name?.trim()) {
-    const updated = [item, ...favorites].slice(0, 10)
-    localStorage.setItem(key, JSON.stringify(updated))
-    console.log(`[Memory] ⭐ Added to favorites: "${item.name}"`)
-  }
-}
-
-function removeFromFavorites(key: string, itemName: string) {
-  const favorites = getLocalItems(key)
-  const updated = favorites.filter((i: any) => i.name?.toLowerCase() !== itemName.toLowerCase())
-  localStorage.setItem(key, JSON.stringify(updated))
-  console.log(`[Memory] ⭐ Removed from favorites: "${itemName}"`)
-}
-
-function isFavorite(key: string, itemName: string): boolean {
-  const favorites = getLocalItems(key)
-  return favorites.some((i: any) => i.name?.toLowerCase() === itemName.toLowerCase())
-}
-
-function clearHistory(key: string) {
-  localStorage.setItem(key, JSON.stringify([]))
-  console.log(`[Memory] 🗑️ Cleared history: ${key}`)
-}
-// ─────────────────────────────────────────────────────
 
 export function Prescriptions() {
   const [prescriptions, setPrescriptions] = useState<any[]>([])
@@ -74,16 +15,6 @@ export function Prescriptions() {
   const [showMedTemplates, setShowMedTemplates] = useState(false)
   const [showInvTemplates, setShowInvTemplates] = useState(false)
 
-  const [localMeds, setLocalMeds] = useState<any[]>([])
-  const [localInvs, setLocalInvs] = useState<any[]>([])
-  const [favMeds, setFavMeds] = useState<any[]>([])
-  const [favInvs, setFavInvs] = useState<any[]>([])
-
-  const [medSearchFilter, setMedSearchFilter] = useState('')
-  const [invSearchFilter, setInvSearchFilter] = useState('')
-  const [expandMedHistory, setExpandMedHistory] = useState(true)
-  const [expandInvHistory, setExpandInvHistory] = useState(true)
-
   const [formData, setFormData] = useState({
     patient_id: '',
     diagnosis: '',
@@ -94,22 +25,9 @@ export function Prescriptions() {
   })
 
   useEffect(() => {
-    console.log('[Init] Loading prescriptions, patients, templates, and memory...')
     loadPrescriptions()
     loadPatients()
     loadTemplates()
-    
-    const meds = getLocalItems(LOCAL_MEDS_KEY)
-    const invs = getLocalItems(LOCAL_INVS_KEY)
-    const favMeds = getLocalItems(LOCAL_FAV_MEDS_KEY)
-    const favInvs = getLocalItems(LOCAL_FAV_INVS_KEY)
-    
-    setLocalMeds(meds)
-    setLocalInvs(invs)
-    setFavMeds(favMeds)
-    setFavInvs(favInvs)
-    
-    console.log(`[Init] ✅ Loaded: ${meds.length} meds, ${invs.length} invs, ${favMeds.length} fav meds, ${favInvs.length} fav invs`)
   }, [])
 
   async function loadPrescriptions() {
@@ -153,7 +71,6 @@ export function Prescriptions() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      console.log('[Submit] Creating prescription...')
       await supabase.from('prescriptions').insert([
         {
           patient_id: formData.patient_id,
@@ -187,7 +104,6 @@ export function Prescriptions() {
               },
             ])
           }
-          saveLocalItem(LOCAL_MEDS_KEY, med)
         }
       }
 
@@ -210,7 +126,6 @@ export function Prescriptions() {
               },
             ])
           }
-          saveLocalItem(LOCAL_INVS_KEY, inv)
         }
       }
 
@@ -218,19 +133,6 @@ export function Prescriptions() {
       resetForm()
       loadPrescriptions()
       loadTemplates()
-      
-      // RELOAD MEMORY
-      const updatedMeds = getLocalItems(LOCAL_MEDS_KEY)
-      const updatedInvs = getLocalItems(LOCAL_INVS_KEY)
-      const updatedFavMeds = getLocalItems(LOCAL_FAV_MEDS_KEY)
-      const updatedFavInvs = getLocalItems(LOCAL_FAV_INVS_KEY)
-      
-      setLocalMeds(updatedMeds)
-      setLocalInvs(updatedInvs)
-      setFavMeds(updatedFavMeds)
-      setFavInvs(updatedFavInvs)
-      
-      console.log('[Submit] ✅ Complete! Memory updated:', { updatedMeds: updatedMeds.length, updatedInvs: updatedInvs.length })
     } catch (error) {
       console.error('Error creating prescription:', error)
       alert('Failed to create prescription')
@@ -314,67 +216,6 @@ export function Prescriptions() {
     setShowInvTemplates(false)
   }
 
-  function applyLocalMedication(med: any) {
-    const newMeds = [...formData.medications]
-    const emptyIndex = newMeds.findIndex((m) => !m.name.trim())
-    const item = {
-      name: med.name || '',
-      dosage: med.dosage || '',
-      frequency: med.frequency || '',
-      duration: med.duration || '',
-      instructions: med.instructions || '',
-    }
-    if (emptyIndex >= 0) {
-      newMeds[emptyIndex] = item
-    } else {
-      newMeds.push(item)
-    }
-    setFormData({ ...formData, medications: newMeds })
-    console.log(`[Memory] Applied medication: "${item.name}"`)
-  }
-
-  function applyLocalInvestigation(inv: any) {
-    const newInvs = [...formData.investigations]
-    const emptyIndex = newInvs.findIndex((i) => !i.name.trim())
-    const item = {
-      name: inv.name || '',
-      description: inv.description || '',
-    }
-    if (emptyIndex >= 0) {
-      newInvs[emptyIndex] = item
-    } else {
-      newInvs.push(item)
-    }
-    setFormData({ ...formData, investigations: newInvs })
-    console.log(`[Memory] Applied investigation: "${item.name}"`)
-  }
-
-  function toggleFavMedication(med: any) {
-    if (isFavorite(LOCAL_FAV_MEDS_KEY, med.name)) {
-      removeFromFavorites(LOCAL_FAV_MEDS_KEY, med.name)
-    } else {
-      addToFavorites(LOCAL_FAV_MEDS_KEY, med)
-    }
-    setFavMeds(getLocalItems(LOCAL_FAV_MEDS_KEY))
-  }
-
-  function toggleFavInvestigation(inv: any) {
-    if (isFavorite(LOCAL_FAV_INVS_KEY, inv.name)) {
-      removeFromFavorites(LOCAL_FAV_INVS_KEY, inv.name)
-    } else {
-      addToFavorites(LOCAL_FAV_INVS_KEY, inv)
-    }
-    setFavInvs(getLocalItems(LOCAL_FAV_INVS_KEY))
-  }
-
-  const filteredMeds = localMeds.filter((med) =>
-    med.name.toLowerCase().includes(medSearchFilter.toLowerCase())
-  )
-
-  const filteredInvs = localInvs.filter((inv) =>
-    inv.name.toLowerCase().includes(invSearchFilter.toLowerCase())
-  )
-
   const filteredPrescriptions = prescriptions.filter((p) => {
     const patientName = `${p.patients?.first_name} ${p.patients?.last_name}`.toLowerCase()
     return (
@@ -390,10 +231,7 @@ export function Prescriptions() {
           <h1 className="text-2xl font-bold">Prescriptions</h1>
           <p className="text-text-secondary">Manage patient prescriptions and investigations</p>
         </div>
-        <Button onClick={() => {
-          console.log('[UI] Opening prescription form')
-          setShowForm(true)
-        }}>
+        <Button onClick={() => setShowForm(true)}>
           <Plus className="w-4 h-4 mr-2" />
           New Prescription
         </Button>
@@ -460,7 +298,6 @@ export function Prescriptions() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold">New Prescription</h2>
-              <p className="text-xs text-gray-500 mt-1">💾 Items you use will be saved for quick access next time</p>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
@@ -504,9 +341,7 @@ export function Prescriptions() {
                 />
               </div>
 
-              {/* ═══════════════════════════════════════════════════════════ */}
-              {/* MEDICATIONS SECTION WITH IMPROVED UI */}
-              {/* ═══════════════════════════════════════════════════════════ */}
+              {/* MEDICATIONS SECTION */}
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -636,132 +471,9 @@ export function Prescriptions() {
                     </div>
                   ))}
                 </div>
-
-                {/* FAVORITES SECTION */}
-                {favMeds.length > 0 && (
-                  <div className="mb-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Star className="w-4 h-4 text-yellow-600" />
-                      <h4 className="font-semibold text-sm text-gray-900">⭐ Favorite Medications ({favMeds.length})</h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {favMeds.map((med, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => applyLocalMedication(med)}
-                          className="px-3 py-1.5 bg-white text-yellow-700 text-sm rounded-full border border-yellow-300 hover:bg-yellow-50 transition-colors font-medium"
-                          title={`${med.dosage} • ${med.frequency} • ${med.duration}`}
-                        >
-                          {med.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* RECENT HISTORY SECTION */}
-                {localMeds.length > 0 && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <button
-                      type="button"
-                      onClick={() => setExpandMedHistory(!expandMedHistory)}
-                      className="w-full flex items-center justify-between text-left hover:opacity-80"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-blue-600" />
-                        <h4 className="font-semibold text-sm text-gray-900">
-                          🕐 Recent Medications ({localMeds.length})
-                        </h4>
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 transition-transform ${expandMedHistory ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-
-                    {expandMedHistory && (
-                      <>
-                        {/* SEARCH FILTER */}
-                        <div className="mt-3 mb-2">
-                          <input
-                            type="text"
-                            placeholder="Search medications..."
-                            value={medSearchFilter}
-                            onChange={(e) => setMedSearchFilter(e.target.value)}
-                            className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </div>
-
-                        {/* HISTORY GRID */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-                          {filteredMeds.map((med, idx) => (
-                            <div
-                              key={idx}
-                              className="p-2 bg-white rounded-lg border border-gray-200 hover:border-primary hover:shadow-sm transition-all group cursor-pointer"
-                              onClick={() => applyLocalMedication(med)}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="text-left flex-1 min-w-0">
-                                  <div className="font-medium text-sm text-gray-900 truncate">
-                                    {med.name}
-                                  </div>
-                                  <div className="text-xs text-gray-600 truncate">
-                                    {[med.dosage, med.frequency, med.duration]
-                                      .filter(Boolean)
-                                      .join(' • ')}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleFavMedication(med)
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                                  title={isFavorite(LOCAL_FAV_MEDS_KEY, med.name) ? 'Remove favorite' : 'Add to favorites'}
-                                >
-                                  <Star
-                                    className={`w-4 h-4 ${
-                                      isFavorite(LOCAL_FAV_MEDS_KEY, med.name)
-                                        ? 'fill-yellow-500 text-yellow-500'
-                                        : 'text-gray-400'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {filteredMeds.length === 0 && (
-                          <div className="text-center py-4 text-sm text-gray-600">
-                            {medSearchFilter ? 'No medications matching your search' : 'No recent medications'}
-                          </div>
-                        )}
-
-                        {/* CLEAR HISTORY BUTTON */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('Clear all medication history?')) {
-                              clearHistory(LOCAL_MEDS_KEY)
-                              setLocalMeds([])
-                              setMedSearchFilter('')
-                            }
-                          }}
-                          className="mt-3 w-full text-xs text-red-600 hover:text-red-700 font-medium py-1"
-                        >
-                          🗑️ Clear History
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
 
-              {/* ═══════════════════════════════════════════════════════════ */}
-              {/* INVESTIGATIONS SECTION WITH IMPROVED UI */}
-              {/* ═══════════════════════════════════════════════════════════ */}
+              {/* INVESTIGATIONS SECTION */}
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -823,7 +535,7 @@ export function Prescriptions() {
                 {/* INVESTIGATION INPUT FIELDS */}
                 <div className="space-y-3 mb-4">
                   {formData.investigations.map((inv, index) => (
-                    <div key={index} className="flex gap-2 p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex flex-col sm:flex-row gap-2 p-3 bg-gray-50 rounded-lg">
                       <input
                         type="text"
                         placeholder="Investigation name (e.g., CBC, X-Ray)"
@@ -850,7 +562,7 @@ export function Prescriptions() {
                         <button
                           type="button"
                           onClick={() => removeInvestigation(index)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg self-start sm:self-auto"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -858,127 +570,6 @@ export function Prescriptions() {
                     </div>
                   ))}
                 </div>
-
-                {/* FAVORITES SECTION */}
-                {favInvs.length > 0 && (
-                  <div className="mb-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Star className="w-4 h-4 text-yellow-600" />
-                      <h4 className="font-semibold text-sm text-gray-900">⭐ Favorite Investigations ({favInvs.length})</h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {favInvs.map((inv, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => applyLocalInvestigation(inv)}
-                          className="px-3 py-1.5 bg-white text-yellow-700 text-sm rounded-full border border-yellow-300 hover:bg-yellow-50 transition-colors font-medium"
-                          title={inv.description || ''}
-                        >
-                          {inv.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* RECENT HISTORY SECTION */}
-                {localInvs.length > 0 && (
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <button
-                      type="button"
-                      onClick={() => setExpandInvHistory(!expandInvHistory)}
-                      className="w-full flex items-center justify-between text-left hover:opacity-80"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-green-600" />
-                        <h4 className="font-semibold text-sm text-gray-900">
-                          🕐 Recent Investigations ({localInvs.length})
-                        </h4>
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 transition-transform ${expandInvHistory ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-
-                    {expandInvHistory && (
-                      <>
-                        {/* SEARCH FILTER */}
-                        <div className="mt-3 mb-2">
-                          <input
-                            type="text"
-                            placeholder="Search investigations..."
-                            value={invSearchFilter}
-                            onChange={(e) => setInvSearchFilter(e.target.value)}
-                            className="w-full px-3 py-2 border border-green-300 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </div>
-
-                        {/* HISTORY GRID */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-                          {filteredInvs.map((inv, idx) => (
-                            <div
-                              key={idx}
-                              className="p-2 bg-white rounded-lg border border-gray-200 hover:border-primary hover:shadow-sm transition-all group cursor-pointer"
-                              onClick={() => applyLocalInvestigation(inv)}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="text-left flex-1 min-w-0">
-                                  <div className="font-medium text-sm text-gray-900 truncate">
-                                    {inv.name}
-                                  </div>
-                                  {inv.description && (
-                                    <div className="text-xs text-gray-600 truncate">
-                                      {inv.description}
-                                    </div>
-                                  )}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleFavInvestigation(inv)
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                                  title={isFavorite(LOCAL_FAV_INVS_KEY, inv.name) ? 'Remove favorite' : 'Add to favorites'}
-                                >
-                                  <Star
-                                    className={`w-4 h-4 ${
-                                      isFavorite(LOCAL_FAV_INVS_KEY, inv.name)
-                                        ? 'fill-yellow-500 text-yellow-500'
-                                        : 'text-gray-400'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {filteredInvs.length === 0 && (
-                          <div className="text-center py-4 text-sm text-gray-600">
-                            {invSearchFilter ? 'No investigations matching your search' : 'No recent investigations'}
-                          </div>
-                        )}
-
-                        {/* CLEAR HISTORY BUTTON */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('Clear all investigation history?')) {
-                              clearHistory(LOCAL_INVS_KEY)
-                              setLocalInvs([])
-                              setInvSearchFilter('')
-                            }
-                          }}
-                          className="mt-3 w-full text-xs text-red-600 hover:text-red-700 font-medium py-1"
-                        >
-                          🗑️ Clear History
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
 
               <div>
@@ -1000,7 +591,6 @@ export function Prescriptions() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    console.log('[UI] Closing prescription form')
                     setShowForm(false)
                     resetForm()
                   }}
