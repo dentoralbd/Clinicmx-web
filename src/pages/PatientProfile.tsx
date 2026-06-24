@@ -1,14 +1,91 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Edit, Upload, Image, X } from 'lucide-react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Upload, Image, X, User, FolderOpen, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
+type SectionId =
+  | 'profile'
+  | 'medical'
+  | 'clinical'
+  | 'appointments'
+  | 'prescriptions'
+  | 'forms'
+  | 'bookings'
+  | 'operations'
+  | 'visits'
+  | 'investigations'
+  | 'files'
+  | 'communications'
+  | 'referrals'
+  | 'consultations'
+  | 'billing'
+
+const currencyFormatter = new Intl.NumberFormat('en-BD', {
+  style: 'currency',
+  currency: 'BDT',
+  maximumFractionDigits: 2,
+})
+
+const sectionOptions: Array<{
+  id: SectionId
+  label: string
+  description: string
+  icon: any
+}> = [
+  { id: 'profile', label: 'Profile', description: 'Overview, balances, and quick stats', icon: User },
+  { id: 'medical', label: 'Medical', description: 'History, notes, and care context', icon: Activity },
+  { id: 'clinical', label: 'Clinical', description: 'Dental chart and treatment focus', icon: Activity },
+  { id: 'appointments', label: 'Appointments', description: 'Full appointment history', icon: CalendarIcon },
+  { id: 'prescriptions', label: 'Prescriptions', description: 'Medication plans and advice', icon: Pill },
+  { id: 'forms', label: 'Forms', description: 'Intake documents and stored records', icon: FileText },
+  { id: 'bookings', label: 'Bookings', description: 'Upcoming reservations and scheduling', icon: CalendarIcon },
+  { id: 'operations', label: 'Operations', description: 'Treatments, progress, and cost', icon: Activity },
+  { id: 'visits', label: 'Visits', description: 'Consultation history and findings', icon: FileText },
+  { id: 'investigations', label: 'Investigations', description: 'Requested tests and follow-up', icon: Activity },
+  { id: 'files', label: 'Files', description: 'Photos, x-rays, and uploads', icon: FolderOpen },
+  { id: 'communications', label: 'Communications', description: 'Contact details and follow-up', icon: MessageSquare },
+  { id: 'referrals', label: 'Referrals', description: 'External coordination snapshot', icon: FileText },
+  { id: 'consultations', label: 'Consultations', description: 'Latest consultation summaries', icon: Activity },
+  { id: 'billing', label: 'Billing', description: 'Invoices, payments, and due amounts', icon: DollarSign },
+]
+
+const mobileNavSections: SectionId[] = ['profile', 'appointments', 'prescriptions', 'files', 'billing']
+
+const legacySectionMap: Record<string, SectionId> = {
+  overview: 'profile',
+  'dental-chart': 'clinical',
+  treatments: 'operations',
+  appointments: 'appointments',
+  prescriptions: 'prescriptions',
+  visits: 'visits',
+  billing: 'billing',
+  files: 'files',
+}
+
+function formatCurrency(value: number) {
+  return currencyFormatter.format(value || 0)
+}
+
+function formatDateValue(value?: string | null, dateFormat = 'MMM d, yyyy') {
+  if (!value) return 'N/A'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'N/A'
+
+  return format(date, dateFormat)
+}
+
+function getInvoiceDue(invoice: any) {
+  return (invoice.total_amount || 0) - (invoice.paid_amount || 0)
+}
+
 export function PatientProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [patient, setPatient] = useState<any>(null)
   const [visits, setVisits] = useState<any[]>([])
   const [dentalRecords, setDentalRecords] = useState<any[]>([])
@@ -18,7 +95,6 @@ export function PatientProfile() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [files, setFiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'dental-chart' | 'treatments' | 'prescriptions' | 'appointments' | 'billing' | 'files'>('overview')
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
@@ -276,482 +352,973 @@ export function PatientProfile() {
     return <div className="p-6">Patient not found</div>
   }
 
+  const requestedSection = searchParams.get('section') || 'profile'
+  const activeSection = sectionOptions.some((section) => section.id === requestedSection)
+    ? requestedSection as SectionId
+    : (legacySectionMap[requestedSection] || 'profile')
+  const activeSectionMeta = sectionOptions.find((section) => section.id === activeSection) || sectionOptions[0]
   const totalBilled = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
   const totalPaid = invoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
   const totalDue = totalBilled - totalPaid
+  const pendingInvoices = invoices.filter((invoice) => getInvoiceDue(invoice) > 0)
+  const upcomingAppointments = [...appointments]
+    .filter((appointment) => {
+      const appointmentDate = new Date(appointment.date_time)
+      return !Number.isNaN(appointmentDate.getTime()) && appointmentDate.getTime() >= Date.now()
+    })
+    .sort((left, right) => new Date(left.date_time).getTime() - new Date(right.date_time).getTime())
+  const recentTransactions = [...invoices]
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .slice(0, 4)
+  const investigationItems = prescriptions.flatMap((prescription) => {
+    if (!Array.isArray(prescription.investigations)) return []
+
+    return prescription.investigations
+      .filter((investigation: any) => investigation?.name?.trim())
+      .map((investigation: any) => ({
+        ...investigation,
+        prescribedDate: prescription.prescribed_date,
+        diagnosis: prescription.diagnosis,
+      }))
+  })
+  const quickStats = [
+    { label: 'Visits', value: visits.length, tone: 'bg-sky-50 text-sky-700' },
+    { label: 'Treatments', value: treatments.length, tone: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Files', value: files.length, tone: 'bg-violet-50 text-violet-700' },
+    { label: 'Pending', value: pendingInvoices.length, tone: 'bg-amber-50 text-amber-700' },
+  ]
+  const fileGroups = [
+    {
+      key: 'profile_photo',
+      label: 'Profile Photos',
+      files: files.filter((file) => file.file_category === 'profile_photo'),
+    },
+    {
+      key: 'clinical_image',
+      label: 'Clinical Images',
+      files: files.filter((file) => file.file_category === 'clinical_image'),
+    },
+    {
+      key: 'xray_image',
+      label: 'X-Ray Images',
+      files: files.filter((file) => file.file_category === 'xray_image'),
+    },
+  ]
+
+  function updateSection(section: SectionId) {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('section', section)
+    setSearchParams(nextParams)
+  }
+
+  function getSectionBadge(sectionId: SectionId) {
+    switch (sectionId) {
+      case 'appointments':
+        return appointments.length
+      case 'bookings':
+        return upcomingAppointments.length
+      case 'billing':
+        return pendingInvoices.length
+      case 'files':
+      case 'forms':
+        return files.length
+      case 'investigations':
+        return investigationItems.length
+      case 'operations':
+        return treatments.length
+      case 'prescriptions':
+        return prescriptions.length
+      case 'visits':
+      case 'consultations':
+        return visits.length
+      default:
+        return undefined
+    }
+  }
+
+  const renderProfileSection = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <InfoCard title="Patient Information">
+          <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
+          <InfoRow label="Gender" value={patient.gender || 'N/A'} />
+          <InfoRow label="Phone" value={patient.phone || 'N/A'} />
+          <InfoRow label="Email" value={patient.email || 'N/A'} />
+          <InfoRow label="Address" value={patient.address || 'N/A'} />
+        </InfoCard>
+
+        <div className="rounded-3xl bg-gradient-to-br from-primary via-[#1b4e70] to-slate-900 p-6 text-white shadow-sm">
+          <p className="text-sm text-white/70">Financial dashboard</p>
+          <div className="mt-2 text-3xl font-bold">{formatCurrency(totalDue)}</div>
+          <p className="mt-1 text-sm text-white/80">Current balance due</p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
+              <div className="text-xs uppercase tracking-wide text-white/70">Paid</div>
+              <div className="mt-1 text-lg font-semibold">{formatCurrency(totalPaid)}</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
+              <div className="text-xs uppercase tracking-wide text-white/70">Pending</div>
+              <div className="mt-1 text-lg font-semibold">{pendingInvoices.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <InfoCard title="Quick Stats">
+          <div className="grid grid-cols-2 gap-3">
+            {quickStats.map((stat) => (
+              <div key={stat.label} className={`rounded-2xl px-4 py-3 ${stat.tone}`}>
+                <div className="text-xs font-medium uppercase tracking-wide opacity-80">{stat.label}</div>
+                <div className="mt-1 text-2xl font-semibold">{stat.value}</div>
+              </div>
+            ))}
+          </div>
+        </InfoCard>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <InfoCard title="Upcoming Appointments">
+          {upcomingAppointments.length === 0 ? (
+            <EmptyState message="No upcoming appointments scheduled yet." />
+          ) : (
+            <div className="space-y-3">
+              {upcomingAppointments.slice(0, 3).map((appointment) => (
+                <button
+                  key={appointment.id}
+                  onClick={() => updateSection('appointments')}
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
+                      <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
+                    </div>
+                    <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                      {appointment.status || 'Scheduled'}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </InfoCard>
+
+        <InfoCard title="Recent Transactions">
+          {recentTransactions.length === 0 ? (
+            <EmptyState message="No invoices have been generated yet." />
+          ) : (
+            <div className="space-y-3">
+              {recentTransactions.map((invoice) => (
+                <button
+                  key={invoice.id}
+                  onClick={() => updateSection('billing')}
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{formatDateValue(invoice.created_at)}</div>
+                      <div className="text-sm text-text-secondary">{invoice.status || 'Pending'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{formatCurrency(invoice.total_amount || 0)}</div>
+                      <div className="text-xs text-text-secondary">Due {formatCurrency(getInvoiceDue(invoice))}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </InfoCard>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <InfoCard title="Recent Activity">
+          <div className="space-y-3">
+            {visits.slice(0, 3).map((visit) => (
+              <div key={visit.id} className="flex items-start gap-3 rounded-2xl bg-gray-50 p-4">
+                <CalendarIcon className="mt-0.5 h-5 w-5 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{formatDateValue(visit.visit_date)}</div>
+                  <div className="text-sm text-text-secondary">{visit.chief_complaint || 'No complaint recorded'}</div>
+                  {visit.diagnosis && <div className="mt-1 text-sm"><span className="font-medium">Diagnosis:</span> {visit.diagnosis}</div>}
+                </div>
+              </div>
+            ))}
+            {visits.length === 0 && <EmptyState message="No visits recorded for this patient." />}
+          </div>
+        </InfoCard>
+
+        <InfoCard title="Quick Access">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {['medical', 'clinical', 'prescriptions', 'files'].map((sectionId) => {
+              const section = sectionOptions.find((item) => item.id === sectionId)!
+              const Icon = section.icon
+
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => updateSection(section.id)}
+                  className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+                >
+                  <Icon className="h-5 w-5 text-primary" />
+                  <div className="mt-3 font-medium">{section.label}</div>
+                  <div className="mt-1 text-sm text-text-secondary">{section.description}</div>
+                </button>
+              )
+            })}
+          </div>
+        </InfoCard>
+      </div>
+    </div>
+  )
+
+  const renderMedicalSection = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <InfoCard title="Medical Snapshot">
+        <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
+        <InfoRow label="Gender" value={patient.gender || 'N/A'} />
+        <InfoRow label="Medical History" value={patient.medical_history || 'No medical history on file'} />
+        <InfoRow label="Notes" value={patient.notes || 'No patient notes added yet'} />
+      </InfoCard>
+
+      <InfoCard title="Care Highlights">
+        <InfoRow label="Latest Visit" value={visits[0] ? formatDateValue(visits[0].visit_date, 'MMMM d, yyyy h:mm a') : 'No visits yet'} />
+        <InfoRow label="Latest Diagnosis" value={visits[0]?.diagnosis || prescriptions[0]?.diagnosis || 'No diagnosis recorded'} />
+        <InfoRow label="Active Prescriptions" value={prescriptions.length.toString()} />
+        <InfoRow label="Pending Balance" value={formatCurrency(totalDue)} className={totalDue > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'} />
+      </InfoCard>
+    </div>
+  )
+
+  const renderClinicalSection = () => (
+    <div className="space-y-6">
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+        <h3 className="font-semibold mb-6 text-center">Dental Chart</h3>
+        <div className="space-y-8">
+          <div>
+            <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Upper Teeth</h4>
+            <div className="flex justify-center gap-2 flex-wrap">
+              {[...Array(16)].map((_, i) => {
+                const toothNum = i + 1
+                const condition = getToothCondition(toothNum)
+                return (
+                  <Tooth
+                    key={toothNum}
+                    number={toothNum}
+                    condition={condition}
+                    color={getToothColor(condition)}
+                    onClick={() => setSelectedTooth(toothNum)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Lower Teeth</h4>
+            <div className="flex justify-center gap-2 flex-wrap">
+              {[...Array(16)].map((_, i) => {
+                const toothNum = i + 17
+                const condition = getToothCondition(toothNum)
+                return (
+                  <Tooth
+                    key={toothNum}
+                    number={toothNum}
+                    condition={condition}
+                    color={getToothColor(condition)}
+                    onClick={() => setSelectedTooth(toothNum)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 justify-center pt-4 border-t border-gray-200">
+            <Legend color="fill-white stroke-gray-400" label="Healthy" />
+            <Legend color="fill-red-200 stroke-red-500" label="Cavity" />
+            <Legend color="fill-blue-200 stroke-blue-500" label="Filled" />
+            <Legend color="fill-purple-200 stroke-purple-500" label="Root Canal" />
+            <Legend color="fill-yellow-200 stroke-yellow-600" label="Crown" />
+            <Legend color="fill-gray-300 stroke-gray-500" label="Missing" />
+            <Legend color="fill-green-200 stroke-green-500" label="Implant" />
+          </div>
+        </div>
+      </div>
+
+      <InfoCard title="Treatment Summary">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <MetricTile label="Total Treatments" value={treatments.length.toString()} />
+          <MetricTile label="Completed" value={treatments.filter((treatment) => treatment.status === 'Completed').length.toString()} />
+          <MetricTile label="In Progress" value={treatments.filter((treatment) => treatment.status === 'In Progress').length.toString()} />
+        </div>
+      </InfoCard>
+    </div>
+  )
+
+  const renderVisitsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 className="font-semibold">Visit History</h3>
+        <Button size="sm" onClick={() => setShowVisitForm(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          Add Visit
+        </Button>
+      </div>
+      {visits.length === 0 ? (
+        <div className="p-8 text-center text-text-secondary">No visits recorded</div>
+      ) : (
+        <div className="divide-y divide-gray-200">
+          {visits.map((visit) => (
+            <div key={visit.id} className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CalendarIcon className="w-4 h-4 text-text-secondary" />
+                <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
+              </div>
+              {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
+              {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
+              {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
+              {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
+              {visit.notes && <InfoRow label="Notes" value={visit.notes} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderOperationsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+      <div className="p-4 border-b border-gray-200">
+        <h3 className="font-semibold">Treatment History</h3>
+      </div>
+      {treatments.length === 0 ? (
+        <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Treatment</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tooth</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {treatments.map((treatment) => (
+                <tr key={treatment.id}>
+                  <td className="px-4 py-3 text-sm">{formatDateValue(treatment.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{treatment.treatment_type}</div>
+                    {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                      treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {treatment.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+
+  const renderPrescriptionsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 className="font-semibold">Prescription History</h3>
+        <Button size="sm" onClick={() => setShowPrescriptionForm(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          Add Prescription
+        </Button>
+      </div>
+      {prescriptions.length === 0 ? (
+        <div className="p-8 text-center text-text-secondary">No prescriptions recorded</div>
+      ) : (
+        <div className="divide-y divide-gray-200">
+          {prescriptions.map((prescription) => (
+            <div key={prescription.id} className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-medium">{formatDateValue(prescription.prescribed_date, 'MMMM d, yyyy')}</div>
+              </div>
+              {prescription.diagnosis && (
+                <div className="mb-3">
+                  <span className="text-sm font-medium text-text-secondary">Diagnosis: </span>
+                  <span className="text-sm">{prescription.diagnosis}</span>
+                </div>
+              )}
+              {Array.isArray(prescription.medications) && prescription.medications.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-sm font-medium text-text-secondary mb-2">Medications:</div>
+                  <div className="space-y-2">
+                    {prescription.medications.map((med: any, idx: number) => (
+                      <div key={idx} className="text-sm bg-blue-50 p-2 rounded">
+                        <div className="font-medium">{med.name}</div>
+                        <div className="text-text-secondary">
+                          {med.dosage} • {med.frequency} • {med.duration}
+                          {med.instructions && ` • ${med.instructions}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {Array.isArray(prescription.investigations) && prescription.investigations.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-sm font-medium text-text-secondary mb-2">Investigations:</div>
+                  <div className="space-y-1">
+                    {prescription.investigations.map((inv: any, idx: number) => (
+                      <div key={idx} className="text-sm bg-green-50 p-2 rounded">
+                        <span className="font-medium">{inv.name}</span>
+                        {inv.description && <span className="text-text-secondary"> - {inv.description}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {prescription.notes && (
+                <div className="text-sm">
+                  <span className="font-medium text-text-secondary">Notes: </span>
+                  {prescription.notes}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderAppointmentsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 className="font-semibold">Appointment History</h3>
+        <Button onClick={() => setShowAppointmentForm(true)} size="sm">
+          <Plus className="w-4 h-4 mr-2" />
+          New Appointment
+        </Button>
+      </div>
+      {appointments.length === 0 ? (
+        <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
+      ) : (
+        <div className="divide-y divide-gray-200">
+          {appointments.map((appointment) => (
+            <div key={appointment.id} className="p-4 flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
+                <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
+                {appointment.notes && <div className="text-sm mt-1">{appointment.notes}</div>}
+              </div>
+              <span className={`px-2 py-1 text-xs rounded-full ${
+                appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {appointment.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderBookingsSection = () => (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-gray-200 bg-card p-6 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-semibold">Upcoming Bookings</h3>
+            <p className="mt-1 text-sm text-text-secondary">Manage the next patient visits and scheduling flow.</p>
+          </div>
+          <Button onClick={() => setShowAppointmentForm(true)} size="sm">
+            <Plus className="w-4 h-4 mr-2" />
+            Schedule Booking
+          </Button>
+        </div>
+      </div>
+
+      <InfoCard title="Next Visits">
+        {upcomingAppointments.length === 0 ? (
+          <EmptyState message="No future bookings are currently scheduled." />
+        ) : (
+          <div className="space-y-3">
+            {upcomingAppointments.map((appointment) => (
+              <div key={appointment.id} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
+                    <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
+                  </div>
+                  <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                    {appointment.status || 'Scheduled'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </InfoCard>
+    </div>
+  )
+
+  const renderFormsSection = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <InfoCard title="Stored Documents">
+        <div className="space-y-3">
+          {fileGroups.map((group) => (
+            <button
+              key={group.key}
+              onClick={() => updateSection('files')}
+              className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white hover:shadow-sm"
+            >
+              <div>
+                <div className="font-medium">{group.label}</div>
+                <div className="text-sm text-text-secondary">View and manage uploads</div>
+              </div>
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                {group.files.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      </InfoCard>
+
+      <InfoCard title="Form Notes">
+        <InfoRow label="Patient Notes" value={patient.notes || 'No notes saved yet'} />
+        <InfoRow label="Medical History" value={patient.medical_history || 'No history entered yet'} />
+        <div className="pt-4">
+          <Button onClick={() => updateSection('files')} className="w-full sm:w-auto">
+            Open Files Workspace
+          </Button>
+        </div>
+      </InfoCard>
+    </div>
+  )
+
+  const renderInvestigationsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h3 className="font-semibold">Investigations</h3>
+          <p className="mt-1 text-sm text-text-secondary">Review requested investigations from saved prescriptions.</p>
+        </div>
+        <Button size="sm" onClick={() => updateSection('prescriptions')}>
+          Review Prescriptions
+        </Button>
+      </div>
+
+      {investigationItems.length === 0 ? (
+        <EmptyState message="No investigations have been requested yet." />
+      ) : (
+        <div className="space-y-3">
+          {investigationItems.map((investigation: any, index: number) => (
+            <div key={`${investigation.name}-${investigation.prescribedDate}-${index}`} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-medium">{investigation.name}</div>
+                  <div className="text-sm text-text-secondary">{investigation.description || 'No extra instructions provided'}</div>
+                </div>
+                <span className="text-sm font-medium text-primary">{formatDateValue(investigation.prescribedDate)}</span>
+              </div>
+              {investigation.diagnosis && (
+                <div className="mt-2 text-sm">
+                  <span className="font-medium text-text-secondary">Linked diagnosis:</span> {investigation.diagnosis}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderFilesSection = () => (
+    <div className="space-y-6">
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+        <h3 className="font-semibold mb-4">Upload File</h3>
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+          <div>
+            <label className="block text-sm font-medium mb-1">Category</label>
+            <select
+              value={fileCategory}
+              onChange={(e) => setFileCategory(e.target.value as any)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="profile_photo">Profile Photo</option>
+              <option value="clinical_image">Clinical Image</option>
+              <option value="xray_image">X-Ray Image</option>
+            </select>
+          </div>
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingFile}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              {uploadingFile ? 'Uploading…' : 'Choose & Upload'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {fileGroups.map((group) => {
+        if (group.files.length === 0) return null
+
+        return (
+          <div key={group.key} className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Image className="w-4 h-4 text-primary" />
+              {group.label}
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {group.files.map((file) => {
+                const url = getFilePublicUrl(file.storage_path)
+                const isImage = file.mime_type?.startsWith('image/')
+                return (
+                  <div key={file.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                    {isImage ? (
+                      <img
+                        src={url}
+                        alt={file.file_name}
+                        className="w-full h-32 object-cover cursor-pointer"
+                        onClick={() => setPreviewUrl(url)}
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-32 flex items-center justify-center cursor-pointer"
+                        onClick={() => window.open(url, '_blank')}
+                      >
+                        <FileText className="w-10 h-10 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="p-2">
+                      <p className="text-xs text-text-secondary truncate">{file.file_name}</p>
+                      <p className="text-xs text-text-secondary">{formatDateValue(file.created_at)}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteFile(file)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Delete"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+
+      {files.length === 0 && (
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-8 text-center text-text-secondary">
+          No files uploaded yet. Use the upload area above to add patient files.
+        </div>
+      )}
+    </div>
+  )
+
+  const renderCommunicationsSection = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <InfoCard title="Patient Contact">
+        <div className="space-y-3">
+          <div className="rounded-2xl bg-gray-50 p-4">
+            <div className="text-sm text-text-secondary">Phone</div>
+            <div className="mt-1 font-medium">{patient.phone || 'No phone provided'}</div>
+          </div>
+          <div className="rounded-2xl bg-gray-50 p-4">
+            <div className="text-sm text-text-secondary">Email</div>
+            <div className="mt-1 font-medium">{patient.email || 'No email provided'}</div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {patient.phone && (
+              <a
+                href={`tel:${patient.phone}`}
+                className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+              >
+                Call Patient
+              </a>
+            )}
+            {patient.email && (
+              <a
+                href={`mailto:${patient.email}`}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-gray-50"
+              >
+                Send Email
+              </a>
+            )}
+          </div>
+        </div>
+      </InfoCard>
+
+      <InfoCard title="Follow-up Context">
+        <InfoRow label="Next Appointment" value={upcomingAppointments[0] ? formatDateValue(upcomingAppointments[0].date_time, 'MMMM d, yyyy h:mm a') : 'No future appointment booked'} />
+        <InfoRow label="Latest Complaint" value={visits[0]?.chief_complaint || 'No complaint recorded'} />
+        <InfoRow label="Latest Notes" value={visits[0]?.notes || patient.notes || 'No follow-up note available'} />
+      </InfoCard>
+    </div>
+  )
+
+  const renderReferralsSection = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <InfoCard title="Referral Snapshot">
+        <InfoRow label="Latest Diagnosis" value={visits[0]?.diagnosis || prescriptions[0]?.diagnosis || 'No diagnosis recorded'} />
+        <InfoRow label="Treatment Plan" value={visits[0]?.treatment_plan || 'No treatment plan documented'} />
+        <InfoRow label="Files Available" value={files.length.toString()} />
+      </InfoCard>
+
+      <InfoCard title="Supporting Records">
+        <div className="space-y-3">
+          <button
+            onClick={() => updateSection('files')}
+            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white hover:shadow-sm"
+          >
+            <div className="font-medium">Open patient files</div>
+            <div className="text-sm text-text-secondary">Review images, x-rays, and attached documentation.</div>
+          </button>
+          <button
+            onClick={() => updateSection('consultations')}
+            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white hover:shadow-sm"
+          >
+            <div className="font-medium">Review consultation notes</div>
+            <div className="text-sm text-text-secondary">Use clinical history before sharing external referrals.</div>
+          </button>
+        </div>
+      </InfoCard>
+    </div>
+  )
+
+  const renderConsultationsSection = () => (
+    <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+      <h3 className="font-semibold mb-4">Consultation Summaries</h3>
+      {visits.length === 0 ? (
+        <EmptyState message="No consultations recorded yet." />
+      ) : (
+        <div className="space-y-4">
+          {visits.slice(0, 5).map((visit) => (
+            <div key={visit.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</div>
+                <span className="text-sm text-primary">{visit.chief_complaint || 'General consultation'}</span>
+              </div>
+              {visit.diagnosis && <div className="mt-3 text-sm"><span className="font-medium text-text-secondary">Diagnosis:</span> {visit.diagnosis}</div>}
+              {visit.treatment_plan && <div className="mt-2 text-sm"><span className="font-medium text-text-secondary">Plan:</span> {visit.treatment_plan}</div>}
+              {visit.notes && <div className="mt-2 text-sm"><span className="font-medium text-text-secondary">Notes:</span> {visit.notes}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderBillingSection = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-3xl bg-blue-50 border border-blue-200 p-5">
+          <div className="text-sm text-blue-600 font-medium">Total Billed</div>
+          <div className="mt-2 text-2xl font-bold text-blue-900">{formatCurrency(totalBilled)}</div>
+        </div>
+        <div className="rounded-3xl bg-green-50 border border-green-200 p-5">
+          <div className="text-sm text-green-600 font-medium">Total Paid</div>
+          <div className="mt-2 text-2xl font-bold text-green-900">{formatCurrency(totalPaid)}</div>
+        </div>
+        <div className="rounded-3xl bg-red-50 border border-red-200 p-5">
+          <div className="text-sm text-red-600 font-medium">Balance Due</div>
+          <div className="mt-2 text-2xl font-bold text-red-900">{formatCurrency(totalDue)}</div>
+        </div>
+      </div>
+
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="font-semibold">Invoice History</h3>
+        </div>
+        {invoices.length === 0 ? (
+          <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Items</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Total</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Paid</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Due</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {invoices.map((invoice) => (
+                  <tr key={invoice.id}>
+                    <td className="px-4 py-3 text-sm">{formatDateValue(invoice.created_at)}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {Array.isArray(invoice.items) ? invoice.items.length : 0} item(s)
+                    </td>
+                    <td className="px-4 py-3 text-sm">{formatCurrency(invoice.total_amount || 0)}</td>
+                    <td className="px-4 py-3 text-sm">{formatCurrency(invoice.paid_amount || 0)}</td>
+                    <td className="px-4 py-3 text-sm">{formatCurrency(getInvoiceDue(invoice))}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        invoice.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                        invoice.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {invoice.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  function renderActiveSection() {
+    switch (activeSection) {
+      case 'profile':
+        return renderProfileSection()
+      case 'medical':
+        return renderMedicalSection()
+      case 'clinical':
+        return renderClinicalSection()
+      case 'appointments':
+        return renderAppointmentsSection()
+      case 'prescriptions':
+        return renderPrescriptionsSection()
+      case 'forms':
+        return renderFormsSection()
+      case 'bookings':
+        return renderBookingsSection()
+      case 'operations':
+        return renderOperationsSection()
+      case 'visits':
+        return renderVisitsSection()
+      case 'investigations':
+        return renderInvestigationsSection()
+      case 'files':
+        return renderFilesSection()
+      case 'communications':
+        return renderCommunicationsSection()
+      case 'referrals':
+        return renderReferralsSection()
+      case 'consultations':
+        return renderConsultationsSection()
+      case 'billing':
+        return renderBillingSection()
+      default:
+        return renderProfileSection()
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => navigate('/patients')}>
+    <div className="space-y-6 pb-24 md:pb-6 page-fade-in">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <Button variant="outline" size="sm" onClick={() => navigate('/patients')} className="w-full sm:w-auto">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <h1 className="text-2xl font-bold leading-tight">
               {patient.first_name} {patient.last_name}
             </h1>
             {patient.patient_code && (
-              <span className="px-2 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded">
+              <span className="w-fit px-2 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
                 {patient.patient_code}
               </span>
             )}
           </div>
-          <p className="text-text-secondary">{patient.phone || 'No phone provided'}</p>
+          <p className="text-text-secondary">{patient.phone || 'No phone provided'}{patient.email ? ` • ${patient.email}` : ''}</p>
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-        <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Overview</TabButton>
-        <TabButton active={activeTab === 'visits'} onClick={() => setActiveTab('visits')}>Visits ({visits.length})</TabButton>
-        <TabButton active={activeTab === 'dental-chart'} onClick={() => setActiveTab('dental-chart')}>Dental Chart</TabButton>
-        <TabButton active={activeTab === 'treatments'} onClick={() => setActiveTab('treatments')}>Treatments ({treatments.length})</TabButton>
-        <TabButton active={activeTab === 'prescriptions'} onClick={() => setActiveTab('prescriptions')}>Prescriptions ({prescriptions.length})</TabButton>
-        <TabButton active={activeTab === 'appointments'} onClick={() => setActiveTab('appointments')}>Appointments ({appointments.length})</TabButton>
-        <TabButton active={activeTab === 'billing'} onClick={() => setActiveTab('billing')}>Billing</TabButton>
-        <TabButton active={activeTab === 'files'} onClick={() => setActiveTab('files')}>Files ({files.length})</TabButton>
+      <div className="rounded-3xl bg-gradient-to-br from-primary via-[#1b4e70] to-slate-900 p-6 text-white shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.2em] text-white/70">Patient dashboard</p>
+            <h2 className="mt-2 text-3xl font-semibold">{activeSectionMeta.label}</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/80">{activeSectionMeta.description}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <HeroStat label="Balance" value={formatCurrency(totalDue)} />
+            <HeroStat label="Next visit" value={upcomingAppointments[0] ? formatDateValue(upcomingAppointments[0].date_time, 'MMM d') : 'Not set'} />
+            <HeroStat label="Files" value={files.length.toString()} className="col-span-2 sm:col-span-1" />
+          </div>
+        </div>
       </div>
 
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <InfoCard title="Patient Information">
-            <InfoRow label="DOB" value={format(new Date(patient.date_of_birth), 'MMM d, yyyy')} />
-            <InfoRow label="Gender" value={patient.gender} />
-            <InfoRow label="Address" value={patient.address || 'N/A'} />
-            {patient.medical_history && <InfoRow label="Medical History" value={patient.medical_history} />}
-          </InfoCard>
+      <div className="md:hidden -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {sectionOptions.map((section) => (
+          <button
+            key={section.id}
+            onClick={() => updateSection(section.id)}
+            className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+              activeSection === section.id
+                ? 'border-primary bg-primary text-white shadow-sm'
+                : 'border-gray-200 bg-white text-text-secondary hover:border-primary/30 hover:text-primary'
+            }`}
+          >
+            <section.icon className="h-4 w-4" />
+            {section.label}
+          </button>
+        ))}
+      </div>
 
-          <InfoCard title="Treatment Summary">
-            <InfoRow label="Total Treatments" value={treatments.length.toString()} />
-            <InfoRow label="Completed" value={treatments.filter(t => t.status === 'Completed').length.toString()} />
-            <InfoRow label="In Progress" value={treatments.filter(t => t.status === 'In Progress').length.toString()} />
-            <InfoRow label="Planned" value={treatments.filter(t => t.status === 'Planned').length.toString()} />
-          </InfoCard>
+      <div className="hidden md:grid grid-cols-2 xl:grid-cols-3 gap-4">
+        {sectionOptions.map((section) => (
+          <SectionMenuButton
+            key={section.id}
+            active={activeSection === section.id}
+            icon={section.icon}
+            label={section.label}
+            description={section.description}
+            badge={getSectionBadge(section.id)}
+            onClick={() => updateSection(section.id)}
+          />
+        ))}
+      </div>
 
-          <InfoCard title="Billing Summary">
-            <InfoRow label="Total Billed" value={`৳${totalBilled.toFixed(2)}`} />
-            <InfoRow label="Total Paid" value={`৳${totalPaid.toFixed(2)}`} />
-            <InfoRow label="Balance Due" value={`৳${totalDue.toFixed(2)}`} className={totalDue > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'} />
-          </InfoCard>
+      <div key={activeSection} className="section-fade-in">
+        {renderActiveSection()}
+      </div>
 
-          <div className="md:col-span-2 lg:col-span-3">
-            <InfoCard title="Recent Activity">
-              <div className="space-y-3">
-                {visits.slice(0, 3).map((visit) => (
-                  <div key={visit.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                    <CalendarIcon className="w-5 h-5 text-primary mt-0.5" />
-                    <div className="flex-1">
-                      <div className="font-medium">{format(new Date(visit.visit_date), 'MMM d, yyyy')}</div>
-                      <div className="text-sm text-text-secondary">{visit.chief_complaint || 'No complaint'}</div>
-                      {visit.diagnosis && <div className="text-sm"><span className="font-medium">Diagnosis:</span> {visit.diagnosis}</div>}
-                    </div>
-                  </div>
-                ))}
-                {visits.length === 0 && <p className="text-text-secondary text-sm">No visits recorded</p>}
-              </div>
-            </InfoCard>
-          </div>
-        </div>
-      )}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-xl gap-2">
+          {mobileNavSections.map((sectionId) => {
+            const section = sectionOptions.find((item) => item.id === sectionId)!
 
-      {activeTab === 'visits' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Visit History</h3>
-            <Button size="sm" onClick={() => setShowVisitForm(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Visit
-            </Button>
-          </div>
-          {visits.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No visits recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {visits.map((visit) => (
-                <div key={visit.id} className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CalendarIcon className="w-4 h-4 text-text-secondary" />
-                    <span className="font-medium">{format(new Date(visit.visit_date), 'MMMM d, yyyy h:mm a')}</span>
-                  </div>
-                  {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
-                  {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
-                  {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
-                  {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
-                  {visit.notes && <InfoRow label="Notes" value={visit.notes} />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'dental-chart' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="font-semibold mb-6 text-center">Dental Chart</h3>
-          <div className="space-y-8">
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Upper Teeth</h4>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {[...Array(16)].map((_, i) => {
-                  const toothNum = i + 1
-                  const condition = getToothCondition(toothNum)
-                  return (
-                    <Tooth
-                      key={toothNum}
-                      number={toothNum}
-                      condition={condition}
-                      color={getToothColor(condition)}
-                      onClick={() => setSelectedTooth(toothNum)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Lower Teeth</h4>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {[...Array(16)].map((_, i) => {
-                  const toothNum = i + 17
-                  const condition = getToothCondition(toothNum)
-                  return (
-                    <Tooth
-                      key={toothNum}
-                      number={toothNum}
-                      condition={condition}
-                      color={getToothColor(condition)}
-                      onClick={() => setSelectedTooth(toothNum)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3 justify-center pt-4 border-t border-gray-200">
-              <Legend color="fill-white stroke-gray-400" label="Healthy" />
-              <Legend color="fill-red-200 stroke-red-500" label="Cavity" />
-              <Legend color="fill-blue-200 stroke-blue-500" label="Filled" />
-              <Legend color="fill-purple-200 stroke-purple-500" label="Root Canal" />
-              <Legend color="fill-yellow-200 stroke-yellow-600" label="Crown" />
-              <Legend color="fill-gray-300 stroke-gray-500" label="Missing" />
-              <Legend color="fill-green-200 stroke-green-500" label="Implant" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'treatments' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="font-semibold">Treatment History</h3>
-          </div>
-          {treatments.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Treatment</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tooth</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {treatments.map((treatment) => (
-                    <tr key={treatment.id}>
-                      <td className="px-4 py-3 text-sm">{format(new Date(treatment.created_at), 'MMM d, yyyy')}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{treatment.treatment_type}</div>
-                        {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                          treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {treatment.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm">৳{treatment.cost?.toFixed(2) || '0.00'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'prescriptions' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Prescription History</h3>
-            <Button size="sm" onClick={() => setShowPrescriptionForm(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Prescription
-            </Button>
-          </div>
-          {prescriptions.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No prescriptions recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {prescriptions.map((prescription) => (
-                <div key={prescription.id} className="p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="font-medium">{format(new Date(prescription.prescribed_date), 'MMMM d, yyyy')}</div>
-                  </div>
-                  {prescription.diagnosis && (
-                    <div className="mb-3">
-                      <span className="text-sm font-medium text-text-secondary">Diagnosis: </span>
-                      <span className="text-sm">{prescription.diagnosis}</span>
-                    </div>
-                  )}
-                  {Array.isArray(prescription.medications) && prescription.medications.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-sm font-medium text-text-secondary mb-2">Medications:</div>
-                      <div className="space-y-2">
-                        {prescription.medications.map((med: any, idx: number) => (
-                          <div key={idx} className="text-sm bg-blue-50 p-2 rounded">
-                            <div className="font-medium">{med.name}</div>
-                            <div className="text-text-secondary">
-                              {med.dosage} • {med.frequency} • {med.duration}
-                              {med.instructions && ` • ${med.instructions}`}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(prescription.investigations) && prescription.investigations.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-sm font-medium text-text-secondary mb-2">Investigations:</div>
-                      <div className="space-y-1">
-                        {prescription.investigations.map((inv: any, idx: number) => (
-                          <div key={idx} className="text-sm bg-green-50 p-2 rounded">
-                            <span className="font-medium">{inv.name}</span>
-                            {inv.description && <span className="text-text-secondary"> - {inv.description}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {prescription.notes && (
-                    <div className="text-sm">
-                      <span className="font-medium text-text-secondary">Notes: </span>
-                      {prescription.notes}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'appointments' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="font-semibold">Appointment History</h3>
-            <Button onClick={() => setShowAppointmentForm(true)} size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              New Appointment
-            </Button>
-          </div>
-          {appointments.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {appointments.map((appointment) => (
-                <div key={appointment.id} className="p-4 flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="font-medium">{format(new Date(appointment.date_time), 'MMMM d, yyyy h:mm a')}</div>
-                    <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
-                    {appointment.notes && <div className="text-sm mt-1">{appointment.notes}</div>}
-                  </div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                    appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
-                    {appointment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'billing' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="text-sm text-blue-600 font-medium">Total Billed</div>
-              <div className="text-2xl font-bold text-blue-900">৳{totalBilled.toFixed(2)}</div>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="text-sm text-green-600 font-medium">Total Paid</div>
-              <div className="text-2xl font-bold text-green-900">৳{totalPaid.toFixed(2)}</div>
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="text-sm text-red-600 font-medium">Balance Due</div>
-              <div className="text-2xl font-bold text-red-900">৳{totalDue.toFixed(2)}</div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="font-semibold">Invoice History</h3>
-            </div>
-            {invoices.length === 0 ? (
-              <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Items</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Total</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Paid</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Due</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {invoices.map((invoice) => (
-                      <tr key={invoice.id}>
-                        <td className="px-4 py-3 text-sm">{format(new Date(invoice.created_at), 'MMM d, yyyy')}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {Array.isArray(invoice.items) ? invoice.items.length : 0} item(s)
-                        </td>
-                        <td className="px-4 py-3 text-sm">৳{invoice.total_amount?.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm">৳{invoice.paid_amount?.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm">৳{(invoice.total_amount - invoice.paid_amount)?.toFixed(2)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            invoice.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                            invoice.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {invoice.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'files' && (
-        <div className="space-y-6">
-          {/* Upload area */}
-          <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-            <h3 className="font-semibold mb-4">Upload File</h3>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-              <div>
-                <label className="block text-sm font-medium mb-1">Category</label>
-                <select
-                  value={fileCategory}
-                  onChange={(e) => setFileCategory(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="profile_photo">Profile Photo</option>
-                  <option value="clinical_image">Clinical Image</option>
-                  <option value="xray_image">X-Ray Image</option>
-                </select>
-              </div>
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingFile}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  {uploadingFile ? 'Uploading…' : 'Choose & Upload'}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* File list grouped by category */}
-          {(['profile_photo', 'clinical_image', 'xray_image'] as const).map((cat) => {
-            const catFiles = files.filter((f) => f.file_category === cat)
-            if (catFiles.length === 0) return null
-            const labels: Record<string, string> = {
-              profile_photo: 'Profile Photos',
-              clinical_image: 'Clinical Images',
-              xray_image: 'X-Ray Images',
-            }
             return (
-              <div key={cat} className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <Image className="w-4 h-4 text-primary" />
-                  {labels[cat]}
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {catFiles.map((file) => {
-                    const url = getFilePublicUrl(file.storage_path)
-                    const isImage = file.mime_type?.startsWith('image/')
-                    return (
-                      <div key={file.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                        {isImage ? (
-                          <img
-                            src={url}
-                            alt={file.file_name}
-                            className="w-full h-32 object-cover cursor-pointer"
-                            onClick={() => setPreviewUrl(url)}
-                          />
-                        ) : (
-                          <div
-                            className="w-full h-32 flex items-center justify-center cursor-pointer"
-                            onClick={() => window.open(url, '_blank')}
-                          >
-                            <FileText className="w-10 h-10 text-gray-400" />
-                          </div>
-                        )}
-                        <div className="p-2">
-                          <p className="text-xs text-text-secondary truncate">{file.file_name}</p>
-                          <p className="text-xs text-text-secondary">{format(new Date(file.created_at), 'MMM d, yyyy')}</p>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteFile(file)}
-                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Delete"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+              <BottomNavButton
+                key={section.id}
+                active={activeSection === section.id}
+                icon={section.icon}
+                label={section.label}
+                onClick={() => updateSection(section.id)}
+              />
             )
           })}
-
-          {files.length === 0 && (
-            <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-8 text-center text-text-secondary">
-              No files uploaded yet. Use the upload area above to add patient files.
-            </div>
-          )}
         </div>
-      )}
+      </div>
 
       {/* Full-screen image preview */}
       {previewUrl && (
@@ -817,24 +1384,35 @@ export function PatientProfile() {
   )
 }
 
-function TabButton({ active, onClick, children }: any) {
+function SectionMenuButton({ active, icon: Icon, label, description, badge, onClick }: any) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
+      className={`rounded-3xl border p-5 text-left transition-all duration-200 ${
         active
-          ? 'border-b-2 border-primary text-primary'
-          : 'text-text-secondary hover:text-text-primary'
+          ? 'border-primary bg-primary/5 shadow-sm ring-2 ring-primary/10'
+          : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-primary/30 hover:shadow-md'
       }`}
     >
-      {children}
+      <div className="flex items-start justify-between gap-3">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${active ? 'bg-primary text-white' : 'bg-gray-100 text-primary'}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        {badge !== undefined && (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}>
+            {badge}
+          </span>
+        )}
+      </div>
+      <div className="mt-4 font-semibold">{label}</div>
+      <p className="mt-1 text-sm text-text-secondary">{description}</p>
     </button>
   )
 }
 
-function InfoCard({ title, children }: any) {
+function InfoCard({ title, children, className = '' }: any) {
   return (
-    <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+    <div className={`bg-card rounded-3xl shadow-sm border border-gray-200 p-6 ${className}`}>
       <h3 className="font-semibold mb-4">{title}</h3>
       <div className="space-y-2">
         {children}
@@ -852,6 +1430,28 @@ function InfoRow({ label, value, className = '' }: any) {
   )
 }
 
+function HeroStat({ label, value, className = '' }: any) {
+  return (
+    <div className={`rounded-2xl bg-white/10 p-3 backdrop-blur-sm ${className}`}>
+      <div className="text-xs uppercase tracking-wide text-white/70">{label}</div>
+      <div className="mt-1 text-lg font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function MetricTile({ label, value }: any) {
+  return (
+    <div className="rounded-2xl bg-gray-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-text-secondary">{label}</div>
+      <div className="mt-2 text-2xl font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function EmptyState({ message }: any) {
+  return <p className="rounded-2xl bg-gray-50 p-4 text-sm text-text-secondary">{message}</p>
+}
+
 function Tooth({ number, condition, color, onClick }: any) {
   return (
     <div className="flex flex-col items-center cursor-pointer group" onClick={onClick}>
@@ -863,6 +1463,22 @@ function Tooth({ number, condition, color, onClick }: any) {
       </svg>
       <span className="text-xs font-medium mt-1">{number}</span>
     </div>
+  )
+}
+
+function BottomNavButton({ active, icon: Icon, label, onClick }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-xs font-medium transition-all duration-200 ${
+        active
+          ? 'bg-primary text-white shadow-sm'
+          : 'text-text-secondary hover:bg-gray-100 hover:text-text-primary'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="truncate">{label}</span>
+    </button>
   )
 }
 
