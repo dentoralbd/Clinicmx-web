@@ -101,9 +101,11 @@ export function Appointments() {
   }
 
   function getDotsForDay(day: Date) {
-    return weekAppointments.filter(a =>
-      isSameDay(new Date(a.date_time), day) && a.status !== 'Cancelled'
-    ).length
+    return weekAppointments.filter(a => {
+      if (!a.date_time) return false
+      const d = new Date(a.date_time)
+      return !isNaN(d.getTime()) && isSameDay(d, day) && a.status !== 'Cancelled'
+    }).length
   }
 
   return (
@@ -270,7 +272,9 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
   )
 }
 
-function formatLocalAppointmentDateTime(dateTime: string) {
-  return format(new Date(dateTime), 'h:mm a')
+function formatLocalAppointmentDateTime(dateTime: string | null | undefined) {
+  if (!dateTime) return '—'
+  const d = new Date(dateTime)
+  return isNaN(d.getTime()) ? '—' : format(d, 'h:mm a')
 }
 
