@@ -5,6 +5,25 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
+function deriveDateOfBirthFromAge(age: number) {
+  const today = new Date()
+  const approximateBirthDate = new Date(today.getFullYear() - age, today.getMonth(), today.getDate())
+  return format(approximateBirthDate, 'yyyy-MM-dd')
+}
+
+function calculateAgeFromDate(dateOfBirth: string) {
+  const birthDate = new Date(dateOfBirth)
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDifference = today.getMonth() - birthDate.getMonth()
+
+  if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1
+  }
+
+  return age
+}
+
 export function Patients() {
   const navigate = useNavigate()
   const [patients, setPatients] = useState<any[]>([])
@@ -19,6 +38,7 @@ export function Patients() {
     phone: '',
     email: '',
     date_of_birth: '',
+    age: '',
     gender: 'Male',
     address: '',
     medical_history: '',
@@ -46,14 +66,31 @@ export function Patients() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const parsedAge = Number.parseInt(formData.age, 10)
+    const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+    const dateOfBirth =
+      formData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
+
+    if (!dateOfBirth) {
+      alert('Please provide Date of Birth or Age')
+      return
+    }
+
+    const patientPayload = {
+      ...formData,
+      date_of_birth: dateOfBirth,
+    }
+
+    delete patientPayload.age
+
     try {
       if (editingId) {
         await supabase
           .from('patients')
-          .update(formData)
+          .update(patientPayload)
           .eq('id', editingId)
       } else {
-        await supabase.from('patients').insert([formData])
+        await supabase.from('patients').insert([patientPayload])
       }
       setShowForm(false)
       setEditingId(null)
@@ -84,6 +121,7 @@ export function Patients() {
       phone: patient.phone,
       email: patient.email,
       date_of_birth: patient.date_of_birth,
+      age: patient.date_of_birth ? String(calculateAgeFromDate(patient.date_of_birth)) : '',
       gender: patient.gender,
       address: patient.address || '',
       medical_history: patient.medical_history || '',
@@ -100,6 +138,7 @@ export function Patients() {
       phone: '',
       email: '',
       date_of_birth: '',
+      age: '',
       gender: 'Male',
       address: '',
       medical_history: '',
@@ -257,12 +296,26 @@ export function Patients() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Date of Birth *</label>
+                  <label className="block text-sm font-medium mb-1">Date of Birth</label>
                   <input
                     type="date"
-                    required
                     value={formData.date_of_birth}
                     onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
+                    required={!formData.age}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Age</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={130}
+                    value={formData.age}
+                    onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                    required={!formData.date_of_birth}
+                    placeholder="Enter age if DOB is unknown"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -280,6 +333,8 @@ export function Patients() {
                     <option>Other</option>
                   </select>
                 </div>
+
+                <p className="text-sm text-text-secondary">Provide either Date of Birth or Age.</p>
               </div>
 
               <div>
