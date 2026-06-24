@@ -25,7 +25,6 @@ export function Prescriptions() {
   })
 
   useEffect(() => {
-    console.log('[Init] Loading prescriptions, patients, and templates...')
     loadPrescriptions()
     loadPatients()
     loadTemplates()
@@ -72,7 +71,6 @@ export function Prescriptions() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      console.log('[Submit] Creating prescription...')
       await supabase.from('prescriptions').insert([
         {
           patient_id: formData.patient_id,
@@ -135,7 +133,6 @@ export function Prescriptions() {
       resetForm()
       loadPrescriptions()
       loadTemplates()
-      console.log('[Submit] ✅ Complete!')
     } catch (error) {
       console.error('Error creating prescription:', error)
       alert('Failed to create prescription')
@@ -234,10 +231,7 @@ export function Prescriptions() {
           <h1 className="text-2xl font-bold">Prescriptions</h1>
           <p className="text-text-secondary">Manage patient prescriptions and investigations</p>
         </div>
-        <Button onClick={() => {
-          console.log('[UI] Opening prescription form')
-          setShowForm(true)
-        }}>
+        <Button onClick={() => setShowForm(true)}>
           <Plus className="w-4 h-4 mr-2" />
           New Prescription
         </Button>
@@ -347,9 +341,7 @@ export function Prescriptions() {
                 />
               </div>
 
-              {/* ═══════════════════════════════════════════════════════════ */}
-              {/* MEDICATIONS SECTION WITH IMPROVED UI */}
-              {/* ═══════════════════════════════════════════════════════════ */}
+              {/* MEDICATIONS SECTION */}
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -479,12 +471,9 @@ export function Prescriptions() {
                     </div>
                   ))}
                 </div>
-
               </div>
 
-              {/* ═══════════════════════════════════════════════════════════ */}
-              {/* INVESTIGATIONS SECTION WITH IMPROVED UI */}
-              {/* ═══════════════════════════════════════════════════════════ */}
+              {/* INVESTIGATIONS SECTION */}
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -546,7 +535,7 @@ export function Prescriptions() {
                 {/* INVESTIGATION INPUT FIELDS */}
                 <div className="space-y-3 mb-4">
                   {formData.investigations.map((inv, index) => (
-                    <div key={index} className="flex gap-2 p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex flex-col sm:flex-row gap-2 p-3 bg-gray-50 rounded-lg">
                       <input
                         type="text"
                         placeholder="Investigation name (e.g., CBC, X-Ray)"
@@ -573,7 +562,7 @@ export function Prescriptions() {
                         <button
                           type="button"
                           onClick={() => removeInvestigation(index)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg self-start sm:self-auto"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -581,7 +570,6 @@ export function Prescriptions() {
                     </div>
                   ))}
                 </div>
-
               </div>
 
               <div>
@@ -603,7 +591,6 @@ export function Prescriptions() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    console.log('[UI] Closing prescription form')
                     setShowForm(false)
                     resetForm()
                   }}
