@@ -80,8 +80,8 @@ export function Treatments() {
 
   const filteredTreatments = treatments.filter(
     (t) =>
-      t.patients.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.patients.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.patients?.first_name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.patients?.last_name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.treatment_type.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -170,7 +170,7 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium">
-              {treatment.patients.first_name} {treatment.patients.last_name}
+              {treatment.patients?.first_name} {treatment.patients?.last_name}
             </p>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[treatment.status] || 'bg-gray-100'}`}>
               {treatment.status}

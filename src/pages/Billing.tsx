@@ -218,7 +218,7 @@ function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMar
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium">
-                {invoice.patients.first_name} {invoice.patients.last_name}
+                {invoice.patients?.first_name} {invoice.patients?.last_name}
               </p>
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
                 {invoice.status}

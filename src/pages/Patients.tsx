@@ -163,8 +163,8 @@ export function Patients() {
     return (
       patient.first_name.toLowerCase().includes(searchLower) ||
       patient.last_name.toLowerCase().includes(searchLower) ||
-      patient.phone.includes(searchTerm) ||
-      patient.email.toLowerCase().includes(searchLower) ||
+      (patient.phone ?? '').includes(searchTerm) ||
+      (patient.email ?? '').toLowerCase().includes(searchLower) ||
       (patient.patient_code && patient.patient_code.toLowerCase().includes(searchLower))
     )
   })
@@ -249,7 +249,7 @@ export function Patients() {
                       <div>{patient.phone}</div>
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {format(new Date(patient.date_of_birth), 'MMM d, yyyy')}
+                      {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM d, yyyy') : '—'}
                     </td>
                     <td className="px-6 py-4 text-sm">{patient.gender}</td>
                     <td className="px-6 py-4 text-right">

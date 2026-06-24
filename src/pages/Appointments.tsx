@@ -221,7 +221,7 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium">
-              {appointment.patients.first_name} {appointment.patients.last_name}
+              {appointment.patients?.first_name} {appointment.patients?.last_name}
             </p>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[appointment.status] || 'bg-gray-100'}`}>
               {appointment.status}
