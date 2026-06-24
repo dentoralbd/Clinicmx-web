@@ -1,0 +1,25 @@
+# Netlify configuration for proper cache control
+
+[[headers]]
+for = "/*"
+[headers.values]
+Cache-Control = "public, max-age=3600, must-revalidate"
+
+[[headers]]
+for = "index.html"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+for = "/dist/*"
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/dist/*.html"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
+
+[build]
+command = "npm install && npm run build"
+publish = "dist"
