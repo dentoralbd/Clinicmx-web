@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { createPatient } from '@/lib/patients'
 import { UserPlus, Users } from 'lucide-react'
 
 export function AppointmentModal({ 
@@ -121,25 +122,18 @@ export function AppointmentModal({
           return
         }
 
-        const { data: newPatient, error: patientError } = await supabase
-          .from('patients')
-          .insert([
-            {
-              first_name: newPatientData.first_name,
-              last_name: newPatientData.last_name,
-              date_of_birth: newPatientData.date_of_birth || null,
-              gender: newPatientData.gender,
-              phone: newPatientData.phone,
-            }
-          ])
-          .select('id')
+        const newPatient = await createPatient({
+          first_name: newPatientData.first_name,
+          last_name: newPatientData.last_name,
+          date_of_birth: newPatientData.date_of_birth || null,
+          gender: newPatientData.gender,
+          phone: newPatientData.phone,
+        })
 
-        if (patientError) throw patientError
-        if (!newPatient || newPatient.length === 0) throw new Error('Failed to create patient')
-
-        patientId = newPatient[0].id
-        setPatientLookup(patientId)
-        setPatientLookupMessage(`Created new patient UID: ${patientId}`)
+        patientId = newPatient.id
+        const patientCode = newPatient.patient_code || patientId
+        setPatientLookup(patientCode)
+        setPatientLookupMessage(`Created new patient UID: ${patientCode}`)
       }
 
       if (!patientId) {
@@ -166,8 +160,9 @@ export function AppointmentModal({
         .neq('status', 'Cancelled')
 
       if (fetchError) throw fetchError
+      const appointmentsForDay = (dayAppts || []) as Array<{ date_time: string; duration: number }>
 
-      const hasConflict = dayAppts?.some(appt => {
+      const hasConflict = appointmentsForDay.some(appt => {
         const apptStart = new Date(appt.date_time)
         const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
         return startDateTime < apptEnd && endDateTime > apptStart
@@ -179,7 +174,8 @@ export function AppointmentModal({
         return
       }
 
-      const { error } = await supabase.from('appointments').insert([
+      const appointmentsTable: any = supabase.from('appointments')
+      const { error } = await appointmentsTable.insert([
         {
           patient_id: patientId,
           date_time: startDateTime.toISOString(),

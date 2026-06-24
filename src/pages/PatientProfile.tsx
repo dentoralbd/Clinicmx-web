@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
+import { InvoiceModal } from '@/components/InvoiceModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
@@ -126,6 +127,7 @@ export function PatientProfile() {
   const [files, setFiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
@@ -405,6 +407,37 @@ export function PatientProfile() {
     } catch (error) {
       console.error('Error deleting prescription:', error)
       alert('Failed to delete prescription')
+    }
+  }
+
+  async function handleMarkInvoicePaid(invoiceId: string, totalAmount: number) {
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .update({
+          status: 'Paid',
+          paid_amount: totalAmount,
+        })
+        .eq('id', invoiceId)
+
+      if (error) throw error
+      loadPatientData()
+    } catch (error) {
+      console.error('Error updating invoice:', error)
+      alert('Failed to update invoice')
+    }
+  }
+
+  async function handleDeleteInvoice(invoiceId: string) {
+    if (!confirm('Delete this invoice?')) return
+
+    try {
+      const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
+      if (error) throw error
+      loadPatientData()
+    } catch (error) {
+      console.error('Error deleting invoice:', error)
+      alert('Failed to delete invoice')
     }
   }
 
@@ -1323,8 +1356,12 @@ export function PatientProfile() {
       </div>
 
       <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
           <h3 className="font-semibold">Invoice History</h3>
+          <Button size="sm" onClick={() => setShowInvoiceForm(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Invoice
+          </Button>
         </div>
         {invoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
@@ -1339,6 +1376,7 @@ export function PatientProfile() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Paid</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Due</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -1359,6 +1397,26 @@ export function PatientProfile() {
                       }`}>
                         {invoice.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        {invoice.status !== 'Paid' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleMarkInvoicePaid(invoice.id, invoice.total_amount || 0)}
+                          >
+                            Mark Paid
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteInvoice(invoice.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1573,6 +1631,18 @@ export function PatientProfile() {
           onSave={() => {
             loadPatientData()
             setShowAppointmentForm(false)
+          }}
+        />
+      )}
+
+      {showInvoiceForm && id && (
+        <InvoiceModal
+          defaultPatientId={id}
+          hidePatientSelect
+          onClose={() => setShowInvoiceForm(false)}
+          onSave={() => {
+            loadPatientData()
+            setShowInvoiceForm(false)
           }}
         />
       )}

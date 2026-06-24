@@ -3,6 +3,7 @@ import { Plus, Search, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { createPatient } from '@/lib/patients'
 import { format } from 'date-fns'
 
 const avatarColors = [
@@ -86,12 +87,10 @@ export function Patients() {
       return
     }
 
-    const patientPayload = {
+    const { age: _age, ...patientPayload } = {
       ...formData,
       date_of_birth: dateOfBirth,
     }
-
-    delete patientPayload.age
 
     try {
       if (editingId) {
@@ -100,7 +99,7 @@ export function Patients() {
           .update(patientPayload)
           .eq('id', editingId)
       } else {
-        await supabase.from('patients').insert([patientPayload])
+        await createPatient(patientPayload)
       }
       setShowForm(false)
       setEditingId(null)

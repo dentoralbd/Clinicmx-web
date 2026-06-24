@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
+import { getPatientDobOrAge } from '@/lib/utils'
 
 interface Appointment {
   id: string
@@ -17,6 +18,8 @@ interface Appointment {
   patients: {
     first_name: string
     last_name: string
+    date_of_birth?: string | null
+    age?: number | string | null
   }
 }
 
@@ -68,7 +71,7 @@ export function Appointments() {
         .from('appointments')
         .select(`
           *,
-          patients (first_name, last_name)
+          patients (first_name, last_name, date_of_birth)
         `)
         .gte('date_time', startOfDay.toISOString())
         .lte('date_time', endOfDay.toISOString())
@@ -238,6 +241,7 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
   }
 
   const isClosed = appointment.status === 'Cancelled' || appointment.status === 'Completed'
+  const patientDobOrAge = getPatientDobOrAge(appointment.patients?.date_of_birth, appointment.patients?.age, '')
 
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
@@ -254,6 +258,7 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
           <p className="text-sm text-text-secondary mt-1">
             {formatLocalAppointmentDateTime(appointment.date_time)} • {appointment.duration} min • {appointment.type}
           </p>
+          {patientDobOrAge && <p className="text-sm text-text-secondary mt-1">{patientDobOrAge}</p>}
           {appointment.notes && <p className="text-sm text-text-secondary mt-1">{appointment.notes}</p>}
         </div>
 
@@ -299,4 +304,3 @@ function formatLocalAppointmentDateTime(dateTime: string | null | undefined) {
   const d = new Date(dateTime)
   return isNaN(d.getTime()) ? '—' : format(d, 'h:mm a')
 }
-

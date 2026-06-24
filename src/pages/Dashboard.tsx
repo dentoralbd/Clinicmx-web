@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
-import { safeFormat } from '@/lib/utils'
+import { getPatientDobOrAge, safeFormat } from '@/lib/utils'
 import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight } from 'lucide-react'
 
 interface Stats {
@@ -53,7 +53,7 @@ export function Dashboard() {
         .from('appointments')
         .select(`
           *,
-          patients (first_name, last_name)
+          patients (first_name, last_name, date_of_birth)
         `)
         .gte('date_time', todayStart.toISOString())
         .lte('date_time', todayEnd.toISOString())
@@ -192,6 +192,7 @@ export function Dashboard() {
                   key={apt.id}
                   time={safeFormat(apt.date_time, 'h:mm a')}
                   patient={`${apt.patients?.first_name ?? ''} ${apt.patients?.last_name ?? ''}`.trim() || 'Unknown Patient'}
+                  patientMeta={getPatientDobOrAge(apt.patients?.date_of_birth, apt.patients?.age, '')}
                   type={apt.type}
                   status={apt.status}
                 />
@@ -272,11 +273,12 @@ const statusColors: Record<string, string> = {
   Cancelled: 'bg-red-100 text-red-700',
 }
 
-function AppointmentItem({ time, patient, type, status }: any) {
+function AppointmentItem({ time, patient, patientMeta, type, status }: any) {
   return (
     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors">
       <div>
         <p className="font-medium">{patient}</p>
+        {patientMeta && <p className="text-xs text-text-secondary">{patientMeta}</p>}
         <p className="text-sm text-text-secondary">{type}</p>
       </div>
       <div className="flex flex-col items-end gap-1">
@@ -314,4 +316,3 @@ function PatientItem({ id, name, lastVisit, onClick }: any) {
     </button>
   )
 }
-
