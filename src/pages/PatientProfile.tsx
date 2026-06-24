@@ -1,17 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-<<<<<<< HEAD
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Upload, Image, X, User, FolderOpen, MessageSquare } from 'lucide-react'
-=======
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Edit, Lightbulb, X, Pencil, Upload, Image } from 'lucide-react'
->>>>>>> origin/main
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
-<<<<<<< HEAD
 type SectionId =
   | 'profile'
   | 'medical'
@@ -87,30 +81,6 @@ function formatDateValue(value?: string | null, dateFormat = 'MMM d, yyyy') {
 function getInvoiceDue(invoice: any) {
   return (invoice.total_amount || 0) - (invoice.paid_amount || 0)
 }
-=======
-// ─── LOCAL MEMORY HELPERS ─────────────────────────────
-const LOCAL_MEDS_KEY = 'clinicmx_local_medications'
-const LOCAL_INVS_KEY = 'clinicmx_local_investigations'
-
-function getLocalItems(key: string): any[] {
-  try {
-    return JSON.parse(localStorage.getItem(key) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveLocalItem(key: string, item: any) {
-  const items = getLocalItems(key)
-  const exists = items.some(
-    (i: any) => i.name?.toLowerCase() === item.name?.toLowerCase()
-  )
-  if (!exists && item.name?.trim()) {
-    localStorage.setItem(key, JSON.stringify([item, ...items].slice(0, 30)))
-  }
-}
-// ─────────────────────────────────────────────────────
->>>>>>> origin/main
 
 export function PatientProfile() {
   const { id } = useParams<{ id: string }>()
@@ -129,13 +99,6 @@ export function PatientProfile() {
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
-  const [editingPrescriptionId, setEditingPrescriptionId] = useState<string | null>(null)
-  const [medicationTemplates, setMedicationTemplates] = useState<any[]>([])
-  const [investigationTemplates, setInvestigationTemplates] = useState<any[]>([])
-  const [localMeds, setLocalMeds] = useState<any[]>([])
-  const [localInvs, setLocalInvs] = useState<any[]>([])
-  const [showMedTemplates, setShowMedTemplates] = useState(false)
-  const [showInvTemplates, setShowInvTemplates] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [fileCategory, setFileCategory] = useState<'profile_photo' | 'clinical_image' | 'xray_image'>('clinical_image')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -159,10 +122,7 @@ export function PatientProfile() {
   useEffect(() => {
     if (id) {
       loadPatientData()
-      loadTemplates()
     }
-    setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
-    setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
   }, [id])
 
   async function loadPatientData() {
@@ -231,21 +191,6 @@ export function PatientProfile() {
     }
   }
 
-  async function loadTemplates() {
-    const { data: medTemplates } = await supabase
-      .from('medication_templates')
-      .select('*')
-      .order('usage_count', { ascending: false })
-
-    const { data: invTemplates } = await supabase
-      .from('investigation_templates')
-      .select('*')
-      .order('usage_count', { ascending: false })
-
-    setMedicationTemplates(medTemplates || [])
-    setInvestigationTemplates(invTemplates || [])
-  }
-
   async function saveToothCondition(toothNumber: number, condition: string, notes: string) {
     if (!id) return
 
@@ -305,34 +250,15 @@ export function PatientProfile() {
     if (!id) return
 
     try {
-      const payload = {
+      await supabase.from('prescriptions').insert([{
         patient_id: id,
         prescribed_date: format(new Date(), 'yyyy-MM-dd'),
         diagnosis: prescriptionForm.diagnosis,
         medications: prescriptionForm.medications.filter(m => m.name.trim()),
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
         notes: prescriptionForm.notes,
-      }
-
-      if (editingPrescriptionId) {
-        await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
-      } else {
-        await supabase.from('prescriptions').insert([payload])
-
-        for (const med of prescriptionForm.medications) {
-          if (med.name.trim()) saveLocalItem(LOCAL_MEDS_KEY, med)
-        }
-        for (const inv of prescriptionForm.investigations) {
-          if (inv.name.trim()) saveLocalItem(LOCAL_INVS_KEY, inv)
-        }
-        setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
-        setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
-      }
-
+      }])
       setShowPrescriptionForm(false)
-      setEditingPrescriptionId(null)
-      setShowMedTemplates(false)
-      setShowInvTemplates(false)
       setPrescriptionForm({
         diagnosis: '',
         medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
@@ -340,38 +266,9 @@ export function PatientProfile() {
         notes: '',
       })
       loadPatientData()
-      loadTemplates()
     } catch (error) {
       console.error('Error saving prescription:', error)
       alert('Failed to save prescription')
-    }
-  }
-
-  function startEditPrescription(prescription: any) {
-    setEditingPrescriptionId(prescription.id)
-    setPrescriptionForm({
-      diagnosis: prescription.diagnosis || '',
-      medications:
-        Array.isArray(prescription.medications) && prescription.medications.length > 0
-          ? prescription.medications
-          : [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
-      investigations:
-        Array.isArray(prescription.investigations) && prescription.investigations.length > 0
-          ? prescription.investigations
-          : [{ name: '', description: '' }],
-      notes: prescription.notes || '',
-    })
-    setShowPrescriptionForm(true)
-  }
-
-  async function handleDeletePrescription(prescriptionId: string) {
-    if (!confirm('Are you sure you want to delete this prescription?')) return
-    try {
-      await supabase.from('prescriptions').delete().eq('id', prescriptionId)
-      loadPatientData()
-    } catch (error) {
-      console.error('Error deleting prescription:', error)
-      alert('Failed to delete prescription')
     }
   }
 
@@ -448,18 +345,7 @@ export function PatientProfile() {
   }
 
   if (loading) {
-    return (
-      <div className="space-y-6 p-6 page-fade-in">
-        <div className="skeleton h-8 w-48" />
-        <div className="skeleton h-4 w-32" />
-        <div className="flex gap-2">
-          {[...Array(7)].map((_, i) => <div key={i} className="skeleton h-9 w-24" />)}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => <div key={i} className="skeleton h-32 rounded-lg" />)}
-        </div>
-      </div>
-    )
+    return <div className="p-6">Loading...</div>
   }
 
   if (!patient) {
@@ -1345,15 +1231,9 @@ export function PatientProfile() {
   }
 
   return (
-<<<<<<< HEAD
     <div className="space-y-6 pb-24 md:pb-6 page-fade-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <Button variant="outline" size="sm" onClick={() => navigate('/patients')} className="w-full sm:w-auto">
-=======
-    <div className="space-y-6 page-fade-in">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => navigate('/patients')}>
->>>>>>> origin/main
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
@@ -1427,371 +1307,6 @@ export function PatientProfile() {
           {mobileNavSections.map((sectionId) => {
             const section = sectionOptions.find((item) => item.id === sectionId)!
 
-<<<<<<< HEAD
-=======
-      {activeTab === 'visits' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Visit History</h3>
-            <Button size="sm" onClick={() => setShowVisitForm(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Visit
-            </Button>
-          </div>
-          {visits.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No visits recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {visits.map((visit) => (
-                <div key={visit.id} className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CalendarIcon className="w-4 h-4 text-text-secondary" />
-                    <span className="font-medium">{format(new Date(visit.visit_date), 'MMMM d, yyyy h:mm a')}</span>
-                  </div>
-                  {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
-                  {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
-                  {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
-                  {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
-                  {visit.notes && <InfoRow label="Notes" value={visit.notes} />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'dental-chart' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="font-semibold mb-6 text-center">Dental Chart</h3>
-          <div className="space-y-8">
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Upper Teeth</h4>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {[...Array(16)].map((_, i) => {
-                  const toothNum = i + 1
-                  const condition = getToothCondition(toothNum)
-                  return (
-                    <Tooth
-                      key={toothNum}
-                      number={toothNum}
-                      condition={condition}
-                      color={getToothColor(condition)}
-                      onClick={() => setSelectedTooth(toothNum)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-4 text-center">Lower Teeth</h4>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {[...Array(16)].map((_, i) => {
-                  const toothNum = i + 17
-                  const condition = getToothCondition(toothNum)
-                  return (
-                    <Tooth
-                      key={toothNum}
-                      number={toothNum}
-                      condition={condition}
-                      color={getToothColor(condition)}
-                      onClick={() => setSelectedTooth(toothNum)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3 justify-center pt-4 border-t border-gray-200">
-              <Legend color="fill-white stroke-gray-400" label="Healthy" />
-              <Legend color="fill-red-200 stroke-red-500" label="Cavity" />
-              <Legend color="fill-blue-200 stroke-blue-500" label="Filled" />
-              <Legend color="fill-purple-200 stroke-purple-500" label="Root Canal" />
-              <Legend color="fill-yellow-200 stroke-yellow-600" label="Crown" />
-              <Legend color="fill-gray-300 stroke-gray-500" label="Missing" />
-              <Legend color="fill-green-200 stroke-green-500" label="Implant" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'treatments' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="font-semibold">Treatment History</h3>
-          </div>
-          {treatments.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Treatment</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tooth</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {treatments.map((treatment) => (
-                    <tr key={treatment.id}>
-                      <td className="px-4 py-3 text-sm">{format(new Date(treatment.created_at), 'MMM d, yyyy')}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{treatment.treatment_type}</div>
-                        {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                          treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {treatment.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm">৳{treatment.cost?.toFixed(2) || '0.00'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'prescriptions' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Prescription History</h3>
-            <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }], investigations: [{ name: '', description: '' }], notes: '' }); setShowPrescriptionForm(true) }}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Prescription
-            </Button>
-          </div>
-          {prescriptions.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No prescriptions recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {prescriptions.map((prescription) => (
-                <div key={prescription.id} className="p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="font-medium">{format(new Date(prescription.prescribed_date), 'MMMM d, yyyy')}</div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => startEditPrescription(prescription)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePrescription(prescription.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                  {prescription.diagnosis && (
-                    <div className="mb-3">
-                      <span className="text-sm font-medium text-text-secondary">Diagnosis: </span>
-                      <span className="text-sm">{prescription.diagnosis}</span>
-                    </div>
-                  )}
-                  {Array.isArray(prescription.medications) && prescription.medications.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-sm font-medium text-text-secondary mb-2">Medications:</div>
-                      <div className="space-y-2">
-                        {prescription.medications.map((med: any, idx: number) => (
-                          <div key={idx} className="text-sm bg-blue-50 p-2 rounded">
-                            <div className="font-medium">{med.name}</div>
-                            <div className="text-text-secondary">
-                              {med.dosage} • {med.frequency} • {med.duration}
-                              {med.instructions && ` • ${med.instructions}`}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(prescription.investigations) && prescription.investigations.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-sm font-medium text-text-secondary mb-2">Investigations:</div>
-                      <div className="space-y-1">
-                        {prescription.investigations.map((inv: any, idx: number) => (
-                          <div key={idx} className="text-sm bg-green-50 p-2 rounded">
-                            <span className="font-medium">{inv.name}</span>
-                            {inv.description && <span className="text-text-secondary"> - {inv.description}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {prescription.notes && (
-                    <div className="text-sm">
-                      <span className="font-medium text-text-secondary">Notes: </span>
-                      {prescription.notes}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'appointments' && (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="font-semibold">Appointment History</h3>
-            <Button onClick={() => setShowAppointmentForm(true)} size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              New Appointment
-            </Button>
-          </div>
-          {appointments.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {appointments.map((appointment) => (
-                <div key={appointment.id} className="p-4 flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="font-medium">{format(new Date(appointment.date_time), 'MMMM d, yyyy h:mm a')}</div>
-                    <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
-                    {appointment.notes && <div className="text-sm mt-1">{appointment.notes}</div>}
-                  </div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                    appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
-                    {appointment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'billing' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="text-sm text-blue-600 font-medium">Total Billed</div>
-              <div className="text-2xl font-bold text-blue-900">৳{totalBilled.toFixed(2)}</div>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="text-sm text-green-600 font-medium">Total Paid</div>
-              <div className="text-2xl font-bold text-green-900">৳{totalPaid.toFixed(2)}</div>
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="text-sm text-red-600 font-medium">Balance Due</div>
-              <div className="text-2xl font-bold text-red-900">৳{totalDue.toFixed(2)}</div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="font-semibold">Invoice History</h3>
-            </div>
-            {invoices.length === 0 ? (
-              <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Items</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Total</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Paid</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Due</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {invoices.map((invoice) => (
-                      <tr key={invoice.id}>
-                        <td className="px-4 py-3 text-sm">{format(new Date(invoice.created_at), 'MMM d, yyyy')}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {Array.isArray(invoice.items) ? invoice.items.length : 0} item(s)
-                        </td>
-                        <td className="px-4 py-3 text-sm">৳{invoice.total_amount?.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm">৳{invoice.paid_amount?.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm">৳{(invoice.total_amount - invoice.paid_amount)?.toFixed(2)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            invoice.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                            invoice.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {invoice.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'files' && (
-        <div className="space-y-6">
-          {/* Upload area */}
-          <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-            <h3 className="font-semibold mb-4">Upload File</h3>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-              <div>
-                <label className="block text-sm font-medium mb-1">Category</label>
-                <select
-                  value={fileCategory}
-                  onChange={(e) => setFileCategory(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="profile_photo">Profile Photo</option>
-                  <option value="clinical_image">Clinical Image</option>
-                  <option value="xray_image">X-Ray Image</option>
-                </select>
-              </div>
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingFile}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  {uploadingFile ? 'Uploading…' : 'Choose & Upload'}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* File list grouped by category */}
-          {(['profile_photo', 'clinical_image', 'xray_image'] as const).map((cat) => {
-            const catFiles = files.filter((f) => f.file_category === cat)
-            if (catFiles.length === 0) return null
-            const labels: Record<string, string> = {
-              profile_photo: 'Profile Photos',
-              clinical_image: 'Clinical Images',
-              xray_image: 'X-Ray Images',
-            }
->>>>>>> origin/main
             return (
               <BottomNavButton
                 key={section.id}
@@ -1850,16 +1365,7 @@ export function PatientProfile() {
           formData={prescriptionForm}
           setFormData={setPrescriptionForm}
           onSubmit={handlePrescriptionSubmit}
-          onClose={() => { setShowPrescriptionForm(false); setEditingPrescriptionId(null); setShowMedTemplates(false); setShowInvTemplates(false) }}
-          isEditing={!!editingPrescriptionId}
-          medicationTemplates={medicationTemplates}
-          investigationTemplates={investigationTemplates}
-          localMeds={localMeds}
-          localInvs={localInvs}
-          showMedTemplates={showMedTemplates}
-          setShowMedTemplates={setShowMedTemplates}
-          showInvTemplates={showInvTemplates}
-          setShowInvTemplates={setShowInvTemplates}
+          onClose={() => setShowPrescriptionForm(false)}
         />
       )}
 
@@ -2111,30 +1617,12 @@ function VisitFormModal({ formData, setFormData, onSubmit, onClose }: any) {
   )
 }
 
-function PrescriptionFormModal({
-  formData,
-  setFormData,
-  onSubmit,
-  onClose,
-  isEditing,
-  medicationTemplates,
-  investigationTemplates,
-  localMeds,
-  localInvs,
-  showMedTemplates,
-  setShowMedTemplates,
-  showInvTemplates,
-  setShowInvTemplates,
-}: any) {
+function PrescriptionFormModal({ formData, setFormData, onSubmit, onClose }: any) {
   function addMedication() {
     setFormData({
       ...formData,
       medications: [...formData.medications, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
     })
-  }
-
-  function removeMedication(index: number) {
-    setFormData({ ...formData, medications: formData.medications.filter((_: any, i: number) => i !== index) })
   }
 
   function addInvestigation() {
@@ -2144,158 +1632,45 @@ function PrescriptionFormModal({
     })
   }
 
-  function removeInvestigation(index: number) {
-    setFormData({ ...formData, investigations: formData.investigations.filter((_: any, i: number) => i !== index) })
-  }
-
-  function addMedicationFromTemplate(template: any) {
-    const newMeds = [...formData.medications]
-    const emptyIndex = newMeds.findIndex((m: any) => !m.name)
-    const item = {
-      name: template.name,
-      dosage: template.dosage || '',
-      frequency: template.frequency || '',
-      duration: template.duration || '',
-      instructions: template.instructions || '',
-    }
-    if (emptyIndex >= 0) {
-      newMeds[emptyIndex] = item
-    } else {
-      newMeds.push(item)
-    }
-    setFormData({ ...formData, medications: newMeds })
-    setShowMedTemplates(false)
-  }
-
-  function addInvestigationFromTemplate(template: any) {
-    const newInvs = [...formData.investigations]
-    const emptyIndex = newInvs.findIndex((i: any) => !i.name)
-    const item = {
-      name: template.name,
-      description: template.description || '',
-    }
-    if (emptyIndex >= 0) {
-      newInvs[emptyIndex] = item
-    } else {
-      newInvs.push(item)
-    }
-    setFormData({ ...formData, investigations: newInvs })
-    setShowInvTemplates(false)
-  }
-
-  function applyLocalMedication(med: any) {
-    const newMeds = [...formData.medications]
-    const emptyIndex = newMeds.findIndex((m: any) => !m.name.trim())
-    const item = {
-      name: med.name || '',
-      dosage: med.dosage || '',
-      frequency: med.frequency || '',
-      duration: med.duration || '',
-      instructions: med.instructions || '',
-    }
-    if (emptyIndex >= 0) {
-      newMeds[emptyIndex] = item
-    } else {
-      newMeds.push(item)
-    }
-    setFormData({ ...formData, medications: newMeds })
-  }
-
-  function applyLocalInvestigation(inv: any) {
-    const newInvs = [...formData.investigations]
-    const emptyIndex = newInvs.findIndex((i: any) => !i.name.trim())
-    const item = {
-      name: inv.name || '',
-      description: inv.description || '',
-    }
-    if (emptyIndex >= 0) {
-      newInvs[emptyIndex] = item
-    } else {
-      newInvs.push(item)
-    }
-    setFormData({ ...formData, investigations: newInvs })
-  }
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full my-8">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold">
-            {isEditing ? 'Edit Prescription' : 'New Prescription'}
-          </h2>
+          <h2 className="text-xl font-bold">Add Prescription</h2>
         </div>
 
-        <form onSubmit={onSubmit} className="p-6 space-y-6">
+        <form onSubmit={onSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Diagnosis</label>
             <input
               type="text"
               value={formData.diagnosis}
               onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
-              placeholder="Enter diagnosis"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Medications</label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowMedTemplates(!showMedTemplates)}
-                >
-                  <Lightbulb className="w-4 h-4 mr-1" />
-                  Templates ({medicationTemplates.length})
-                </Button>
-                <Button type="button" size="sm" onClick={addMedication}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add
-                </Button>
-              </div>
+              <Button type="button" size="sm" onClick={addMedication}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add
+              </Button>
             </div>
-
-            {showMedTemplates && medicationTemplates.length > 0 && (
-              <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium text-sm">Quick Add from Templates</h4>
-                  <button type="button" onClick={() => setShowMedTemplates(false)}>
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {medicationTemplates.slice(0, 10).map((template: any) => (
-                    <button
-                      key={template.id}
-                      type="button"
-                      onClick={() => addMedicationFromTemplate(template)}
-                      className="text-left p-2 bg-white rounded border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors"
-                    >
-                      <div className="font-medium text-sm">{template.name}</div>
-                      <div className="text-xs text-text-secondary">
-                        {template.dosage} • {template.frequency} • {template.duration}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3">
+            <div className="space-y-2">
               {formData.medications.map((med: any, index: number) => (
-                <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 p-3 bg-gray-50 rounded-lg">
+                <div key={index} className="grid grid-cols-5 gap-2 p-2 bg-gray-50 rounded">
                   <input
                     type="text"
-                    placeholder="Medicine name"
+                    placeholder="Name"
                     value={med.name}
                     onChange={(e) => {
                       const newMeds = [...formData.medications]
                       newMeds[index].name = e.target.value
                       setFormData({ ...formData, medications: newMeds })
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
                   <input
                     type="text"
@@ -2306,7 +1681,7 @@ function PrescriptionFormModal({
                       newMeds[index].dosage = e.target.value
                       setFormData({ ...formData, medications: newMeds })
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
                   <input
                     type="text"
@@ -2317,7 +1692,7 @@ function PrescriptionFormModal({
                       newMeds[index].frequency = e.target.value
                       setFormData({ ...formData, medications: newMeds })
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
                   <input
                     type="text"
@@ -2328,177 +1703,74 @@ function PrescriptionFormModal({
                       newMeds[index].duration = e.target.value
                       setFormData({ ...formData, medications: newMeds })
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Instructions"
-                      value={med.instructions}
-                      onChange={(e) => {
-                        const newMeds = [...formData.medications]
-                        newMeds[index].instructions = e.target.value
-                        setFormData({ ...formData, medications: newMeds })
-                      }}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                    {formData.medications.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeMedication(index)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="Instructions"
+                    value={med.instructions}
+                    onChange={(e) => {
+                      const newMeds = [...formData.medications]
+                      newMeds[index].instructions = e.target.value
+                      setFormData({ ...formData, medications: newMeds })
+                    }}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                  />
                 </div>
               ))}
             </div>
-
-            {localMeds.length > 0 && (
-              <div className="mt-3">
-                <div className="text-xs font-medium text-text-secondary mb-2">
-                  Recently Used — click to add:
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {localMeds.map((med: any, idx: number) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => applyLocalMedication(med)}
-                      className="px-3 py-1.5 bg-blue-50 text-blue-700 text-sm rounded-full border border-blue-200 hover:bg-blue-100 transition-colors"
-                      title={`${med.dosage} • ${med.frequency} • ${med.duration}`}
-                    >
-                      {med.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Investigations</label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowInvTemplates(!showInvTemplates)}
-                >
-                  <Lightbulb className="w-4 h-4 mr-1" />
-                  Templates ({investigationTemplates.length})
-                </Button>
-                <Button type="button" size="sm" onClick={addInvestigation}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add
-                </Button>
-              </div>
+              <Button type="button" size="sm" onClick={addInvestigation}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add
+              </Button>
             </div>
-
-            {showInvTemplates && investigationTemplates.length > 0 && (
-              <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium text-sm">Quick Add from Templates</h4>
-                  <button type="button" onClick={() => setShowInvTemplates(false)}>
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {investigationTemplates.slice(0, 12).map((template: any) => (
-                    <button
-                      key={template.id}
-                      type="button"
-                      onClick={() => addInvestigationFromTemplate(template)}
-                      className="text-left p-2 bg-white rounded border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors"
-                    >
-                      <div className="font-medium text-sm">{template.name}</div>
-                      {template.description && (
-                        <div className="text-xs text-text-secondary truncate">{template.description}</div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3">
+            <div className="space-y-2">
               {formData.investigations.map((inv: any, index: number) => (
-                <div key={index} className="flex gap-2 p-3 bg-gray-50 rounded-lg">
+                <div key={index} className="grid grid-cols-2 gap-2 p-2 bg-gray-50 rounded">
                   <input
                     type="text"
-                    placeholder="Investigation name (e.g., CBC, X-Ray)"
+                    placeholder="Investigation name"
                     value={inv.name}
                     onChange={(e) => {
                       const newInvs = [...formData.investigations]
                       newInvs[index].name = e.target.value
                       setFormData({ ...formData, investigations: newInvs })
                     }}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
                   <input
                     type="text"
-                    placeholder="Description (optional)"
+                    placeholder="Description"
                     value={inv.description}
                     onChange={(e) => {
                       const newInvs = [...formData.investigations]
                       newInvs[index].description = e.target.value
                       setFormData({ ...formData, investigations: newInvs })
                     }}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
                   />
-                  {formData.investigations.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeInvestigation(index)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
-
-            {localInvs.length > 0 && (
-              <div className="mt-3">
-                <div className="text-xs font-medium text-text-secondary mb-2">
-                  Recently Used — click to add:
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {localInvs.map((inv: any, idx: number) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => applyLocalInvestigation(inv)}
-                      className="px-3 py-1.5 bg-green-50 text-green-700 text-sm rounded-full border border-green-200 hover:bg-green-100 transition-colors"
-                      title={inv.description || ''}
-                    >
-                      {inv.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
             <textarea
-              rows={3}
+              rows={2}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Additional notes..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1">
-              {isEditing ? 'Update Prescription' : 'Save Prescription'}
-            </Button>
+            <Button type="submit" className="flex-1">Save Prescription</Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
           </div>
         </form>
