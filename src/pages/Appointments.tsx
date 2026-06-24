@@ -244,26 +244,18 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
         .from('appointments')
         .select('id, date_time, duration, status')
         .neq('status', 'Cancelled')
-        .eq('date_time', `${formData.date}T${formData.time}:00`)
+        .gte('date_time', `${formData.date}T00:00:00`)
+        .lt('date_time', `${formData.date}T23:59:59`)
 
       if (conflictError) throw conflictError
 
-      const exactSameTimeTaken = (existingAppointments || []).some((appointment) => appointment.status !== 'Cancelled')
+      const exactSameTimeTaken = (existingAppointments || []).some((appointment) => appointment.date_time.slice(11, 16) === formData.time)
       if (exactSameTimeTaken) {
         setErrorMessage('This appointment time is already booked. Please choose another time.')
         return
       }
 
-      const { data: overlappingAppointments, error: overlapError } = await supabase
-        .from('appointments')
-        .select('id, date_time, duration, status')
-        .neq('status', 'Cancelled')
-        .gte('date_time', `${formData.date}T00:00:00`)
-        .lt('date_time', `${formData.date}T23:59:59`)
-
-      if (overlapError) throw overlapError
-
-      const hasConflict = (overlappingAppointments || []).some((appointment) => {
+      const hasConflict = (existingAppointments || []).some((appointment) => {
         const existingStart = toLocalDateTimeValue(appointment.date_time.slice(0, 10), appointment.date_time.slice(11, 16))
         const existingEnd = existingStart + appointment.duration * 60000
         return appointmentStart < existingEnd && appointmentEnd > existingStart
@@ -325,38 +317,17 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
 
           <div>
             <label className="block text-sm font-medium mb-1">Patient Name *</label>
-            <input
-              type="text"
-              required
-              placeholder="Full name"
-              value={formData.patient_name}
-              onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <input type="text" required placeholder="Full name" value={formData.patient_name} onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Age *</label>
-              <input
-                type="number"
-                required
-                min="0"
-                max="150"
-                placeholder="Years"
-                value={formData.patient_age}
-                onChange={(e) => setFormData({ ...formData, patient_age: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <input type="number" required min="0" max="150" placeholder="Years" value={formData.patient_age} onChange={(e) => setFormData({ ...formData, patient_age: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Sex *</label>
-              <select
-                required
-                value={formData.patient_sex}
-                onChange={(e) => setFormData({ ...formData, patient_sex: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
+              <select required value={formData.patient_sex} onChange={(e) => setFormData({ ...formData, patient_sex: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="">Select...</option>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -367,47 +338,24 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
 
           <div>
             <label className="block text-sm font-medium mb-1">Mobile Number *</label>
-            <input
-              type="tel"
-              required
-              placeholder="Mobile number"
-              value={formData.patient_mobile}
-              onChange={(e) => setFormData({ ...formData, patient_mobile: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <input type="tel" required placeholder="Mobile number" value={formData.patient_mobile} onChange={(e) => setFormData({ ...formData, patient_mobile: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Date</label>
-              <input
-                type="date"
-                required
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Time</label>
-              <input
-                type="time"
-                required
-                value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <input type="time" required value={formData.time} onChange={(e) => setFormData({ ...formData, time: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Duration (min)</label>
-              <select
-                value={formData.duration}
-                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
+              <select value={formData.duration} onChange={(e) => setFormData({ ...formData, duration: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="15">15 min</option>
                 <option value="30">30 min</option>
                 <option value="45">45 min</option>
@@ -418,11 +366,7 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
+              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 <option>Checkup</option>
                 <option>Cleaning</option>
                 <option>Filling</option>
@@ -436,12 +380,7 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
-              rows={2}
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <textarea rows={2} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
 
           <div className="flex gap-3 pt-4">
