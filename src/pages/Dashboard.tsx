@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
-import { Users, Calendar, DollarSign, TrendingUp } from 'lucide-react'
+import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight } from 'lucide-react'
 
 interface Stats {
   totalPatients: number
@@ -15,6 +16,7 @@ interface Invoice {
 }
 
 export function Dashboard() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<Stats>({
     totalPatients: 0,
     todayAppointments: 0,
@@ -24,15 +26,22 @@ export function Dashboard() {
   const [todayAppointments, setTodayAppointments] = useState<any[]>([])
   const [recentPatients, setRecentPatients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
   }, [])
 
-  async function loadDashboardData() {
+  async function loadDashboardData(isRefresh = false) {
     try {
-      setLoading(true)
-      const today = format(new Date(), 'yyyy-MM-dd')
+      if (isRefresh) setRefreshing(true)
+      else setLoading(true)
+
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayEnd = new Date()
+      todayEnd.setHours(23, 59, 59, 999)
+
       const monthStart = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd')
 
       const { count: patientsCount } = await supabase
@@ -45,8 +54,8 @@ export function Dashboard() {
           *,
           patients (first_name, last_name)
         `)
-        .gte('date_time', `${today}T00:00:00`)
-        .lt('date_time', `${today}T23:59:59`)
+        .gte('date_time', todayStart.toISOString())
+        .lte('date_time', todayEnd.toISOString())
         .order('date_time')
         .limit(5)
 
@@ -81,22 +90,45 @@ export function Dashboard() {
       console.error('Error loading dashboard:', error)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-text-secondary">Loading dashboard...</div>
+      <div className="space-y-6 page-fade-in">
+        <div>
+          <div className="skeleton h-8 w-40 mb-2" />
+          <div className="skeleton h-4 w-64" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="skeleton h-4 w-32 mb-3" />
+              <div className="skeleton h-8 w-20" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-text-secondary mt-1">Welcome back! Here's your clinic overview.</p>
+    <div className="space-y-6 page-fade-in">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-text-secondary mt-1">Welcome back! Here's your clinic overview.</p>
+        </div>
+        <button
+          onClick={() => loadDashboardData(true)}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+          title="Refresh"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -105,32 +137,53 @@ export function Dashboard() {
           value={stats.todayAppointments.toString()}
           icon={<Calendar className="w-6 h-6" />}
           color="blue"
+          onClick={() => navigate('/appointments')}
         />
         <StatCard
           title="Total Patients"
           value={stats.totalPatients.toString()}
           icon={<Users className="w-6 h-6" />}
           color="green"
+          onClick={() => navigate('/patients')}
         />
         <StatCard
           title="Pending Bills"
           value={stats.pendingInvoices.toString()}
           icon={<DollarSign className="w-6 h-6" />}
           color="orange"
+          onClick={() => navigate('/billing')}
         />
         <StatCard
           title="Revenue (Month)"
           value={`$${stats.monthRevenue.toFixed(2)}`}
           icon={<TrendingUp className="w-6 h-6" />}
           color="purple"
+          onClick={() => navigate('/billing')}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold mb-4">Today's Appointments</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Today's Appointments</h3>
+            <button
+              onClick={() => navigate('/appointments')}
+              className="flex items-center gap-1 text-sm text-primary hover:text-primary-hover transition-colors"
+            >
+              View all <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
           {todayAppointments.length === 0 ? (
-            <p className="text-text-secondary text-center py-4">No appointments today</p>
+            <div className="text-center py-8">
+              <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-text-secondary text-sm">No appointments today</p>
+              <button
+                onClick={() => navigate('/appointments')}
+                className="mt-3 text-sm text-primary hover:underline"
+              >
+                Schedule one →
+              </button>
+            </div>
           ) : (
             <div className="space-y-3">
               {todayAppointments.map((apt) => (
@@ -139,6 +192,7 @@ export function Dashboard() {
                   time={format(new Date(apt.date_time), 'h:mm a')}
                   patient={`${apt.patients.first_name} ${apt.patients.last_name}`}
                   type={apt.type}
+                  status={apt.status}
                 />
               ))}
             </div>
@@ -146,16 +200,35 @@ export function Dashboard() {
         </div>
 
         <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold mb-4">Recent Patients</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Recent Patients</h3>
+            <button
+              onClick={() => navigate('/patients')}
+              className="flex items-center gap-1 text-sm text-primary hover:text-primary-hover transition-colors"
+            >
+              View all <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
           {recentPatients.length === 0 ? (
-            <p className="text-text-secondary text-center py-4">No patients yet</p>
+            <div className="text-center py-8">
+              <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-text-secondary text-sm">No patients yet</p>
+              <button
+                onClick={() => navigate('/patients')}
+                className="mt-3 text-sm text-primary hover:underline"
+              >
+                Add a patient →
+              </button>
+            </div>
           ) : (
             <div className="space-y-3">
               {recentPatients.map((patient) => (
                 <PatientItem
                   key={patient.id}
+                  id={patient.id}
                   name={`${patient.first_name} ${patient.last_name}`}
                   lastVisit={format(new Date(patient.created_at), 'MMM d, yyyy')}
+                  onClick={() => navigate(`/patients/${patient.id}`)}
                 />
               ))}
             </div>
@@ -166,7 +239,7 @@ export function Dashboard() {
   )
 }
 
-function StatCard({ title, value, icon, color }: any) {
+function StatCard({ title, value, icon, color, onClick }: any) {
   const colors: any = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -174,42 +247,70 @@ function StatCard({ title, value, icon, color }: any) {
     purple: 'bg-purple-50 text-purple-600',
   }
   return (
-    <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+    <button
+      onClick={onClick}
+      className="bg-card rounded-lg shadow-sm border border-gray-200 p-6 text-left w-full hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 group"
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-text-secondary text-sm">{title}</p>
           <p className="text-2xl font-bold mt-1">{value}</p>
         </div>
-        <div className={`w-12 h-12 rounded-lg ${colors[color]} flex items-center justify-center`}>
+        <div className={`w-12 h-12 rounded-lg ${colors[color]} flex items-center justify-center group-hover:scale-110 transition-transform duration-150`}>
           {icon}
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
-function AppointmentItem({ time, patient, type }: any) {
+const statusColors: Record<string, string> = {
+  Scheduled: 'bg-blue-100 text-blue-700',
+  Confirmed: 'bg-green-100 text-green-700',
+  Completed: 'bg-gray-100 text-gray-600',
+  Cancelled: 'bg-red-100 text-red-700',
+}
+
+function AppointmentItem({ time, patient, type, status }: any) {
   return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors">
       <div>
         <p className="font-medium">{patient}</p>
         <p className="text-sm text-text-secondary">{type}</p>
       </div>
-      <span className="text-sm font-medium text-primary">{time}</span>
+      <div className="flex flex-col items-end gap-1">
+        <span className="text-sm font-medium text-primary">{time}</span>
+        {status && (
+          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusColors[status] || 'bg-gray-100'}`}>
+            {status}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
 
-function PatientItem({ name, lastVisit }: any) {
+const avatarColors = [
+  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
+  'bg-pink-500', 'bg-teal-500', 'bg-indigo-500', 'bg-rose-500',
+]
+
+function PatientItem({ id, name, lastVisit, onClick }: any) {
+  const colorIndex = id ? id.charCodeAt(0) % avatarColors.length : 0
   return (
-    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-      <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-white font-semibold">
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg w-full text-left hover:bg-blue-50 hover:shadow-sm transition-all group"
+    >
+      <div className={`w-10 h-10 ${avatarColors[colorIndex]} rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0`}>
         {name[0]}
       </div>
-      <div>
-        <p className="font-medium">{name}</p>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate group-hover:text-primary transition-colors">{name}</p>
         <p className="text-sm text-text-secondary">Added: {lastVisit}</p>
       </div>
-    </div>
+      <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-primary transition-colors flex-shrink-0" />
+    </button>
   )
 }
+

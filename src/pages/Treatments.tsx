@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 
@@ -62,6 +62,22 @@ export function Treatments() {
     }
   }
 
+  async function updateTreatmentStatus(id: string, newStatus: string) {
+    try {
+      const { error } = await supabase
+        .from('treatments')
+        .update({ status: newStatus })
+        .eq('id', id)
+      if (error) throw error
+      setTreatments(prev =>
+        prev.map(t => t.id === id ? { ...t, status: newStatus } : t)
+      )
+    } catch (error) {
+      console.error('Error updating treatment status:', error)
+      alert('Failed to update treatment')
+    }
+  }
+
   const filteredTreatments = treatments.filter(
     (t) =>
       t.patients.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -70,7 +86,7 @@ export function Treatments() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Treatments</h1>
@@ -97,10 +113,13 @@ export function Treatments() {
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-text-secondary">Loading treatments...</div>
+          <div className="p-8 flex justify-center">
+            <span className="spinner" />
+          </div>
         ) : filteredTreatments.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
-            {searchQuery ? 'No treatments found' : 'No treatments yet. Click "New Treatment" to get started.'}
+            <Activity className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p>{searchQuery ? 'No treatments found' : 'No treatments yet. Click "New Treatment" to get started.'}</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
@@ -109,6 +128,7 @@ export function Treatments() {
                 key={treatment.id}
                 treatment={treatment}
                 onDelete={() => deleteTreatment(treatment.id)}
+                onStatusChange={(status) => updateTreatmentStatus(treatment.id, status)}
               />
             ))}
           </div>
@@ -125,7 +145,16 @@ export function Treatments() {
   )
 }
 
-function TreatmentRow({ treatment, onDelete }: { treatment: Treatment; onDelete: () => void }) {
+const STATUS_TRANSITIONS: Record<string, string> = {
+  Planned: 'In Progress',
+  'In Progress': 'Completed',
+}
+
+function TreatmentRow({ treatment, onDelete, onStatusChange }: {
+  treatment: Treatment
+  onDelete: () => void
+  onStatusChange: (status: string) => void
+}) {
   const statusColors: Record<string, string> = {
     Planned: 'bg-blue-100 text-blue-700',
     'In Progress': 'bg-yellow-100 text-yellow-700',
@@ -133,11 +162,13 @@ function TreatmentRow({ treatment, onDelete }: { treatment: Treatment; onDelete:
     Cancelled: 'bg-red-100 text-red-700',
   }
 
+  const nextStatus = STATUS_TRANSITIONS[treatment.status]
+
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium">
               {treatment.patients.first_name} {treatment.patients.last_name}
             </p>
@@ -154,9 +185,20 @@ function TreatmentRow({ treatment, onDelete }: { treatment: Treatment; onDelete:
           )}
           <p className="text-sm font-medium text-primary mt-2">${treatment.cost.toFixed(2)}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={onDelete}>
-          Delete
-        </Button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {nextStatus && (
+            <button
+              onClick={() => onStatusChange(nextStatus)}
+              className="px-2 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+              title={`Advance to ${nextStatus}`}
+            >
+              → {nextStatus}
+            </button>
+          )}
+          <Button variant="outline" size="sm" onClick={onDelete}>
+            Delete
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -321,7 +363,7 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
 
           <div className="flex gap-3 pt-4">
             <Button type="submit" disabled={saving} className="flex-1">
-              {saving ? 'Creating...' : 'Create Treatment'}
+              {saving ? <><span className="spinner spinner-sm mr-2" />Creating...</> : 'Create Treatment'}
             </Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">
               Cancel

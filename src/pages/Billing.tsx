@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, DollarSign, CheckCircle, Clock } from 'lucide-react'
+import { Plus, DollarSign, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
@@ -91,7 +91,7 @@ export function Billing() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Billing</h1>
@@ -168,7 +168,9 @@ export function Billing() {
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-text-secondary">Loading invoices...</div>
+          <div className="p-8 flex justify-center">
+            <span className="spinner" />
+          </div>
         ) : filteredInvoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
             {filter === 'all' ? 'No invoices yet. Click "New Invoice" to get started.' : `No ${filter.toLowerCase()} invoices.`}
@@ -198,6 +200,7 @@ export function Billing() {
 }
 
 function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMarkPaid: () => void; onDelete: () => void }) {
+  const [expanded, setExpanded] = useState(false)
   const items = Array.isArray(invoice.items) ? invoice.items : []
   const statusColors: Record<string, string> = {
     Pending: 'bg-orange-100 text-orange-700',
@@ -206,45 +209,63 @@ function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMar
   }
 
   return (
-    <div className="p-4 hover:bg-gray-50 transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <p className="font-medium">
-              {invoice.patients.first_name} {invoice.patients.last_name}
-            </p>
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
-              {invoice.status}
-            </span>
-          </div>
-          <p className="text-sm text-text-secondary mt-1">
-            {format(new Date(invoice.created_at), 'MMM d, yyyy')}
-            {invoice.due_date && ` • Due: ${format(new Date(invoice.due_date), 'MMM d, yyyy')}`}
-          </p>
-          {items.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {items.map((item: any, idx: number) => (
-                <p key={idx} className="text-sm text-text-secondary">
-                  {item.description} - ${item.amount?.toFixed(2) || '0.00'}
-                </p>
-              ))}
+    <div className="hover:bg-gray-50 transition-colors">
+      <div
+        className="p-4 cursor-pointer select-none"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium">
+                {invoice.patients.first_name} {invoice.patients.last_name}
+              </p>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
+                {invoice.status}
+              </span>
             </div>
-          )}
-          <p className="text-lg font-bold text-primary mt-2">
-            ${invoice.total_amount.toFixed(2)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {invoice.status === 'Pending' && (
-            <Button variant="outline" size="sm" onClick={onMarkPaid}>
-              Mark Paid
+            <p className="text-sm text-text-secondary mt-1">
+              {format(new Date(invoice.created_at), 'MMM d, yyyy')}
+              {invoice.due_date && ` • Due: ${format(new Date(invoice.due_date), 'MMM d, yyyy')}`}
+              {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
+            </p>
+            <p className="text-lg font-bold text-primary mt-1">
+              ${invoice.total_amount.toFixed(2)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {invoice.status === 'Pending' && (
+              <Button variant="outline" size="sm" onClick={onMarkPaid}>
+                Mark Paid
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={onDelete}>
+              Delete
             </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={onDelete}>
-            Delete
-          </Button>
+            <button className="p-1 text-text-secondary hover:text-text-primary transition-colors" onClick={() => setExpanded(!expanded)}>
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
+
+      {expanded && items.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="bg-gray-50 rounded-lg p-3 space-y-2 border border-gray-200">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Line Items</p>
+            {items.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between items-center text-sm">
+                <span className="text-text-primary">{item.description}</span>
+                <span className="font-medium text-primary">${item.amount?.toFixed(2) || '0.00'}</span>
+              </div>
+            ))}
+            <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="font-bold text-primary">${invoice.total_amount.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

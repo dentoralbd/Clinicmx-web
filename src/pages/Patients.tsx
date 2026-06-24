@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Eye } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
+
+const avatarColors = [
+  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
+  'bg-pink-500', 'bg-teal-500', 'bg-indigo-500', 'bg-rose-500',
+]
+
+function getAvatarColor(id: string) {
+  return avatarColors[id.charCodeAt(0) % avatarColors.length]
+}
 
 function deriveDateOfBirthFromAge(age: number) {
   const today = new Date()
@@ -157,7 +166,7 @@ export function Patients() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold">Patients</h1>
@@ -181,13 +190,28 @@ export function Patients() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12">Loading...</div>
+        <div className="flex justify-center py-12">
+          <span className="spinner" />
+        </div>
+      ) : filteredPatients.length === 0 && !searchTerm ? (
+        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+          <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-text-secondary font-medium mb-3">No patients yet</p>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add First Patient
+          </Button>
+        </div>
       ) : (
         <div className="bg-card rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          {filteredPatients.length === 0 ? (
+            <p className="text-center text-text-secondary py-8">No patients match your search</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Contact</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">DOB</th>
@@ -197,10 +221,18 @@ export function Patients() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredPatients.map((patient) => (
-                  <tr key={patient.id} className="hover:bg-gray-50">
+                  <tr key={patient.id} className="hover:bg-gray-50 transition-colors group">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {patient.patient_code || '-'}
+                    </td>
                     <td className="px-6 py-4">
-                      <div className="font-medium">
-                        {patient.first_name} {patient.last_name}
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 ${getAvatarColor(patient.id)} rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0`}>
+                          {patient.first_name?.[0] || '?'}
+                        </div>
+                        <span className="font-medium group-hover:text-primary transition-colors">
+                          {patient.first_name} {patient.last_name}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm">
@@ -222,12 +254,14 @@ export function Patients() {
                         <button
                           onClick={() => handleEdit(patient)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(patient.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -238,6 +272,7 @@ export function Patients() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 

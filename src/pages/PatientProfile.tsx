@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Edit } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Edit, Upload, Image, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { AppointmentModal } from '@/components/AppointmentModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 
@@ -15,11 +16,17 @@ export function PatientProfile() {
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [appointments, setAppointments] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
+  const [files, setFiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'dental-chart' | 'treatments' | 'prescriptions' | 'appointments' | 'billing'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'dental-chart' | 'treatments' | 'prescriptions' | 'appointments' | 'billing' | 'files'>('overview')
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [fileCategory, setFileCategory] = useState<'profile_photo' | 'clinical_image' | 'xray_image'>('clinical_image')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [visitForm, setVisitForm] = useState({
     chief_complaint: '',
@@ -87,6 +94,12 @@ export function PatientProfile() {
         .eq('patient_id', id)
         .order('created_at', { ascending: false })
 
+      const { data: filesData } = await supabase
+        .from('patient_files')
+        .select('*')
+        .eq('patient_id', id)
+        .order('created_at', { ascending: false })
+
       setPatient(patientData)
       setVisits(visitsData || [])
       setDentalRecords(dentalData || [])
@@ -94,6 +107,7 @@ export function PatientProfile() {
       setPrescriptions(prescriptionsData || [])
       setAppointments(appointmentsData || [])
       setInvoices(invoicesData || [])
+      setFiles(filesData || [])
     } catch (error) {
       console.error('Error loading patient:', error)
     } finally {
@@ -182,6 +196,60 @@ export function PatientProfile() {
     }
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !id) return
+
+    setUploadingFile(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const storagePath = `${id}/${fileCategory}/${Date.now()}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('patient-files')
+        .upload(storagePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { error: dbError } = await supabase.from('patient_files').insert([{
+        patient_id: id,
+        file_category: fileCategory,
+        file_name: file.name,
+        storage_path: storagePath,
+        file_size: file.size,
+        mime_type: file.type,
+      }])
+
+      if (dbError) throw dbError
+
+      loadPatientData()
+    } catch (error: any) {
+      console.error('Error uploading file:', error)
+      alert(`Failed to upload file: ${error.message || error}`)
+    } finally {
+      setUploadingFile(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function handleDeleteFile(file: any) {
+    if (!confirm(`Delete "${file.file_name}"?`)) return
+
+    try {
+      await supabase.storage.from('patient-files').remove([file.storage_path])
+      await supabase.from('patient_files').delete().eq('id', file.id)
+      loadPatientData()
+    } catch (error) {
+      console.error('Error deleting file:', error)
+      alert('Failed to delete file')
+    }
+  }
+
+  function getFilePublicUrl(storagePath: string) {
+    const { data } = supabase.storage.from('patient-files').getPublicUrl(storagePath)
+    return data.publicUrl
+  }
+
   const getToothCondition = (toothNumber: number) => {
     const record = dentalRecords.find(r => r.tooth_number === toothNumber)
     return record?.condition || 'Healthy'
@@ -220,9 +288,16 @@ export function PatientProfile() {
           Back
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">
-            {patient.first_name} {patient.last_name}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">
+              {patient.first_name} {patient.last_name}
+            </h1>
+            {patient.patient_code && (
+              <span className="px-2 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded">
+                {patient.patient_code}
+              </span>
+            )}
+          </div>
           <p className="text-text-secondary">{patient.phone || 'No phone provided'}</p>
         </div>
       </div>
@@ -235,6 +310,7 @@ export function PatientProfile() {
         <TabButton active={activeTab === 'prescriptions'} onClick={() => setActiveTab('prescriptions')}>Prescriptions ({prescriptions.length})</TabButton>
         <TabButton active={activeTab === 'appointments'} onClick={() => setActiveTab('appointments')}>Appointments ({appointments.length})</TabButton>
         <TabButton active={activeTab === 'billing'} onClick={() => setActiveTab('billing')}>Billing</TabButton>
+        <TabButton active={activeTab === 'files'} onClick={() => setActiveTab('files')}>Files ({files.length})</TabButton>
       </div>
 
       {activeTab === 'overview' && (
@@ -480,8 +556,12 @@ export function PatientProfile() {
 
       {activeTab === 'appointments' && (
         <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="font-semibold">Appointment History</h3>
+            <Button onClick={() => setShowAppointmentForm(true)} size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              New Appointment
+            </Button>
           </div>
           {appointments.length === 0 ? (
             <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
@@ -573,6 +653,127 @@ export function PatientProfile() {
         </div>
       )}
 
+      {activeTab === 'files' && (
+        <div className="space-y-6">
+          {/* Upload area */}
+          <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="font-semibold mb-4">Upload File</h3>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+              <div>
+                <label className="block text-sm font-medium mb-1">Category</label>
+                <select
+                  value={fileCategory}
+                  onChange={(e) => setFileCategory(e.target.value as any)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="profile_photo">Profile Photo</option>
+                  <option value="clinical_image">Clinical Image</option>
+                  <option value="xray_image">X-Ray Image</option>
+                </select>
+              </div>
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingFile}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  {uploadingFile ? 'Uploading…' : 'Choose & Upload'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* File list grouped by category */}
+          {(['profile_photo', 'clinical_image', 'xray_image'] as const).map((cat) => {
+            const catFiles = files.filter((f) => f.file_category === cat)
+            if (catFiles.length === 0) return null
+            const labels: Record<string, string> = {
+              profile_photo: 'Profile Photos',
+              clinical_image: 'Clinical Images',
+              xray_image: 'X-Ray Images',
+            }
+            return (
+              <div key={cat} className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 className="font-semibold mb-4 flex items-center gap-2">
+                  <Image className="w-4 h-4 text-primary" />
+                  {labels[cat]}
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {catFiles.map((file) => {
+                    const url = getFilePublicUrl(file.storage_path)
+                    const isImage = file.mime_type?.startsWith('image/')
+                    return (
+                      <div key={file.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                        {isImage ? (
+                          <img
+                            src={url}
+                            alt={file.file_name}
+                            className="w-full h-32 object-cover cursor-pointer"
+                            onClick={() => setPreviewUrl(url)}
+                          />
+                        ) : (
+                          <div
+                            className="w-full h-32 flex items-center justify-center cursor-pointer"
+                            onClick={() => window.open(url, '_blank')}
+                          >
+                            <FileText className="w-10 h-10 text-gray-400" />
+                          </div>
+                        )}
+                        <div className="p-2">
+                          <p className="text-xs text-text-secondary truncate">{file.file_name}</p>
+                          <p className="text-xs text-text-secondary">{format(new Date(file.created_at), 'MMM d, yyyy')}</p>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteFile(file)}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Delete"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+
+          {files.length === 0 && (
+            <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-8 text-center text-text-secondary">
+              No files uploaded yet. Use the upload area above to add patient files.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Full-screen image preview */}
+      {previewUrl && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <img
+            src={previewUrl}
+            alt="Preview"
+            className="max-w-full max-h-full rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setPreviewUrl(null)}
+            className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/75"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
       {selectedTooth && (
         <ToothModal
           toothNumber={selectedTooth}
@@ -598,6 +799,18 @@ export function PatientProfile() {
           setFormData={setPrescriptionForm}
           onSubmit={handlePrescriptionSubmit}
           onClose={() => setShowPrescriptionForm(false)}
+        />
+      )}
+
+      {showAppointmentForm && (
+        <AppointmentModal
+          selectedDate={new Date()}
+          defaultPatientId={id}
+          onClose={() => setShowAppointmentForm(false)}
+          onSave={() => {
+            loadPatientData()
+            setShowAppointmentForm(false)
+          }}
         />
       )}
     </div>
