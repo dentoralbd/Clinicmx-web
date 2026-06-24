@@ -26,6 +26,7 @@ export function Appointments() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -39,28 +40,31 @@ export function Appointments() {
     try {
       const weekEnd = addDays(weekStart, 6)
       weekEnd.setHours(23, 59, 59, 999)
-      const { data } = await supabase
+      const { data, error: err } = await supabase
         .from('appointments')
         .select('date_time, status')
         .gte('date_time', weekStart.toISOString())
         .lte('date_time', weekEnd.toISOString())
+      if (err) throw err
       setWeekAppointments((data as any) || [])
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Error loading week appointments:', err)
+      setError('Failed to load week appointments')
     }
   }
 
   async function loadAppointments() {
     try {
       setLoading(true)
-      
+      setError(null)
+       
       const startOfDay = new Date(selectedDate)
       startOfDay.setHours(0, 0, 0, 0)
-      
+       
       const endOfDay = new Date(selectedDate)
       endOfDay.setHours(23, 59, 59, 999)
 
-      const { data, error } = await supabase
+      const { data, error: err } = await supabase
         .from('appointments')
         .select(`
           *,
@@ -70,10 +74,12 @@ export function Appointments() {
         .lte('date_time', endOfDay.toISOString())
         .order('date_time')
 
-      if (error) throw error
+      if (err) throw err
       setAppointments(data || [])
-    } catch (error) {
-      console.error('Error loading appointments:', error)
+    } catch (err) {
+      console.error('Error loading appointments:', err)
+      setError('Failed to load appointments')
+      setAppointments([])
     } finally {
       setLoading(false)
     }
@@ -120,6 +126,13 @@ export function Appointments() {
           New Appointment
         </Button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          <p className="font-medium">Error</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+      )}
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
@@ -208,6 +221,15 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
   onCancel: () => void
   onStatusChange: (status: string) => void
 }) {
+  // Safe guard against missing patient data
+  if (!appointment || !appointment.patients) {
+    return (
+      <div className="p-4 text-center text-text-secondary">
+        Invalid appointment data
+      </div>
+    )
+  }
+
   const statusColors: Record<string, string> = {
     Scheduled: 'bg-blue-100 text-blue-700',
     Confirmed: 'bg-green-100 text-green-700',
