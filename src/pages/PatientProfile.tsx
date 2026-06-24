@@ -141,6 +141,16 @@ export function PatientProfile() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [showTreatmentPlanForm, setShowTreatmentPlanForm] = useState(false)
+  const [treatmentPlanForm, setTreatmentPlanForm] = useState({
+    treatment_type: '',
+    tooth_number: '',
+    description: '',
+    status: 'Planned',
+    cost: '',
+    notes: '',
+  })
+
   const [visitForm, setVisitForm] = useState({
     chief_complaint: '',
     examination_findings: '',
@@ -273,6 +283,29 @@ export function PatientProfile() {
     } catch (error) {
       console.error('Error saving tooth:', error)
       alert('Failed to save')
+    }
+  }
+
+  async function handleTreatmentPlanSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!id) return
+
+    try {
+      await supabase.from('treatments').insert([{
+        patient_id: id,
+        tooth_number: treatmentPlanForm.tooth_number ? parseInt(treatmentPlanForm.tooth_number) : null,
+        treatment_type: treatmentPlanForm.treatment_type,
+        description: treatmentPlanForm.description || null,
+        status: treatmentPlanForm.status,
+        cost: parseFloat(treatmentPlanForm.cost) || 0,
+        notes: treatmentPlanForm.notes || null,
+      }])
+      setShowTreatmentPlanForm(false)
+      setTreatmentPlanForm({ treatment_type: '', tooth_number: '', description: '', status: 'Planned', cost: '', notes: '' })
+      loadPatientData()
+    } catch (error) {
+      console.error('Error saving treatment plan:', error)
+      alert('Failed to save treatment plan')
     }
   }
 
@@ -809,8 +842,12 @@ export function PatientProfile() {
 
   const renderOperationsSection = () => (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Treatment History</h3>
+        <Button size="sm" onClick={() => setShowTreatmentPlanForm(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          New Treatment Plan
+        </Button>
       </div>
       {treatments.length === 0 ? (
         <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
@@ -1519,6 +1556,15 @@ export function PatientProfile() {
         />
       )}
 
+      {showTreatmentPlanForm && (
+        <TreatmentPlanModal
+          formData={treatmentPlanForm}
+          setFormData={setTreatmentPlanForm}
+          onSubmit={handleTreatmentPlanSubmit}
+          onClose={() => setShowTreatmentPlanForm(false)}
+        />
+      )}
+
       {showAppointmentForm && (
         <AppointmentModal
           selectedDate={new Date()}
@@ -2155,6 +2201,116 @@ function PrescriptionFormModal({
             <Button type="submit" className="flex-1">
               {isEditing ? 'Update Prescription' : 'Save Prescription'}
             </Button>
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function TreatmentPlanModal({ formData, setFormData, onSubmit, onClose }: any) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-xl font-bold">New Treatment Plan</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Treatment Type *</label>
+            <select
+              required
+              value={formData.treatment_type}
+              onChange={(e) => setFormData({ ...formData, treatment_type: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Select treatment type...</option>
+              <option>Filling</option>
+              <option>Root Canal</option>
+              <option>Crown</option>
+              <option>Bridge</option>
+              <option>Extraction</option>
+              <option>Implant</option>
+              <option>Cleaning</option>
+              <option>Whitening</option>
+              <option>Braces</option>
+              <option>Dentures</option>
+              <option>Veneer</option>
+              <option>Consultation</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Tooth Number</label>
+              <input
+                type="number"
+                min="1"
+                max="32"
+                value={formData.tooth_number}
+                onChange={(e) => setFormData({ ...formData, tooth_number: e.target.value })}
+                placeholder="1–32 (optional)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option>Planned</option>
+                <option>In Progress</option>
+                <option>Completed</option>
+                <option>Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Description</label>
+            <textarea
+              rows={2}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Brief description of the treatment..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Estimated Cost</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.cost}
+              onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+              placeholder="0.00"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes</label>
+            <textarea
+              rows={2}
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="Additional notes..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="submit" className="flex-1">Save Treatment Plan</Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
           </div>
         </form>
