@@ -89,27 +89,9 @@ export function Appointments() {
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold">Week View</h3>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(addDays(selectedDate, -7))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(new Date())}
-            >
-              Today
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(addDays(selectedDate, 7))}
-            >
-              Next
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setSelectedDate(addDays(selectedDate, -7))}>Previous</Button>
+            <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date())}>Today</Button>
+            <Button variant="outline" size="sm" onClick={() => setSelectedDate(addDays(selectedDate, 7))}>Next</Button>
           </div>
         </div>
 
@@ -122,11 +104,7 @@ export function Appointments() {
                 key={day.toISOString()}
                 onClick={() => setSelectedDate(day)}
                 className={`p-3 rounded-lg text-center transition-colors ${
-                  isSelected
-                    ? 'bg-primary text-white'
-                    : isToday
-                    ? 'bg-blue-50 text-primary border border-primary'
-                    : 'hover:bg-gray-100'
+                  isSelected ? 'bg-primary text-white' : isToday ? 'bg-blue-50 text-primary border border-primary' : 'hover:bg-gray-100'
                 }`}
               >
                 <div className="text-xs font-medium">{format(day, 'EEE')}</div>
@@ -139,17 +117,13 @@ export function Appointments() {
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200">
-          <h3 className="font-semibold">
-            Appointments for {format(selectedDate, 'MMMM d, yyyy')}
-          </h3>
+          <h3 className="font-semibold">Appointments for {format(selectedDate, 'MMMM d, yyyy')}</h3>
         </div>
 
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading appointments...</div>
         ) : appointments.length === 0 ? (
-          <div className="p-8 text-center text-text-secondary">
-            No appointments for this day
-          </div>
+          <div className="p-8 text-center text-text-secondary">No appointments for this day</div>
         ) : (
           <div className="divide-y divide-gray-200">
             {appointments.map((appointment) => (
@@ -167,7 +141,10 @@ export function Appointments() {
         <AppointmentModal
           selectedDate={selectedDate}
           onClose={() => setShowModal(false)}
-          onSave={() => { loadAppointments(); setShowModal(false) }}
+          onSave={() => {
+            loadAppointments()
+            setShowModal(false)
+          }}
         />
       )}
     </div>
@@ -195,11 +172,9 @@ function AppointmentRow({ appointment, onCancel }: { appointment: Appointment; o
             </span>
           </div>
           <p className="text-sm text-text-secondary mt-1">
-            {format(new Date(appointment.date_time), 'h:mm a')} • {appointment.duration} min • {appointment.type}
+            {formatLocalAppointmentDateTime(appointment.date_time)} • {appointment.duration} min • {appointment.type}
           </p>
-          {appointment.notes && (
-            <p className="text-sm text-text-secondary mt-1">{appointment.notes}</p>
-          )}
+          {appointment.notes && <p className="text-sm text-text-secondary mt-1">{appointment.notes}</p>}
         </div>
         {appointment.status !== 'Cancelled' && appointment.status !== 'Completed' && (
           <Button variant="outline" size="sm" onClick={onCancel}>
@@ -211,8 +186,6 @@ function AppointmentRow({ appointment, onCancel }: { appointment: Appointment; o
   )
 }
 
-/** Splits a full name into first_name and last_name.
- * If only one word is provided it becomes first_name and last_name is set to '-'. */
 function parseFullName(fullName: string): { first_name: string; last_name: string } {
   const parts = fullName.trim().split(/\s+/)
   if (parts.length === 1) return { first_name: parts[0], last_name: '-' }
@@ -220,11 +193,26 @@ function parseFullName(fullName: string): { first_name: string; last_name: strin
   return { first_name: parts.join(' '), last_name: last }
 }
 
-/** Derives an approximate date_of_birth from an age in years.
- * Uses January 1 of (current year - age) as a safe approximation. */
 function deriveDOBFromAge(age: number): string {
   const year = new Date().getFullYear() - age
   return `${year}-01-01`
+}
+
+function toLocalDateTimeValue(date: string, time: string) {
+  return new Date(`${date}T${time}:00`).getTime()
+}
+
+function formatLocalAppointmentDateTime(dateTime: string) {
+  const [datePart, timePart] = dateTime.split('T')
+  if (!datePart || !timePart) return dateTime
+
+  const [hoursStr, minutesStr] = timePart.split(':')
+  const hours = Number(hoursStr)
+  const minutes = Number(minutesStr)
+  const suffix = hours >= 12 ? 'PM' : 'AM'
+  const normalizedHours = hours % 12 || 12
+
+  return `${normalizedHours}:${minutes.toString().padStart(2, '0')} ${suffix}`
 }
 
 function AppointmentModal({ selectedDate, onClose, onSave }: any) {
@@ -241,69 +229,85 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
     notes: '',
   })
   const [saving, setSaving] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setErrorMessage('')
 
     try {
-      const appointmentStart = new Date(`${formData.date}T${formData.time}:00`)
-      const appointmentEnd = new Date(appointmentStart.getTime() + parseInt(formData.duration) * 60000)
+      const appointmentStart = toLocalDateTimeValue(formData.date, formData.time)
+      const appointmentEnd = appointmentStart + parseInt(formData.duration) * 60000
 
       const { data: existingAppointments, error: conflictError } = await supabase
         .from('appointments')
         .select('id, date_time, duration, status')
-        .eq('status', 'Scheduled')
-        .gte('date_time', `${formData.date}T00:00:00`)
-        .lt('date_time', `${formData.date}T23:59:59`)
+        .neq('status', 'Cancelled')
+        .eq('date_time', `${formData.date}T${formData.time}:00`)
 
       if (conflictError) throw conflictError
 
-      const hasConflict = (existingAppointments || []).some((appointment) => {
-        const existingStart = new Date(appointment.date_time)
-        const existingEnd = new Date(existingStart.getTime() + appointment.duration * 60000)
+      const exactSameTimeTaken = (existingAppointments || []).some((appointment) => appointment.status !== 'Cancelled')
+      if (exactSameTimeTaken) {
+        setErrorMessage('This appointment time is already booked. Please choose another time.')
+        return
+      }
+
+      const { data: overlappingAppointments, error: overlapError } = await supabase
+        .from('appointments')
+        .select('id, date_time, duration, status')
+        .neq('status', 'Cancelled')
+        .gte('date_time', `${formData.date}T00:00:00`)
+        .lt('date_time', `${formData.date}T23:59:59`)
+
+      if (overlapError) throw overlapError
+
+      const hasConflict = (overlappingAppointments || []).some((appointment) => {
+        const existingStart = toLocalDateTimeValue(appointment.date_time.slice(0, 10), appointment.date_time.slice(11, 16))
+        const existingEnd = existingStart + appointment.duration * 60000
         return appointmentStart < existingEnd && appointmentEnd > existingStart
       })
 
       if (hasConflict) {
-        alert('This time slot is already booked. Please choose another time.')
+        setErrorMessage('This appointment overlaps with an existing booking. Please choose another time.')
         return
       }
 
-      // Step 1: Create the patient record from the entered details
       const { first_name, last_name } = parseFullName(formData.patient_name)
       const { data: patientData, error: patientError } = await supabase
         .from('patients')
-        .insert([{
-          first_name,
-          last_name,
-          phone: formData.patient_mobile,
-          gender: formData.patient_sex,
-          // Approximate DOB derived from age; exact birth date is unknown at booking time
-          date_of_birth: deriveDOBFromAge(parseInt(formData.patient_age)),
-          // Placeholder email — update the patient record later if a real email is collected
-          email: `noemail+${Date.now()}@placeholder.local`,
-        }])
+        .insert([
+          {
+            first_name,
+            last_name,
+            phone: formData.patient_mobile,
+            gender: formData.patient_sex,
+            date_of_birth: deriveDOBFromAge(parseInt(formData.patient_age)),
+            email: `noemail+${Date.now()}@placeholder.local`,
+          },
+        ])
         .select('id')
         .single()
 
       if (patientError) throw patientError
 
-      // Step 2: Create the appointment linked to the newly created patient
-      const { error: apptError } = await supabase.from('appointments').insert([{
-        patient_id: patientData.id,
-        date_time: `${formData.date}T${formData.time}:00`,
-        duration: parseInt(formData.duration),
-        type: formData.type,
-        status: formData.status,
-        notes: formData.notes || null,
-      }])
+      const { error: apptError } = await supabase.from('appointments').insert([
+        {
+          patient_id: patientData.id,
+          date_time: `${formData.date}T${formData.time}:00`,
+          duration: parseInt(formData.duration),
+          type: formData.type,
+          status: formData.status,
+          notes: formData.notes || null,
+        },
+      ])
 
       if (apptError) throw apptError
       onSave()
     } catch (error) {
       console.error('Error creating appointment:', error)
-      alert('Failed to create appointment')
+      setErrorMessage('Failed to create appointment')
     } finally {
       setSaving(false)
     }
@@ -317,6 +321,8 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {errorMessage && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorMessage}</div>}
+
           <div>
             <label className="block text-sm font-medium mb-1">Patient Name *</label>
             <input
