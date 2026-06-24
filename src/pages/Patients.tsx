@@ -39,6 +39,7 @@ export function Patients() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingPatientCode, setEditingPatientCode] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
 
   const [formData, setFormData] = useState({
@@ -137,6 +138,7 @@ export function Patients() {
       notes: patient.notes || '',
     })
     setEditingId(patient.id)
+    setEditingPatientCode(patient.patient_code || null)
     setShowForm(true)
   }
 
@@ -153,6 +155,7 @@ export function Patients() {
       medical_history: '',
       notes: '',
     })
+    setEditingPatientCode(null)
   }
 
   const filteredPatients = patients.filter((patient) => {
@@ -161,7 +164,8 @@ export function Patients() {
       patient.first_name.toLowerCase().includes(searchLower) ||
       patient.last_name.toLowerCase().includes(searchLower) ||
       patient.phone.includes(searchTerm) ||
-      patient.email.toLowerCase().includes(searchLower)
+      patient.email.toLowerCase().includes(searchLower) ||
+      (patient.patient_code && patient.patient_code.toLowerCase().includes(searchLower))
     )
   })
 
@@ -182,7 +186,7 @@ export function Patients() {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
         <input
           type="text"
-          placeholder="Search patients..."
+          placeholder="Search by name, phone, email, or patient ID..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -222,8 +226,14 @@ export function Patients() {
               <tbody className="divide-y divide-gray-200">
                 {filteredPatients.map((patient) => (
                   <tr key={patient.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {patient.patient_code || '-'}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {patient.patient_code ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                          {patient.patient_code}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -284,6 +294,23 @@ export function Patients() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {editingId && (
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <span className="text-sm text-text-secondary font-medium">Patient ID:</span>
+                  {editingPatientCode ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
+                      {editingPatientCode}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">Not yet assigned</span>
+                  )}
+                </div>
+              )}
+              {!editingId && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
+                  A unique Patient ID (e.g. PT-00042) will be auto-assigned when this patient is saved.
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">First Name *</label>

@@ -554,6 +554,14 @@ export function PatientProfile() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <InfoCard title="Patient Information">
+          {patient.patient_code && (
+            <div className="flex items-center justify-between py-1 border-b border-gray-100 mb-2">
+              <span className="text-sm text-text-secondary font-medium">Patient ID</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                {patient.patient_code}
+              </span>
+            </div>
+          )}
           <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
           <InfoRow label="Gender" value={patient.gender || 'N/A'} />
           <InfoRow label="Phone" value={patient.phone || 'N/A'} />
@@ -1375,7 +1383,8 @@ export function PatientProfile() {
               {patient.first_name} {patient.last_name}
             </h1>
             {patient.patient_code && (
-              <span className="w-fit px-2 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
+              <span className="w-fit inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-full border border-primary/20">
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
                 {patient.patient_code}
               </span>
             )}
