@@ -42,6 +42,10 @@
 }
 
 /* ── Spinner ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 @keyframes spin-smooth {
   to { transform: rotate(360deg); }
 }
@@ -78,16 +82,21 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .page-fade-in {
-  animation: fade-in 0.25s ease-out;
+  animation: fade-in 0.28s ease-out;
 }
 
 /* ── Skeleton pulse ── */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
 }
 .skeleton {
-  background: #e2e8f0;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%);
+  background-size: 400% 100%;
   border-radius: 0.375rem;
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  animation: skeleton-pulse 1.4s ease-in-out infinite, shimmer 1.8s linear infinite;
 }
