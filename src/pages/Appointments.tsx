@@ -241,6 +241,31 @@ function AppointmentModal({ selectedDate, onClose, onSave }: any) {
     setSaving(true)
 
     try {
+      // Check for overlapping appointments
+      const startDateTime = new Date(`${formData.date}T${formData.time}:00`)
+      const endDateTime = new Date(startDateTime.getTime() + parseInt(formData.duration) * 60000)
+
+      const { data: dayAppts, error: fetchError } = await supabase
+        .from('appointments')
+        .select('date_time, duration, status')
+        .gte('date_time', `${formData.date}T00:00:00`)
+        .lt('date_time', `${formData.date}T23:59:59`)
+        .neq('status', 'Cancelled')
+
+      if (fetchError) throw fetchError
+
+      const hasConflict = dayAppts?.some(appt => {
+        const apptStart = new Date(appt.date_time)
+        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
+        return startDateTime < apptEnd && endDateTime > apptStart
+      })
+
+      if (hasConflict) {
+        alert('An appointment is already scheduled during this time slot')
+        setSaving(false)
+        return
+      }
+
       const { error } = await supabase.from('appointments').insert([
         {
           patient_id: formData.patient_id,
