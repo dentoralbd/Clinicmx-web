@@ -223,7 +223,7 @@ export function PatientProfile() {
           <h1 className="text-2xl font-bold">
             {patient.first_name} {patient.last_name}
           </h1>
-          <p className="text-text-secondary">{patient.email} • {patient.phone}</p>
+          <p className="text-text-secondary">{patient.phone || 'No phone provided'}</p>
         </div>
       </div>
 
