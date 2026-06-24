@@ -81,6 +81,20 @@
   animation: fade-in 0.25s ease-out;
 }
 
+@keyframes section-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.section-fade-in {
+  animation: section-fade-in 0.22s ease-out;
+}
+
 /* ── Skeleton pulse ── */
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 1; }
