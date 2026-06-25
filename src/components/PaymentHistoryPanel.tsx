@@ -10,7 +10,7 @@ interface PaymentRow {
   id: string
   amount: number
   payment_date: string
-  reference: string | null
+  payment_method: string | null
   notes: string | null
   payment_methods: {
     name: string
@@ -29,7 +29,7 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
     setLoading(true)
     const { data } = await supabase
       .from('payments')
-      .select('id, amount, payment_date, reference, notes, payment_methods(name)')
+      .select('id, amount, payment_date, payment_method, notes, payment_methods(name)')
       .eq('invoice_id', invoiceId)
       .order('payment_date', { ascending: false })
 
@@ -54,8 +54,7 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
             <span className="text-xs text-text-secondary">{safeFormat(payment.payment_date, 'MMM d, yyyy h:mm a')}</span>
           </div>
           <div className="text-xs text-text-secondary mt-1">
-            Method: {payment.payment_methods?.name || 'Not specified'}
-            {payment.reference ? ` • Ref: ${payment.reference}` : ''}
+            Method: {payment.payment_method || payment.payment_methods?.name || 'Not specified'}
           </div>
           {payment.notes && <p className="text-xs mt-1">{payment.notes}</p>}
         </div>

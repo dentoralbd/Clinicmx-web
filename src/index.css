@@ -44,7 +44,9 @@
 /* Modal responsive styles */
 @media (max-width: 640px) {
   .modal-content {
-    max-height: 90vh;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100vh - 2rem);
     overflow-y: auto;
     margin-top: 1rem;
     margin-bottom: 1rem;

@@ -386,6 +386,7 @@ function InvoiceRow({
 
   const items = Array.isArray(invoice.items) ? invoice.items : []
   const subtotal = items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0)
+  const remainingBalance = Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
 
   const statusColors: Record<string, string> = {
     Pending: 'bg-orange-100 text-orange-700',
@@ -396,7 +397,7 @@ function InvoiceRow({
   const overdueDays = invoice.due_date && invoice.status !== 'Paid'
     ? Math.max(Math.floor((Date.now() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24)), 0)
     : 0
-  const lateInterest = overdueDays > 0 ? ((invoice.total_amount - invoice.paid_amount) * 0.01 * Math.ceil(overdueDays / 30)) : 0
+  const lateInterest = overdueDays > 0 ? (remainingBalance * 0.01 * Math.ceil(overdueDays / 30)) : 0
 
   return (
     <div className="hover:bg-gray-50 transition-colors">
@@ -444,7 +445,9 @@ function InvoiceRow({
             {invoice.status === 'Pending' && (
               <Button variant="outline" size="sm" onClick={onMarkPaid}>Mark Paid</Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)}>Record Payment</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)} disabled={remainingBalance <= 0}>
+              Record Payment
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -500,6 +503,14 @@ function InvoiceRow({
                 <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-200">
                   <span>Total</span>
                   <span className="font-bold text-primary">{formatBDT(invoice.total_amount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-text-secondary">Paid</span>
+                  <span>{formatBDT(invoice.paid_amount || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-text-secondary">Remaining</span>
+                  <span className="font-medium">{formatBDT(remainingBalance)}</span>
                 </div>
                 {!!invoice.notes && <p className="text-xs text-text-secondary pt-2">Notes: {invoice.notes}</p>}
                 {!!invoice.payment_terms && <p className="text-xs text-text-secondary">Terms: {invoice.payment_terms}</p>}

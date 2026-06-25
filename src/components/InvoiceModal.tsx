@@ -153,12 +153,12 @@ export function InvoiceModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-4 sm:my-8">
-        <div className="p-6 border-b border-gray-200">
+      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full my-4 sm:my-8">
+        <div className="p-3 sm:p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold">New {invoiceType === 'advanced' ? 'Advanced ' : ''}Invoice</h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {!hidePatientSelect && (
               <div>
@@ -190,16 +190,16 @@ export function InvoiceModal({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
               <label className="block text-sm font-medium">Items</label>
-              <Button type="button" size="sm" onClick={addItem}>
+              <Button type="button" size="sm" onClick={addItem} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 mr-1" />
                 Add Item
               </Button>
             </div>
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <div key={idx} className="flex gap-2">
+                <div key={idx} className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     placeholder="Description *"
@@ -213,13 +213,13 @@ export function InvoiceModal({
                     placeholder="Amount *"
                     value={item.amount}
                     onChange={(e) => updateItem(idx, 'amount', e.target.value)}
-                    className="w-28 sm:w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full sm:w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   {items.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeItem(idx)}
-                      className="px-2 sm:px-3 py-2 text-red-600 hover:text-red-700"
+                      className="w-full sm:w-auto px-3 py-2 text-red-600 hover:text-red-700 rounded-lg border border-red-200 hover:border-red-300"
                     >
                       Remove
                     </button>
@@ -230,7 +230,7 @@ export function InvoiceModal({
 
             <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                   <label className="text-sm text-text-secondary whitespace-nowrap">Discount:</label>
                   <input
                     type="number"
@@ -239,10 +239,10 @@ export function InvoiceModal({
                     placeholder="0.00"
                     value={discountAmount}
                     onChange={(e) => setDiscountAmount(e.target.value)}
-                    className="w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full sm:w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                   <label className="text-sm text-text-secondary whitespace-nowrap">Tax %:</label>
                   <input
                     type="number"
@@ -251,7 +251,7 @@ export function InvoiceModal({
                     placeholder="0"
                     value={formData.tax_rate}
                     onChange={(e) => setFormData((prev) => ({ ...prev, tax_rate: e.target.value }))}
-                    className="w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full sm:w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
               </div>
@@ -310,11 +310,11 @@ export function InvoiceModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" disabled={saving} className="flex-1">
+          <div className="flex flex-col sm:flex-row gap-3 pt-4">
+            <Button type="submit" disabled={saving} className="w-full sm:flex-1">
               {saving ? 'Creating...' : 'Create Invoice'}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+            <Button type="button" variant="outline" onClick={onClose} className="w-full sm:flex-1">
               Cancel
             </Button>
           </div>
