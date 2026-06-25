@@ -356,9 +356,9 @@ export interface Database {
           id: string
           invoice_id: string
           payment_method_id: string | null
+          payment_method: string
           amount: number
           payment_date: string
-          reference: string | null
           notes: string | null
           created_at: string
         }
@@ -366,9 +366,9 @@ export interface Database {
           id?: string
           invoice_id: string
           payment_method_id?: string | null
+          payment_method?: string
           amount: number
           payment_date?: string
-          reference?: string | null
           notes?: string | null
           created_at?: string
         }
@@ -376,9 +376,9 @@ export interface Database {
           id?: string
           invoice_id?: string
           payment_method_id?: string | null
+          payment_method?: string
           amount?: number
           payment_date?: string
-          reference?: string | null
           notes?: string | null
           created_at?: string
         }
