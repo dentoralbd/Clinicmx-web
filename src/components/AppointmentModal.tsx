@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { ensurePatientCode } from '@/lib/patientCode'
 import { createPatient } from '@/lib/patients'
 import { UserPlus, Users } from 'lucide-react'
 
@@ -51,7 +50,7 @@ export function AppointmentModal({
     if (patient) {
       setFormData((prev) => ({ ...prev, patient_id: patient.id }))
       setPatientLookup(patient.patient_code || patient.id)
-      setPatientLookupMessage(`Using existing patient ${patient.first_name} ${patient.last_name}`)
+      setPatientLookupMessage(`Using existing patient ${patient.patient_code || patient.id} • ${patient.first_name} ${patient.last_name}`)
     }
   }, [defaultPatientId, patients])
 
@@ -76,7 +75,7 @@ export function AppointmentModal({
     const lookup = patientLookup.trim()
 
     if (!lookup) {
-      setPatientLookupMessage('Enter a patient UID or patient code to use an existing patient.')
+      setPatientLookupMessage('Enter a patient code or patient ID to use an existing patient.')
       setFormData((prev) => ({ ...prev, patient_id: '' }))
       return
     }
@@ -90,8 +89,9 @@ export function AppointmentModal({
 
     if (matchedPatient) {
       setFormData((prev) => ({ ...prev, patient_id: matchedPatient.id }))
+      setPatientLookup(matchedPatient.patient_code || matchedPatient.id)
       setPatientMode('existing')
-      setPatientLookupMessage(`Using existing patient ${matchedPatient.first_name} ${matchedPatient.last_name}`)
+      setPatientLookupMessage(`Using existing patient ${matchedPatient.patient_code || matchedPatient.id} • ${matchedPatient.first_name} ${matchedPatient.last_name}`)
       return
     }
 
@@ -104,7 +104,7 @@ export function AppointmentModal({
     if (matchedPatient) {
       setFormData((prev) => ({ ...prev, patient_id: matchedPatient.id }))
       setPatientLookup(matchedPatient.patient_code || matchedPatient.id)
-      setPatientLookupMessage(`Using existing patient ${matchedPatient.first_name} ${matchedPatient.last_name}`)
+      setPatientLookupMessage(`Using existing patient ${matchedPatient.patient_code || matchedPatient.id} • ${matchedPatient.first_name} ${matchedPatient.last_name}`)
     }
   }
 
@@ -132,20 +132,13 @@ export function AppointmentModal({
         })
 
         patientId = newPatient.id
-        let patientCode = (newPatient as { id: string; patient_code?: string | null }).patient_code || null
-        if (!patientCode) {
-          try {
-            patientCode = await ensurePatientCode(newPatient.id, patientCode)
-          } catch (error: any) {
-            if (error?.code !== '42703') throw error
-          }
-        }
+        const patientCode = (newPatient as { id: string; patient_code?: string | null }).patient_code || null
         setPatientLookup(patientCode || patientId)
-        setPatientLookupMessage(`Created new patient UID: ${patientCode || patientId}`)
+        setPatientLookupMessage(`Created new patient code: ${patientCode || patientId}`)
       }
 
       if (!patientId) {
-        alert('Please enter a valid patient UID/code or create a new patient first')
+        alert('Please enter a valid patient code/ID or create a new patient first')
         setSaving(false)
         return
       }
@@ -246,7 +239,7 @@ export function AppointmentModal({
           {/* Existing Patient Selection */}
           {patientMode === 'existing' && (
             <div>
-              <label className="block text-sm font-medium mb-1">Patient UID / Patient Code *</label>
+              <label className="block text-sm font-medium mb-1">Patient Code / Patient ID *</label>
               {loadError && (
                 <p className="text-sm text-red-600 mb-2">{loadError}</p>
               )}
@@ -255,7 +248,7 @@ export function AppointmentModal({
                   type="text"
                   value={patientLookup}
                   onChange={(e) => setPatientLookup(e.target.value)}
-                  placeholder="Enter patient UID or code"
+                  placeholder="Enter patient code or patient ID"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <Button type="button" variant="outline" onClick={handlePatientLookup}>

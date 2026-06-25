@@ -54,6 +54,7 @@ const sectionOptions: Array<{
 ]
 
 const mobileNavSections: SectionId[] = ['profile', 'appointments', 'prescriptions', 'files', 'billing']
+const mobileSectionOptions = sectionOptions.filter((section) => mobileNavSections.includes(section.id))
 
 const legacySectionMap: Record<string, SectionId> = {
   overview: 'profile',
@@ -587,9 +588,11 @@ export function PatientProfile() {
   ]
 
   function updateSection(section: SectionId) {
+    if (section === activeSection) return
+
     const nextParams = new URLSearchParams(searchParams)
     nextParams.set('section', section)
-    setSearchParams(nextParams)
+    setSearchParams(nextParams, { replace: true })
   }
 
   function getSectionBadge(sectionId: SectionId) {
@@ -1467,7 +1470,7 @@ export function PatientProfile() {
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-6 page-fade-in">
+    <div className="space-y-6 pb-6 page-fade-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <Button variant="outline" size="sm" onClick={() => navigate('/patients')} className="w-full sm:w-auto">
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -1504,24 +1507,39 @@ export function PatientProfile() {
         </div>
       </div>
 
-      <div className="md:hidden -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {mobileNavSections
-          .map((sectionId) => sectionOptions.find((section) => section.id === sectionId))
-          .filter((section): section is (typeof sectionOptions)[number] => Boolean(section))
-          .map((section) => (
-            <button
-              key={section.id}
-              onClick={() => updateSection(section.id)}
-              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                activeSection === section.id
-                  ? 'border-primary bg-primary text-white shadow-sm'
-                  : 'border-gray-200 bg-white text-text-secondary hover:border-primary/30 hover:text-primary'
-              }`}
-            >
-              <section.icon className="h-4 w-4" />
-              {section.label}
-            </button>
-          ))}
+      <div className="md:hidden">
+        <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
+          <label htmlFor="patient-profile-mobile-section" className="mb-2 block text-sm font-medium text-text-secondary">
+            Section
+          </label>
+          <select
+            id="patient-profile-mobile-section"
+            value={activeSection}
+            onChange={(event) => updateSection(event.target.value as SectionId)}
+            className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            {sectionOptions.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.label}
+              </option>
+            ))}
+          </select>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {mobileSectionOptions.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => updateSection(section.id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
+                  activeSection === section.id
+                    ? 'border-primary bg-primary text-white shadow-sm'
+                    : 'border-gray-200 bg-gray-50 text-text-secondary hover:border-primary/30 hover:text-primary'
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="hidden md:grid grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1540,25 +1558,6 @@ export function PatientProfile() {
 
       <div key={activeSection} className="section-fade-in">
         {renderActiveSection()}
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur md:hidden">
-        <div className="mx-auto flex max-w-xl gap-2">
-          {mobileNavSections.map((sectionId) => {
-            const section = sectionOptions.find((item) => item.id === sectionId)
-            if (!section) return null
-
-            return (
-              <BottomNavButton
-                key={section.id}
-                active={activeSection === section.id}
-                icon={section.icon}
-                label={section.label}
-                onClick={() => updateSection(section.id)}
-              />
-            )
-          })}
-        </div>
       </div>
 
       {/* Full-screen image preview */}
@@ -1734,22 +1733,6 @@ function Tooth({ number, condition, color, onClick }: any) {
       </svg>
       <span className="text-xs font-medium mt-1">{number}</span>
     </div>
-  )
-}
-
-function BottomNavButton({ active, icon: Icon, label, onClick }: any) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-xs font-medium transition-all duration-200 ${
-        active
-          ? 'bg-primary text-white shadow-sm'
-          : 'text-text-secondary hover:bg-gray-100 hover:text-text-primary'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      <span className="truncate">{label}</span>
-    </button>
   )
 }
 
