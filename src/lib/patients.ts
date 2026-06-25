@@ -1,3 +1,4 @@
+import { ensurePatientCode } from '@/lib/patientCode'
 import { supabase } from '@/lib/supabase'
 
 interface CreatePatientPayload {
@@ -26,6 +27,16 @@ export async function createPatient(payload: CreatePatientPayload) {
   if (error) throw error
   if (!createdPatient?.id) throw new Error('Failed to create patient')
 
+  let patientCode: string | null = null
+
+  // Keep both patient creation flows consistent by assigning a code
+  // immediately after insert when the returning payload does not include one.
+  try {
+    patientCode = await ensurePatientCode(createdPatient.id)
+  } catch (error: any) {
+    if (error?.code !== '42703') throw error
+  }
+
   // Fetch all available columns (patient_code included when migration has run)
   // in a separate read. Ignore any error here so a missing patient_code column
   // does not prevent patient creation from succeeding.
@@ -35,5 +46,19 @@ export async function createPatient(payload: CreatePatientPayload) {
     .single()
   const fetchedPatient = patientData as { id: string; patient_code?: string | null } | null
 
-  return fetchedPatient || createdPatient
+  if (fetchedPatient) {
+    return patientCode
+      ? {
+          ...fetchedPatient,
+          patient_code: patientCode,
+        }
+      : fetchedPatient
+  }
+
+  return patientCode
+    ? {
+        ...createdPatient,
+        patient_code: patientCode,
+      }
+    : createdPatient
 }
