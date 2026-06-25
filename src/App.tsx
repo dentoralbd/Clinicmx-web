@@ -10,6 +10,7 @@ import { Treatments } from './pages/Treatments'
 import { Prescriptions } from './pages/Prescriptions'
 import { Billing } from './pages/Billing'
 import { PatientProfile } from './pages/PatientProfile'
+import { Inventory } from './pages/Inventory'
 
 const queryClient = new QueryClient()
 
@@ -32,6 +33,7 @@ function App() {
             <Route path="treatments" element={<Treatments />} />
             <Route path="prescriptions" element={<Prescriptions />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="inventory" element={<Inventory />} />
           </Route>
         </Routes>
       </BrowserRouter>

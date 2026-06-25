@@ -416,6 +416,89 @@ export interface Database {
           }
         ]
       }
+      inventory_items: {
+        Row: {
+          id: string
+          name: string
+          category: string
+          description: string | null
+          quantity: number
+          unit: string
+          low_stock_threshold: number
+          supplier: string | null
+          cost: number | null
+          notes: string | null
+          expiry_date: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          category: string
+          description?: string | null
+          quantity?: number
+          unit?: string
+          low_stock_threshold?: number
+          supplier?: string | null
+          cost?: number | null
+          notes?: string | null
+          expiry_date?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          category?: string
+          description?: string | null
+          quantity?: number
+          unit?: string
+          low_stock_threshold?: number
+          supplier?: string | null
+          cost?: number | null
+          notes?: string | null
+          expiry_date?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_movements: {
+        Row: {
+          id: string
+          item_id: string
+          movement_type: string
+          quantity_change: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          item_id: string
+          movement_type: string
+          quantity_change: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          item_id?: string
+          movement_type?: string
+          quantity_change?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'inventory_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'inventory_items'
+            referencedColumns: ['id']
+          }
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

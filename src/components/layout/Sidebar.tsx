@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package } from 'lucide-react'
 
 interface SidebarProps {
   isOpen: boolean
@@ -13,6 +13,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     { icon: Calendar, label: 'Appointments', path: '/appointments' },
     { icon: FileText, label: 'Prescriptions', path: '/prescriptions' },
     { icon: DollarSign, label: 'Billing', path: '/billing' },
+    { icon: Package, label: 'Inventory', path: '/inventory' },
   ]
 
   return (
