@@ -183,7 +183,7 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
           {treatment.description && (
             <p className="text-sm text-text-secondary mt-1">{treatment.description}</p>
           )}
-          <p className="text-sm font-medium text-primary mt-2">${treatment.cost.toFixed(2)}</p>
+          <p className="text-sm font-medium text-primary mt-2">${(Number(treatment.cost) || 0).toFixed(2)}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {nextStatus && (
