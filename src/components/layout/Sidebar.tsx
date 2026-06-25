@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X } from 'lucide-react'
 
 interface SidebarProps {
   isOpen: boolean
@@ -35,9 +35,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         `}
       >
         <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-gray-200">
-            <h1 className="text-2xl font-bold text-primary">ClinicMx</h1>
-            <p className="text-sm text-text-secondary">Dental Management</p>
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div>
+              <h1 className="text-2xl font-bold text-primary">ClinicMx</h1>
+              <p className="text-sm text-text-secondary">Dental Management</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close sidebar"
+              className="lg:hidden icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-text-secondary" />
+            </button>
           </div>
 
           <nav className="flex-1 p-4 space-y-1">

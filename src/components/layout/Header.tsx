@@ -21,7 +21,8 @@ export function Header({ onMenuClick }: HeaderProps) {
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button
             onClick={onMenuClick}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Open navigation menu"
+            className="lg:hidden icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -40,16 +41,17 @@ export function Header({ onMenuClick }: HeaderProps) {
           <span className="hidden md:inline-flex px-2 py-1 text-xs font-mono bg-gray-100 text-gray-600 rounded border border-gray-200">
             Build {BUILD_VERSION}
           </span>
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
+          <button aria-label="Notifications" className="icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
             <Bell className="w-5 h-5 text-text-secondary" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
           </button>
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <button aria-label="User profile" className="icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <User className="w-5 h-5 text-text-secondary" />
           </button>
           <button 
             onClick={handleLogout}
-            className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+            aria-label="Logout"
+            className="icon-button p-2 hover:bg-red-50 rounded-lg transition-colors group"
             title="Logout"
           >
             <LogOut className="w-5 h-5 text-text-secondary group-hover:text-red-600" />

@@ -26,10 +26,18 @@
   }
   
   /* Better touch targets */
-  button,
+  button:not(.icon-button),
   a {
     min-height: 44px;
+  }
+
+  /* Icon-only buttons: square touch target without stretching layout */
+  .icon-button {
+    min-height: 44px;
     min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -38,6 +46,8 @@
   .modal-content {
     max-height: 90vh;
     overflow-y: auto;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
   }
 }
 
