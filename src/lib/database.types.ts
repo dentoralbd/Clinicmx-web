@@ -109,6 +109,8 @@ export interface Database {
           status: string
           cost: number
           notes: string | null
+          is_invoiced: boolean
+          invoice_id: string | null
           created_at: string
         }
         Insert: {
@@ -121,6 +123,8 @@ export interface Database {
           status?: string
           cost?: number
           notes?: string | null
+          is_invoiced?: boolean
+          invoice_id?: string | null
           created_at?: string
         }
         Update: {
@@ -133,6 +137,8 @@ export interface Database {
           status?: string
           cost?: number
           notes?: string | null
+          is_invoiced?: boolean
+          invoice_id?: string | null
           created_at?: string
         }
         Relationships: [

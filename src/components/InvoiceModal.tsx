@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { CheckSquare, ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
@@ -24,6 +24,15 @@ interface PatientRow {
   first_name: string
   last_name: string
   patient_code: string | null
+}
+
+interface PendingTreatment {
+  id: string
+  treatment_type: string
+  description: string | null
+  tooth_number: number | null
+  status: string
+  cost: number
 }
 
 export function InvoiceModal({
@@ -53,6 +62,11 @@ export function InvoiceModal({
   const [discountAmount, setDiscountAmount] = useState(String(template?.discount_amount || ''))
   const [saving, setSaving] = useState(false)
 
+  // Pending treatments
+  const [pendingTreatments, setPendingTreatments] = useState<PendingTreatment[]>([])
+  const [selectedTreatmentIds, setSelectedTreatmentIds] = useState<Set<string>>(new Set())
+  const [showTreatments, setShowTreatments] = useState(true)
+
   useEffect(() => {
     setFormData((prev) => ({ ...prev, patient_id: defaultPatientId || prev.patient_id }))
 
@@ -61,12 +75,72 @@ export function InvoiceModal({
     }
   }, [defaultPatientId, hidePatientSelect])
 
+  // Load uninvoiced treatments whenever patient changes
+  useEffect(() => {
+    const pid = formData.patient_id
+    if (pid) {
+      loadPendingTreatments(pid)
+    } else {
+      setPendingTreatments([])
+      setSelectedTreatmentIds(new Set())
+    }
+  }, [formData.patient_id])
+
   async function loadPatients() {
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name, patient_code')
       .order('last_name')
     setPatients((data as PatientRow[]) || [])
+  }
+
+  async function loadPendingTreatments(patientId: string) {
+    const { data } = await supabase
+      .from('treatments')
+      .select('id, treatment_type, description, tooth_number, status, cost')
+      .eq('patient_id', patientId)
+      .eq('is_invoiced', false)
+      .order('created_at', { ascending: false })
+    setPendingTreatments((data as PendingTreatment[]) || [])
+    setSelectedTreatmentIds(new Set())
+  }
+
+  function toggleTreatment(id: string) {
+    setSelectedTreatmentIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  function selectAllTreatments() {
+    setSelectedTreatmentIds(new Set(pendingTreatments.map((t) => t.id)))
+  }
+
+  function clearTreatmentSelection() {
+    setSelectedTreatmentIds(new Set())
+  }
+
+  /** Convert selected pending treatments into invoice line items */
+  function importTreatmentsAsItems() {
+    const selected = pendingTreatments.filter((t) => selectedTreatmentIds.has(t.id))
+    if (selected.length === 0) return
+
+    const newItems: InvoiceItem[] = selected.map((t) => {
+      const tooth = t.tooth_number ? ` (Tooth ${t.tooth_number})` : ''
+      const desc = t.description ? `${t.treatment_type}${tooth} – ${t.description}` : `${t.treatment_type}${tooth}`
+      return { description: desc, amount: String(t.cost || '') }
+    })
+
+    setItems((prev) => {
+      // Remove blank placeholder rows before appending
+      const nonEmpty = prev.filter((i) => i.description.trim() || i.amount)
+      return nonEmpty.length ? [...nonEmpty, ...newItems] : newItems
+    })
   }
 
   function addItem() {
@@ -142,6 +216,14 @@ export function InvoiceModal({
             template_id: template?.id || null,
           },
         })
+
+        // Mark selected treatments as invoiced
+        if (selectedTreatmentIds.size > 0) {
+          await supabase
+            .from('treatments')
+            .update({ is_invoiced: true, invoice_id: data.id })
+            .in('id', Array.from(selectedTreatmentIds))
+        }
       }
 
       onSave()
@@ -191,6 +273,93 @@ export function InvoiceModal({
               />
             </div>
           </div>
+
+          {/* ── From Patient Treatments ── */}
+          {pendingTreatments.length > 0 && (
+            <div className="border border-blue-200 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowTreatments((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-blue-800 text-sm font-medium"
+              >
+                <span>From Patient Treatments ({pendingTreatments.length} pending)</span>
+                {showTreatments ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+
+              {showTreatments && (
+                <div className="p-3 space-y-2">
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={selectAllTreatments}
+                      className="text-blue-600 hover:underline"
+                    >
+                      Select all
+                    </button>
+                    <span className="text-gray-400">·</span>
+                    <button
+                      type="button"
+                      onClick={clearTreatmentSelection}
+                      className="text-gray-500 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <ul className="space-y-1 max-h-48 overflow-y-auto">
+                    {pendingTreatments.map((t) => {
+                      const checked = selectedTreatmentIds.has(t.id)
+                      return (
+                        <li key={t.id}>
+                          <button
+                            type="button"
+                            onClick={() => toggleTreatment(t.id)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${
+                              checked ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
+                            }`}
+                          >
+                            {checked
+                              ? <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              : <Square className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                            <span className="flex-1 min-w-0 truncate">
+                              {t.treatment_type}
+                              {t.tooth_number ? ` (T${t.tooth_number})` : ''}
+                              {t.description ? ` – ${t.description}` : ''}
+                            </span>
+                            <span className="text-gray-500 font-medium flex-shrink-0">
+                              {formatBDT(t.cost || 0)}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => { selectAllTreatments(); setTimeout(importTreatmentsAsItems, 0) }}
+                      className="w-full sm:w-auto text-xs"
+                    >
+                      Use all pending treatments
+                    </Button>
+                    {selectedTreatmentIds.size > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={importTreatmentsAsItems}
+                        className="w-full sm:w-auto text-xs"
+                      >
+                        Add {selectedTreatmentIds.size} selected to invoice
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
@@ -326,3 +495,4 @@ export function InvoiceModal({
     </div>
   )
 }
+
