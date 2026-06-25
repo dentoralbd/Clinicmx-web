@@ -198,6 +198,19 @@ export interface Database {
           total_amount: number
           paid_amount: number
           discount_amount: number
+          discount_type: string
+          discount_value: number
+          tax_amount: number
+          tax_rate: number
+          notes: string | null
+          payment_terms: string | null
+          invoice_number: string | null
+          invoice_type: string
+          recurring_enabled: boolean
+          recurring_frequency: string | null
+          template_id: string | null
+          credit_amount: number
+          late_fee_amount: number
           status: string
           due_date: string | null
           created_at: string
@@ -210,6 +223,19 @@ export interface Database {
           total_amount?: number
           paid_amount?: number
           discount_amount?: number
+          discount_type?: string
+          discount_value?: number
+          tax_amount?: number
+          tax_rate?: number
+          notes?: string | null
+          payment_terms?: string | null
+          invoice_number?: string | null
+          invoice_type?: string
+          recurring_enabled?: boolean
+          recurring_frequency?: string | null
+          template_id?: string | null
+          credit_amount?: number
+          late_fee_amount?: number
           status?: string
           due_date?: string | null
           created_at?: string
@@ -222,6 +248,19 @@ export interface Database {
           total_amount?: number
           paid_amount?: number
           discount_amount?: number
+          discount_type?: string
+          discount_value?: number
+          tax_amount?: number
+          tax_rate?: number
+          notes?: string | null
+          payment_terms?: string | null
+          invoice_number?: string | null
+          invoice_type?: string
+          recurring_enabled?: boolean
+          recurring_frequency?: string | null
+          template_id?: string | null
+          credit_amount?: number
+          late_fee_amount?: number
           status?: string
           due_date?: string | null
           created_at?: string
@@ -233,8 +272,235 @@ export interface Database {
             isOneToOne: false
             referencedRelation: 'patients'
             referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'invoices_template_id_fkey'
+            columns: ['template_id']
+            isOneToOne: false
+            referencedRelation: 'invoice_templates'
+            referencedColumns: ['id']
           }
         ]
+      }
+      invoice_templates: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          invoice_type: string
+          items: Json
+          discount_amount: number
+          tax_rate: number
+          payment_terms: string | null
+          is_system: boolean
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          invoice_type?: string
+          items?: Json
+          discount_amount?: number
+          tax_rate?: number
+          payment_terms?: string | null
+          is_system?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          invoice_type?: string
+          items?: Json
+          discount_amount?: number
+          tax_rate?: number
+          payment_terms?: string | null
+          is_system?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_methods: {
+        Row: {
+          id: string
+          code: string
+          name: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          name: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          name?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          id: string
+          invoice_id: string
+          payment_method_id: string | null
+          amount: number
+          payment_date: string
+          reference: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          payment_method_id?: string | null
+          amount: number
+          payment_date?: string
+          reference?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          payment_method_id?: string | null
+          amount?: number
+          payment_date?: string
+          reference?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'payments_invoice_id_fkey'
+            columns: ['invoice_id']
+            isOneToOne: false
+            referencedRelation: 'invoices'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'payments_payment_method_id_fkey'
+            columns: ['payment_method_id']
+            isOneToOne: false
+            referencedRelation: 'payment_methods'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      payment_plans: {
+        Row: {
+          id: string
+          invoice_id: string
+          installment_no: number
+          due_date: string
+          amount: number
+          status: string
+          paid_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          installment_no: number
+          due_date: string
+          amount: number
+          status?: string
+          paid_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          installment_no?: number
+          due_date?: string
+          amount?: number
+          status?: string
+          paid_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'payment_plans_invoice_id_fkey'
+            columns: ['invoice_id']
+            isOneToOne: false
+            referencedRelation: 'invoices'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      invoice_history: {
+        Row: {
+          id: string
+          invoice_id: string
+          event_type: string
+          event_data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          event_type: string
+          event_data?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          event_type?: string
+          event_data?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'invoice_history_invoice_id_fkey'
+            columns: ['invoice_id']
+            isOneToOne: false
+            referencedRelation: 'invoices'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      invoice_settings: {
+        Row: {
+          id: number
+          invoice_prefix: string
+          next_invoice_number: number
+          default_tax_rate: number
+          late_interest_rate: number
+          payment_terms: string | null
+          updated_at: string
+        }
+        Insert: {
+          id: number
+          invoice_prefix?: string
+          next_invoice_number?: number
+          default_tax_rate?: number
+          late_interest_rate?: number
+          payment_terms?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          invoice_prefix?: string
+          next_invoice_number?: number
+          default_tax_rate?: number
+          late_interest_rate?: number
+          payment_terms?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       dental_records: {
         Row: {
