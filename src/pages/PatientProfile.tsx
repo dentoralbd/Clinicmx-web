@@ -6,6 +6,7 @@ import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
+import { formatBDT } from '@/lib/utils'
 
 type SectionId =
   | 'profile'
@@ -24,11 +25,7 @@ type SectionId =
   | 'consultations'
   | 'billing'
 
-const currencyFormatter = new Intl.NumberFormat('en-BD', {
-  style: 'currency',
-  currency: 'BDT',
-  maximumFractionDigits: 2,
-})
+const mobileNavSections: SectionId[] = ['profile', 'appointments', 'prescriptions', 'files', 'billing']
 
 const sectionOptions: Array<{
   id: SectionId
@@ -53,8 +50,6 @@ const sectionOptions: Array<{
   { id: 'billing', label: 'Billing', description: 'Invoices, payments, and due amounts', icon: DollarSign },
 ]
 
-const mobileNavSections: SectionId[] = ['profile', 'appointments', 'prescriptions', 'files', 'billing']
-
 const legacySectionMap: Record<string, SectionId> = {
   overview: 'profile',
   'dental-chart': 'clinical',
@@ -67,7 +62,7 @@ const legacySectionMap: Record<string, SectionId> = {
 }
 
 function formatCurrency(value: number) {
-  return currencyFormatter.format(value || 0)
+  return formatBDT(value)
 }
 
 function formatDateValue(value?: string | null, dateFormat = 'MMM d, yyyy') {
@@ -1443,62 +1438,15 @@ export function PatientProfile() {
         {invoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Items</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Total</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Paid</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Due</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {invoices.map((invoice) => (
-                  <tr key={invoice.id}>
-                    <td className="px-4 py-3 text-sm">{formatDateValue(invoice.created_at)}</td>
-                    <td className="px-4 py-3 text-sm">
-                      {Array.isArray(invoice.items) ? invoice.items.length : 0} item(s)
-                    </td>
-                    <td className="px-4 py-3 text-sm">{formatCurrency(invoice.total_amount || 0)}</td>
-                    <td className="px-4 py-3 text-sm">{formatCurrency(invoice.paid_amount || 0)}</td>
-                    <td className="px-4 py-3 text-sm">{formatCurrency(getInvoiceDue(invoice))}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        invoice.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                        invoice.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {invoice.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        {invoice.status !== 'Paid' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleMarkInvoicePaid(invoice.id, invoice.total_amount || 0)}
-                          >
-                            Mark Paid
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteInvoice(invoice.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-gray-200">
+            {invoices.map((invoice) => (
+              <PatientInvoiceRow
+                key={invoice.id}
+                invoice={invoice}
+                onMarkPaid={() => handleMarkInvoicePaid(invoice.id, invoice.total_amount || 0)}
+                onDelete={() => handleDeleteInvoice(invoice.id)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -1578,26 +1526,6 @@ export function PatientProfile() {
             <HeroStat label="Files" value={files.length.toString()} className="col-span-2 sm:col-span-1" />
           </div>
         </div>
-      </div>
-
-      <div className="md:hidden -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {mobileNavSections
-          .map((sectionId) => sectionOptions.find((section) => section.id === sectionId))
-          .filter((section): section is (typeof sectionOptions)[number] => Boolean(section))
-          .map((section) => (
-            <button
-              key={section.id}
-              onClick={() => updateSection(section.id)}
-              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                activeSection === section.id
-                  ? 'border-primary bg-primary text-white shadow-sm'
-                  : 'border-gray-200 bg-white text-text-secondary hover:border-primary/30 hover:text-primary'
-              }`}
-            >
-              <section.icon className="h-4 w-4" />
-              {section.label}
-            </button>
-          ))}
       </div>
 
       <div className="hidden md:grid grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2468,6 +2396,92 @@ function TreatmentPlanModal({ formData, setFormData, onSubmit, onClose }: any) {
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+function PatientInvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: any; onMarkPaid: () => void; onDelete: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const items: any[] = Array.isArray(invoice.items) ? invoice.items : []
+  const discountAmt: number = invoice.discount_amount || 0
+  const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  const statusColors: Record<string, string> = {
+    Paid: 'bg-green-100 text-green-800',
+    Partial: 'bg-yellow-100 text-yellow-800',
+    Pending: 'bg-red-100 text-red-800',
+  }
+  const due = getInvoiceDue(invoice)
+
+  return (
+    <div className="hover:bg-gray-50 transition-colors">
+      <div
+        className="p-4 cursor-pointer select-none"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm">{formatDateValue(invoice.created_at)}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>
+                {invoice.status}
+              </span>
+              {items.length > 0 && (
+                <span className="text-xs text-text-secondary">{items.length} item{items.length !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-3 text-sm">
+              <span className="font-bold text-primary">{formatCurrency(invoice.total_amount || 0)}</span>
+              {due > 0 && <span className="text-red-600">Due: {formatCurrency(due)}</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {invoice.status !== 'Paid' && (
+              <Button size="sm" variant="outline" onClick={onMarkPaid}>Mark Paid</Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+          </div>
+        </div>
+      </div>
+
+      {expanded && items.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 border border-gray-200">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Line Items</p>
+            {items.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between items-center text-sm">
+                <span>{item.description}</span>
+                <span className="font-medium">{formatCurrency(parseFloat(item.amount) || 0)}</span>
+              </div>
+            ))}
+            <div className="pt-2 border-t border-gray-200 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-text-secondary">Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+              {discountAmt > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-secondary">Discount</span>
+                  <span className="text-green-600">-{formatCurrency(discountAmt)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold text-sm pt-1 border-t border-gray-200">
+                <span>Total</span>
+                <span className="text-primary">{formatCurrency(invoice.total_amount || 0)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-secondary">Paid</span>
+                <span className="text-green-600">{formatCurrency(invoice.paid_amount || 0)}</span>
+              </div>
+              {due > 0 && (
+                <div className="flex justify-between font-semibold text-sm">
+                  <span className="text-text-secondary">Due</span>
+                  <span className="text-red-600">{formatCurrency(due)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

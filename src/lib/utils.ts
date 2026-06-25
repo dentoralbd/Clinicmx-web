@@ -1,5 +1,15 @@
 import { format } from 'date-fns'
 
+const bdtFormatter = new Intl.NumberFormat('en-BD', {
+  style: 'currency',
+  currency: 'BDT',
+  maximumFractionDigits: 2,
+})
+
+export function formatBDT(value: number): string {
+  return bdtFormatter.format(value || 0)
+}
+
 export function cn(...classes: (string | undefined | null | false | Record<string, boolean>)[]) {
   return classes
     .flatMap((c) => {

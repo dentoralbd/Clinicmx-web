@@ -398,6 +398,7 @@ export function AppointmentModal({
                 <option>Filling</option>
                 <option>Root Canal</option>
                 <option>Extraction</option>
+                <option>Crowning</option>
                 <option>Consultation</option>
                 <option>Follow-up</option>
               </select>

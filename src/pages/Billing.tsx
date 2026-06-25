@@ -3,7 +3,7 @@ import { Plus, DollarSign, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lu
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { supabase } from '@/lib/supabase'
-import { safeFormat } from '@/lib/utils'
+import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface Invoice {
   id: string
@@ -109,7 +109,7 @@ export function Billing() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-text-secondary text-sm">Total Billed</p>
-              <p className="text-2xl font-bold mt-1">${stats.total.toFixed(2)}</p>
+              <p className="text-2xl font-bold mt-1">{formatBDT(stats.total)}</p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
               <DollarSign className="w-6 h-6" />
@@ -120,7 +120,7 @@ export function Billing() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-text-secondary text-sm">Paid</p>
-              <p className="text-2xl font-bold mt-1">${stats.paid.toFixed(2)}</p>
+              <p className="text-2xl font-bold mt-1">{formatBDT(stats.paid)}</p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
               <CheckCircle className="w-6 h-6" />
@@ -131,7 +131,7 @@ export function Billing() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-text-secondary text-sm">Pending</p>
-              <p className="text-2xl font-bold mt-1">${stats.pending.toFixed(2)}</p>
+              <p className="text-2xl font-bold mt-1">{formatBDT(stats.pending)}</p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
               <Clock className="w-6 h-6" />
@@ -203,6 +203,8 @@ export function Billing() {
 function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMarkPaid: () => void; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false)
   const items = Array.isArray(invoice.items) ? invoice.items : []
+  const discount = (invoice as any).discount_amount || 0
+  const subtotal = items.reduce((sum: number, item: any) => sum + (parseFloat(item.amount) || 0), 0)
   const statusColors: Record<string, string> = {
     Pending: 'bg-orange-100 text-orange-700',
     Paid: 'bg-green-100 text-green-700',
@@ -231,7 +233,7 @@ function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMar
               {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
             </p>
             <p className="text-lg font-bold text-primary mt-1">
-              ${invoice.total_amount.toFixed(2)}
+              {formatBDT(invoice.total_amount)}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -257,12 +259,24 @@ function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMar
             {items.map((item: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center text-sm">
                 <span className="text-text-primary">{item.description}</span>
-                <span className="font-medium text-primary">${item.amount?.toFixed(2) || '0.00'}</span>
+                <span className="font-medium text-primary">{formatBDT(parseFloat(item.amount) || 0)}</span>
               </div>
             ))}
-            <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
-              <span className="text-sm font-semibold">Total</span>
-              <span className="font-bold text-primary">${invoice.total_amount.toFixed(2)}</span>
+            <div className="pt-2 border-t border-gray-200 space-y-1">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-text-secondary">Subtotal</span>
+                <span>{formatBDT(subtotal)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-text-secondary">Discount</span>
+                  <span className="text-green-600">-{formatBDT(discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-200">
+                <span>Total</span>
+                <span className="font-bold text-primary">{formatBDT(invoice.total_amount)}</span>
+              </div>
             </div>
           </div>
         </div>

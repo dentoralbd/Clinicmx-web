@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { formatBDT } from '@/lib/utils'
 
 export function InvoiceModal({
   onClose,
@@ -24,6 +25,7 @@ export function InvoiceModal({
     description: '',
     amount: '',
   }])
+  const [discountAmount, setDiscountAmount] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -56,7 +58,9 @@ export function InvoiceModal({
     setItems(updated)
   }
 
-  const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  const discount = parseFloat(discountAmount) || 0
+  const totalAmount = Math.max(subtotal - discount, 0)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -69,6 +73,7 @@ export function InvoiceModal({
         items: items.filter((item) => item.description && item.amount),
         total_amount: totalAmount,
         paid_amount: 0,
+        discount_amount: discount,
         status: formData.status,
         due_date: formData.due_date || null,
       }])
@@ -159,9 +164,28 @@ export function InvoiceModal({
                 </div>
               ))}
             </div>
-            <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between items-center">
-              <span className="font-medium">Total:</span>
-              <span className="text-xl font-bold text-primary">${totalAmount.toFixed(2)}</span>
+
+            <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-text-secondary">Subtotal:</span>
+                <span>{formatBDT(subtotal)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-sm text-text-secondary whitespace-nowrap">Discount:</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={discountAmount}
+                  onChange={(e) => setDiscountAmount(e.target.value)}
+                  className="w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex justify-between items-center font-medium pt-1 border-t border-gray-200">
+                <span>Total:</span>
+                <span className="text-xl font-bold text-primary">{formatBDT(totalAmount)}</span>
+              </div>
             </div>
           </div>
 

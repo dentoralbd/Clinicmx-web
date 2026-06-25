@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
-import { getPatientDobOrAge, safeFormat } from '@/lib/utils'
+import { getPatientDobOrAge, safeFormat, formatBDT } from '@/lib/utils'
 import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight } from 'lucide-react'
 
 interface Stats {
@@ -156,7 +156,7 @@ export function Dashboard() {
         />
         <StatCard
           title="Revenue (Month)"
-          value={`$${stats.monthRevenue.toFixed(2)}`}
+          value={`${formatBDT(stats.monthRevenue)}`}
           icon={<TrendingUp className="w-6 h-6" />}
           color="purple"
           onClick={() => navigate('/billing')}

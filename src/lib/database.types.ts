@@ -197,6 +197,7 @@ export interface Database {
           items: Json
           total_amount: number
           paid_amount: number
+          discount_amount: number
           status: string
           due_date: string | null
           created_at: string
@@ -208,6 +209,7 @@ export interface Database {
           items?: Json
           total_amount?: number
           paid_amount?: number
+          discount_amount?: number
           status?: string
           due_date?: string | null
           created_at?: string
@@ -219,6 +221,7 @@ export interface Database {
           items?: Json
           total_amount?: number
           paid_amount?: number
+          discount_amount?: number
           status?: string
           due_date?: string | null
           created_at?: string
