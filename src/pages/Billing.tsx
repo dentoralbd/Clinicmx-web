@@ -1,30 +1,65 @@
-import { useState, useEffect } from 'react'
-import { Plus, DollarSign, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import {
+  Plus,
+  DollarSign,
+  CheckCircle,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  FileSpreadsheet,
+  Mail,
+  Settings,
+  BarChart3,
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
+import { AdvancedInvoiceModal } from '@/components/AdvancedInvoiceModal'
+import { InvoiceTemplateSelector } from '@/components/InvoiceTemplateSelector'
+import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
+import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { FinancialReportsPanel } from '@/components/FinancialReportsPanel'
+import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface Invoice {
   id: string
   patient_id: string
-  items: any
+  items: Array<{ description: string; amount: string | number }> | null
   total_amount: number
   paid_amount: number
+  discount_amount: number
+  tax_amount: number
+  tax_rate: number
+  notes: string | null
+  payment_terms: string | null
+  invoice_number: string | null
+  invoice_type: string
+  recurring_enabled: boolean
+  recurring_frequency: string | null
   status: string
   due_date: string | null
   created_at: string
   patients: {
     first_name: string
     last_name: string
-  }
+    email: string | null
+  } | null
 }
 
 export function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  const [showBasicModal, setShowBasicModal] = useState(false)
+  const [showAdvancedModal, setShowAdvancedModal] = useState(false)
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false)
+  const [showReports, setShowReports] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<InvoiceTemplateData | null>(null)
+  const [selectedInvoiceType, setSelectedInvoiceType] = useState<'basic' | 'advanced'>('basic')
   const [filter, setFilter] = useState<string>('all')
+  const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
 
   useEffect(() => {
     loadInvoices()
@@ -35,14 +70,11 @@ export function Billing() {
       setLoading(true)
       const { data, error } = await supabase
         .from('invoices')
-        .select(`
-          *,
-          patients (first_name, last_name)
-        `)
+        .select('*, patients (first_name, last_name, email)')
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setInvoices(data || [])
+      setInvoices((data as Invoice[]) || [])
     } catch (error) {
       console.error('Error loading invoices:', error)
     } finally {
@@ -61,6 +93,11 @@ export function Billing() {
         .eq('id', id)
 
       if (error) throw error
+      await supabase.from('invoice_history').insert({
+        invoice_id: id,
+        event_type: 'status_updated',
+        event_data: { status: 'Paid' },
+      })
       loadInvoices()
     } catch (error) {
       console.error('Error updating invoice:', error)
@@ -74,98 +111,158 @@ export function Billing() {
     try {
       const { error } = await supabase.from('invoices').delete().eq('id', id)
       if (error) throw error
-      setInvoices(invoices.filter((i) => i.id !== id))
+      setInvoices((prev) => prev.filter((invoice) => invoice.id !== id))
+      setSelectedInvoices((prev) => prev.filter((invoiceId) => invoiceId !== id))
     } catch (error) {
       console.error('Error deleting invoice:', error)
       alert('Failed to delete invoice')
     }
   }
 
-  const filteredInvoices = filter === 'all'
-    ? invoices
-    : invoices.filter(i => i.status === filter)
+  async function bulkUpdateStatus(status: 'Pending' | 'Paid') {
+    if (selectedInvoices.length === 0) return
+
+    try {
+      const ids = [...selectedInvoices]
+      const updates = status === 'Paid'
+        ? filteredInvoices
+            .filter((invoice) => ids.includes(invoice.id))
+            .map((invoice) => ({ id: invoice.id, paid_amount: invoice.total_amount, status }))
+        : ids.map((id) => ({ id, status }))
+
+      for (const update of updates) {
+        const { id, ...payload } = update
+        const { error } = await supabase
+          .from('invoices')
+          .update(payload)
+          .eq('id', id)
+
+        if (error) throw error
+      }
+
+      setSelectedInvoices([])
+      loadInvoices()
+    } catch (error) {
+      console.error('Error updating invoices:', error)
+      alert('Failed to update selected invoices')
+    }
+  }
+
+  function exportInvoices() {
+    const rows = filteredInvoices.map((invoice) => ({
+      invoice_number: invoice.invoice_number || '',
+      patient: `${invoice.patients?.first_name || ''} ${invoice.patients?.last_name || ''}`.trim(),
+      type: invoice.invoice_type,
+      status: invoice.status,
+      total: invoice.total_amount,
+      paid: invoice.paid_amount,
+      due_date: invoice.due_date || '',
+    }))
+
+    const csv = [
+      Object.keys(rows[0] || { invoice_number: '', patient: '', type: '', status: '', total: '', paid: '', due_date: '' }).join(','),
+      ...rows.map((row) => Object.values(row).join(',')),
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `invoices-${new Date().toISOString().slice(0, 10)}.csv`)
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const filteredInvoices = useMemo(() => {
+    if (filter === 'all') return invoices
+    return invoices.filter((invoice) => invoice.status === filter)
+  }, [filter, invoices])
 
   const stats = {
-    total: invoices.reduce((sum, i) => sum + i.total_amount, 0),
-    paid: invoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + i.paid_amount, 0),
-    pending: invoices.filter(i => i.status === 'Pending').reduce((sum, i) => sum + i.total_amount, 0),
+    total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
+    paid: invoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
+    pending: invoices.filter((invoice) => invoice.status === 'Pending').reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),
   }
+
+  const allVisibleSelected = filteredInvoices.length > 0 && filteredInvoices.every((invoice) => selectedInvoices.includes(invoice.id))
 
   return (
     <div className="space-y-6 page-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Billing</h1>
-          <p className="text-text-secondary mt-1">Invoices and payments</p>
+          <p className="text-text-secondary mt-1">Invoices, payments, templates, and reports</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Invoice
-        </Button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedInvoiceType}
+            onChange={(e) => setSelectedInvoiceType(e.target.value as 'basic' | 'advanced')}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="basic">Basic Invoice</option>
+            <option value="advanced">Advanced Invoice</option>
+          </select>
+
+          <Button variant="outline" onClick={() => setShowTemplateSelector(true)}>Quick Invoice</Button>
+          <Button variant="outline" onClick={() => setShowReports((prev) => !prev)}>
+            <BarChart3 className="w-4 h-4 mr-1" />
+            Reports
+          </Button>
+          <Button variant="outline" onClick={() => setShowSettings(true)}>
+            <Settings className="w-4 h-4 mr-1" />
+            Settings
+          </Button>
+          <Button variant="outline" onClick={exportInvoices}>
+            <FileSpreadsheet className="w-4 h-4 mr-1" />
+            Export
+          </Button>
+          <Button variant="outline" onClick={() => window.print()}>Print</Button>
+          <Button onClick={() => (selectedInvoiceType === 'advanced' ? setShowAdvancedModal(true) : setShowBasicModal(true))}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Invoice
+          </Button>
+        </div>
       </div>
 
+      {showReports && <FinancialReportsPanel />}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm">Total Billed</p>
-              <p className="text-2xl font-bold mt-1">{formatBDT(stats.total)}</p>
-            </div>
-            <div className="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <DollarSign className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm">Paid</p>
-              <p className="text-2xl font-bold mt-1">{formatBDT(stats.paid)}</p>
-            </div>
-            <div className="w-12 h-12 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
-              <CheckCircle className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm">Pending</p>
-              <p className="text-2xl font-bold mt-1">{formatBDT(stats.pending)}</p>
-            </div>
-            <div className="w-12 h-12 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
-              <Clock className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
+        <SummaryCard title="Total Billed" value={formatBDT(stats.total)} icon={<DollarSign className="w-6 h-6" />} color="blue" />
+        <SummaryCard title="Paid" value={formatBDT(stats.paid)} icon={<CheckCircle className="w-6 h-6" />} color="green" />
+        <SummaryCard title="Pending" value={formatBDT(stats.pending)} icon={<Clock className="w-6 h-6" />} color="orange" />
       </div>
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex gap-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'all' ? 'bg-primary text-white' : 'bg-gray-100 text-text-primary hover:bg-gray-200'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilter('Pending')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'Pending' ? 'bg-primary text-white' : 'bg-gray-100 text-text-primary hover:bg-gray-200'
-            }`}
-          >
-            Pending
-          </button>
-          <button
-            onClick={() => setFilter('Paid')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'Paid' ? 'bg-primary text-white' : 'bg-gray-100 text-text-primary hover:bg-gray-200'
-            }`}
-          >
-            Paid
-          </button>
+        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-2 justify-between">
+          <div className="flex gap-2">
+            {['all', 'Pending', 'Paid'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setFilter(status)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === status ? 'bg-primary text-white' : 'bg-gray-100 text-text-primary hover:bg-gray-200'
+                }`}
+              >
+                {status === 'all' ? 'All' : status}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={(e) => {
+                  setSelectedInvoices(e.target.checked ? filteredInvoices.map((invoice) => invoice.id) : [])
+                }}
+              />
+              Select all
+            </label>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Pending')} disabled={selectedInvoices.length === 0}>Mark Pending</Button>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Paid')} disabled={selectedInvoices.length === 0}>Mark Paid</Button>
+          </div>
         </div>
 
         {loading ? (
@@ -182,104 +279,252 @@ export function Billing() {
               <InvoiceRow
                 key={invoice.id}
                 invoice={invoice}
+                checked={selectedInvoices.includes(invoice.id)}
+                onSelect={(checked) => {
+                  setSelectedInvoices((prev) => {
+                    if (checked) return [...new Set([...prev, invoice.id])]
+                    return prev.filter((id) => id !== invoice.id)
+                  })
+                }}
                 onMarkPaid={() => markAsPaid(invoice.id, invoice.total_amount)}
                 onDelete={() => deleteInvoice(invoice.id)}
+                onPaymentRecorded={loadInvoices}
               />
             ))}
           </div>
         )}
       </div>
 
-      {showModal && (
-        <InvoiceModal
-          onClose={() => setShowModal(false)}
-          onSave={() => { loadInvoices(); setShowModal(false) }}
+      {showTemplateSelector && (
+        <InvoiceTemplateSelector
+          invoiceType={selectedInvoiceType}
+          onClose={() => setShowTemplateSelector(false)}
+          onSelectTemplate={(template) => {
+            setSelectedTemplate(template)
+            setShowTemplateSelector(false)
+            if (selectedInvoiceType === 'advanced') setShowAdvancedModal(true)
+            else setShowBasicModal(true)
+          }}
         />
       )}
+
+      {showBasicModal && (
+        <InvoiceModal
+          invoiceType="basic"
+          template={selectedTemplate}
+          onClose={() => {
+            setShowBasicModal(false)
+            setSelectedTemplate(null)
+          }}
+          onSave={() => {
+            loadInvoices()
+            setShowBasicModal(false)
+            setSelectedTemplate(null)
+          }}
+        />
+      )}
+
+      {showAdvancedModal && (
+        <AdvancedInvoiceModal
+          template={selectedTemplate}
+          onClose={() => {
+            setShowAdvancedModal(false)
+            setSelectedTemplate(null)
+          }}
+          onSave={() => {
+            loadInvoices()
+            setShowAdvancedModal(false)
+            setSelectedTemplate(null)
+          }}
+        />
+      )}
+
+      {showSettings && <InvoiceSettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
 
-function InvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: Invoice; onMarkPaid: () => void; onDelete: () => void }) {
+function SummaryCard({ title, value, icon, color }: { title: string; value: string; icon: React.ReactNode; color: 'blue' | 'green' | 'orange' }) {
+  const colorMap: Record<'blue' | 'green' | 'orange', string> = {
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-green-50 text-green-600',
+    orange: 'bg-orange-50 text-orange-600',
+  }
+
+  return (
+    <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-text-secondary text-sm">{title}</p>
+          <p className="text-2xl font-bold mt-1">{value}</p>
+        </div>
+        <div className={`w-12 h-12 rounded-lg ${colorMap[color]} flex items-center justify-center`}>
+          {icon}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InvoiceRow({
+  invoice,
+  checked,
+  onSelect,
+  onMarkPaid,
+  onDelete,
+  onPaymentRecorded,
+}: {
+  invoice: Invoice
+  checked: boolean
+  onSelect: (checked: boolean) => void
+  onMarkPaid: () => void
+  onDelete: () => void
+  onPaymentRecorded: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+
   const items = Array.isArray(invoice.items) ? invoice.items : []
-  const discount = (invoice as any).discount_amount || 0
-  const subtotal = items.reduce((sum: number, item: any) => sum + (parseFloat(item.amount) || 0), 0)
+  const subtotal = items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0)
+
   const statusColors: Record<string, string> = {
     Pending: 'bg-orange-100 text-orange-700',
     Paid: 'bg-green-100 text-green-700',
     Overdue: 'bg-red-100 text-red-700',
   }
 
+  const overdueDays = invoice.due_date && invoice.status !== 'Paid'
+    ? Math.max(Math.floor((Date.now() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24)), 0)
+    : 0
+  const lateInterest = overdueDays > 0 ? ((invoice.total_amount - invoice.paid_amount) * 0.01 * Math.ceil(overdueDays / 30)) : 0
+
   return (
     <div className="hover:bg-gray-50 transition-colors">
-      <div
-        className="p-4 cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-medium">
-                {invoice.patients?.first_name} {invoice.patients?.last_name}
+      <div className="p-4 cursor-pointer select-none" onClick={() => setExpanded((prev) => !prev)}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 flex-1">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(e) => onSelect(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-1"
+            />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-medium">
+                  {invoice.patients?.first_name} {invoice.patients?.last_name}
+                </p>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
+                  {invoice.status}
+                </span>
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-text-secondary uppercase">
+                  {invoice.invoice_type || 'basic'}
+                </span>
+                {invoice.invoice_number && (
+                  <span className="text-xs text-text-secondary">#{invoice.invoice_number}</span>
+                )}
+              </div>
+              <p className="text-sm text-text-secondary mt-1">
+                {safeFormat(invoice.created_at, 'MMM d, yyyy')}
+                {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'MMM d, yyyy')}`}
+                {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
+                {invoice.recurring_enabled && ` • Recurring (${invoice.recurring_frequency || 'monthly'})`}
               </p>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
-                {invoice.status}
-              </span>
+              <p className="text-lg font-bold text-primary mt-1">{formatBDT(invoice.total_amount)}</p>
+              {overdueDays > 0 && (
+                <p className="text-xs text-red-600 mt-1">
+                  Overdue by {overdueDays} day(s) • Est. late interest: {formatBDT(lateInterest)}
+                </p>
+              )}
             </div>
-            <p className="text-sm text-text-secondary mt-1">
-              {safeFormat(invoice.created_at, 'MMM d, yyyy')}
-              {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'MMM d, yyyy')}`}
-              {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
-            </p>
-            <p className="text-lg font-bold text-primary mt-1">
-              {formatBDT(invoice.total_amount)}
-            </p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+
+          <div className="flex items-center gap-2 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
             {invoice.status === 'Pending' && (
-              <Button variant="outline" size="sm" onClick={onMarkPaid}>
-                Mark Paid
-              </Button>
+              <Button variant="outline" size="sm" onClick={onMarkPaid}>Mark Paid</Button>
             )}
-            <Button variant="outline" size="sm" onClick={onDelete}>
-              Delete
+            <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)}>Record Payment</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const email = invoice.patients?.email
+                if (!email) {
+                  alert('Patient email is not available')
+                  return
+                }
+                const subject = encodeURIComponent(`Invoice ${invoice.invoice_number || invoice.id}`)
+                const body = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
+                window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
+              }}
+            >
+              <Mail className="w-4 h-4 mr-1" />Email
             </Button>
-            <button className="p-1 text-text-secondary hover:text-text-primary transition-colors" onClick={() => setExpanded(!expanded)}>
+            <Button variant="outline" size="sm" onClick={onDelete}>Delete</Button>
+            <button className="p-1 text-text-secondary hover:text-text-primary transition-colors" onClick={() => setExpanded((prev) => !prev)}>
               {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
         </div>
       </div>
 
-      {expanded && items.length > 0 && (
-        <div className="px-4 pb-4">
-          <div className="bg-gray-50 rounded-lg p-3 space-y-2 border border-gray-200">
-            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Line Items</p>
-            {items.map((item: any, idx: number) => (
-              <div key={idx} className="flex justify-between items-center text-sm">
-                <span className="text-text-primary">{item.description}</span>
-                <span className="font-medium text-primary">{formatBDT(parseFloat(item.amount) || 0)}</span>
-              </div>
-            ))}
-            <div className="pt-2 border-t border-gray-200 space-y-1">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-text-secondary">Subtotal</span>
-                <span>{formatBDT(subtotal)}</span>
-              </div>
-              {discount > 0 && (
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-text-secondary">Discount</span>
-                  <span className="text-green-600">-{formatBDT(discount)}</span>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          {items.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2 border border-gray-200">
+              <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Line Items</p>
+              {items.map((item, idx) => (
+                <div key={`${invoice.id}-${idx}`} className="flex justify-between items-center text-sm">
+                  <span className="text-text-primary">{item.description}</span>
+                  <span className="font-medium text-primary">{formatBDT(parseFloat(String(item.amount)) || 0)}</span>
                 </div>
-              )}
-              <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-200">
-                <span>Total</span>
-                <span className="font-bold text-primary">{formatBDT(invoice.total_amount)}</span>
+              ))}
+              <div className="pt-2 border-t border-gray-200 space-y-1">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-text-secondary">Subtotal</span>
+                  <span>{formatBDT(subtotal)}</span>
+                </div>
+                {invoice.discount_amount > 0 && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-text-secondary">Discount</span>
+                    <span className="text-green-600">-{formatBDT(invoice.discount_amount)}</span>
+                  </div>
+                )}
+                {invoice.tax_amount > 0 && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-text-secondary">Tax ({invoice.tax_rate || 0}%)</span>
+                    <span>{formatBDT(invoice.tax_amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-200">
+                  <span>Total</span>
+                  <span className="font-bold text-primary">{formatBDT(invoice.total_amount)}</span>
+                </div>
+                {!!invoice.notes && <p className="text-xs text-text-secondary pt-2">Notes: {invoice.notes}</p>}
+                {!!invoice.payment_terms && <p className="text-xs text-text-secondary">Terms: {invoice.payment_terms}</p>}
               </div>
             </div>
+          )}
+
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
+            <PaymentHistoryPanel invoiceId={invoice.id} />
           </div>
         </div>
+      )}
+
+      {showPaymentModal && (
+        <PaymentEntryModal
+          invoiceId={invoice.id}
+          invoiceTotal={invoice.total_amount}
+          invoicePaid={invoice.paid_amount}
+          onClose={() => setShowPaymentModal(false)}
+          onSaved={() => {
+            setShowPaymentModal(false)
+            onPaymentRecorded()
+          }}
+        />
       )}
     </div>
   )
