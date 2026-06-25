@@ -3,7 +3,6 @@ import { Plus, Search, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { ensurePatientCode } from '@/lib/patientCode'
 import { createPatient } from '@/lib/patients'
 import { format } from 'date-fns'
 
@@ -101,12 +100,7 @@ export function Patients() {
           .eq('id', editingId)
         if (updateError) throw updateError
       } else {
-        const createdPatient = await createPatient(patientPayload)
-        try {
-          await ensurePatientCode(createdPatient.id, (createdPatient as { patient_code?: string | null }).patient_code)
-        } catch (error: any) {
-          if (error?.code !== '42703') throw error
-        }
+        await createPatient(patientPayload)
       }
       setShowForm(false)
       setEditingId(null)
