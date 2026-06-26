@@ -4,6 +4,9 @@ import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSi
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
+import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { buildInvoiceItemPreview, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getInvoiceItemLineTotal, getInvoiceItemSubtotal } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { formatBDT } from '@/lib/utils'
@@ -556,6 +559,12 @@ export function PatientProfile() {
   const totalPaid = invoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
   const totalDue = totalBilled - totalPaid
   const pendingInvoices = invoices.filter((invoice) => getInvoiceDue(invoice) > 0)
+  const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+    invoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
+  )
+  const pendingBillableTreatments = treatments.filter(
+    (treatment) => !treatment.invoice_id && !treatment.is_invoiced && !linkedTreatmentIds.has(treatment.id)
+  )
   const upcomingAppointments = [...appointments]
     .filter((appointment) => {
       const appointmentDate = new Date(appointment.date_time)
@@ -948,11 +957,19 @@ export function PatientProfile() {
   const renderOperationsSection = () => (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-        <h3 className="font-semibold">Treatment History</h3>
-        <Button size="sm" onClick={() => setShowTreatmentPlanForm(true)}>
-          <Plus className="w-4 h-4 mr-1" />
-          New Treatment Plan
-        </Button>
+        <div>
+          <h3 className="font-semibold">Treatment History</h3>
+          <p className="text-sm text-text-secondary mt-1">{pendingBillableTreatments.length} treatment(s) ready to bill</p>
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end">
+          <Button size="sm" variant="outline" onClick={() => setShowInvoiceForm(true)} disabled={pendingBillableTreatments.length === 0}>
+            Bill Pending Treatments
+          </Button>
+          <Button size="sm" onClick={() => setShowTreatmentPlanForm(true)}>
+            <Plus className="w-4 h-4 mr-1" />
+            New Treatment Plan
+          </Button>
+        </div>
       </div>
       {treatments.length === 0 ? (
         <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
@@ -966,10 +983,14 @@ export function PatientProfile() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tooth</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Billing</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {treatments.map((treatment) => (
+                (() => {
+                  const isLinked = !!treatment.invoice_id || !!treatment.is_invoiced || linkedTreatmentIds.has(treatment.id)
+                  return (
                 <tr key={treatment.id}>
                   <td className="px-4 py-3 text-sm">{formatDateValue(treatment.created_at)}</td>
                   <td className="px-4 py-3">
@@ -987,7 +1008,14 @@ export function PatientProfile() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <span className={`px-2 py-1 text-xs rounded-full ${isLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {isLinked ? 'Invoiced' : 'Ready to bill'}
+                    </span>
+                  </td>
                 </tr>
+                  )
+                })()
               ))}
             </tbody>
           </table>
@@ -1445,6 +1473,7 @@ export function PatientProfile() {
                 invoice={invoice}
                 onMarkPaid={() => handleMarkInvoicePaid(invoice.id, invoice.total_amount || 0)}
                 onDelete={() => handleDeleteInvoice(invoice.id)}
+                onPaymentRecorded={loadPatientData}
               />
             ))}
           </div>
@@ -2400,11 +2429,23 @@ function TreatmentPlanModal({ formData, setFormData, onSubmit, onClose }: any) {
   )
 }
 
-function PatientInvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: any; onMarkPaid: () => void; onDelete: () => void }) {
+function PatientInvoiceRow({
+  invoice,
+  onMarkPaid,
+  onDelete,
+  onPaymentRecorded,
+}: {
+  invoice: any
+  onMarkPaid: () => void
+  onDelete: () => void
+  onPaymentRecorded: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
   const items: any[] = Array.isArray(invoice.items) ? invoice.items : []
   const discountAmt: number = invoice.discount_amount || 0
-  const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  const subtotal = getInvoiceItemSubtotal(items)
+  const itemPreview = buildInvoiceItemPreview(items)
   const statusColors: Record<string, string> = {
     Paid: 'bg-green-100 text-green-800',
     Partial: 'bg-yellow-100 text-yellow-800',
@@ -2433,11 +2474,13 @@ function PatientInvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: any; on
               <span className="font-bold text-primary">{formatCurrency(invoice.total_amount || 0)}</span>
               {due > 0 && <span className="text-red-600">Due: {formatCurrency(due)}</span>}
             </div>
+            {itemPreview && <p className="mt-1 text-sm text-text-secondary truncate">{itemPreview}</p>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             {invoice.status !== 'Paid' && (
               <Button size="sm" variant="outline" onClick={onMarkPaid}>Mark Paid</Button>
             )}
+            <Button size="sm" variant="outline" onClick={() => setShowPaymentModal(true)} disabled={due <= 0}>Record Payment</Button>
             <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
           </div>
         </div>
@@ -2449,8 +2492,15 @@ function PatientInvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: any; on
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Line Items</p>
             {items.map((item: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center text-sm">
-                <span>{item.description}</span>
-                <span className="font-medium">{formatCurrency(parseFloat(item.amount) || 0)}</span>
+                <div className="min-w-0 pr-3">
+                  <span>{formatInvoiceItemLabel(item)}</span>
+                  {getInvoiceItemLineTotal(item) > 0 && (
+                    <p className="text-xs text-text-secondary">
+                      {formatCurrency(getInvoiceItemLineTotal(item) / Math.max(Number(item.quantity) || 1, 1))} each
+                    </p>
+                  )}
+                </div>
+                <span className="font-medium">{formatCurrency(getInvoiceItemLineTotal(item))}</span>
               </div>
             ))}
             <div className="pt-2 border-t border-gray-200 space-y-1">
@@ -2480,7 +2530,23 @@ function PatientInvoiceRow({ invoice, onMarkPaid, onDelete }: { invoice: any; on
               )}
             </div>
           </div>
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 mt-3">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
+            <PaymentHistoryPanel invoiceId={invoice.id} />
+          </div>
         </div>
+      )}
+      {showPaymentModal && (
+        <PaymentEntryModal
+          invoiceId={invoice.id}
+          invoiceTotal={invoice.total_amount || 0}
+          invoicePaid={invoice.paid_amount || 0}
+          onClose={() => setShowPaymentModal(false)}
+          onSaved={() => {
+            setShowPaymentModal(false)
+            onPaymentRecorded()
+          }}
+        />
       )}
     </div>
   )

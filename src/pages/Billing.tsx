@@ -1,5 +1,12 @@
 import { useMemo, useState, useEffect } from 'react'
 import {
+  buildInvoiceItemPreview,
+  formatInvoiceItemLabel,
+  getInvoiceItemLineTotal,
+  getInvoiceItemSubtotal,
+  type BillingLineItem,
+} from '@/lib/billing'
+import {
   Plus,
   DollarSign,
   CheckCircle,
@@ -26,17 +33,17 @@ import { safeFormat, formatBDT } from '@/lib/utils'
 interface Invoice {
   id: string
   patient_id: string
-  items: Array<{ description: string; amount: string | number }> | null
+  items: BillingLineItem[] | null
   total_amount: number
   paid_amount: number
-  discount_amount: number
-  tax_amount: number
-  tax_rate: number
-  notes: string | null
-  payment_terms: string | null
-  invoice_number: string | null
-  invoice_type: string
-  recurring_enabled: boolean
+  discount_amount?: number | null
+  tax_amount?: number | null
+  tax_rate?: number | null
+  notes?: string | null
+  payment_terms?: string | null
+  invoice_number?: string | null
+  invoice_type?: string | null
+  recurring_enabled?: boolean | null
   recurring_frequency: string | null
   status: string
   due_date: string | null
@@ -97,7 +104,7 @@ export function Billing() {
         invoice_id: id,
         event_type: 'status_updated',
         event_data: { status: 'Paid' },
-      })
+      }).then(() => {}, () => {})
       loadInvoices()
     } catch (error) {
       console.error('Error updating invoice:', error)
@@ -181,7 +188,9 @@ export function Billing() {
   const stats = {
     total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
     paid: invoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
-    pending: invoices.filter((invoice) => invoice.status === 'Pending').reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),
+    pending: invoices
+      .filter((invoice) => (invoice.total_amount || 0) > (invoice.paid_amount || 0))
+      .reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),
   }
 
   const allVisibleSelected = filteredInvoices.length > 0 && filteredInvoices.every((invoice) => selectedInvoices.includes(invoice.id))
@@ -236,7 +245,7 @@ export function Billing() {
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-2 justify-between">
           <div className="flex gap-2">
-            {['all', 'Pending', 'Paid'].map((status) => (
+            {['all', 'Pending', 'Partial', 'Paid'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
@@ -385,11 +394,13 @@ function InvoiceRow({
   const [showPaymentModal, setShowPaymentModal] = useState(false)
 
   const items = Array.isArray(invoice.items) ? invoice.items : []
-  const subtotal = items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0)
+  const subtotal = getInvoiceItemSubtotal(items)
   const remainingBalance = Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
+  const itemPreview = buildInvoiceItemPreview(items)
 
   const statusColors: Record<string, string> = {
     Pending: 'bg-orange-100 text-orange-700',
+    Partial: 'bg-amber-100 text-amber-700',
     Paid: 'bg-green-100 text-green-700',
     Overdue: 'bg-red-100 text-red-700',
   }
@@ -432,6 +443,9 @@ function InvoiceRow({
                 {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
                 {invoice.recurring_enabled && ` • Recurring (${invoice.recurring_frequency || 'monthly'})`}
               </p>
+              {itemPreview && (
+                <p className="text-sm text-text-secondary mt-1 truncate">{itemPreview}</p>
+              )}
               <p className="text-lg font-bold text-primary mt-1">{formatBDT(invoice.total_amount)}</p>
               {overdueDays > 0 && (
                 <p className="text-xs text-red-600 mt-1">
@@ -479,8 +493,15 @@ function InvoiceRow({
               <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Line Items</p>
               {items.map((item, idx) => (
                 <div key={`${invoice.id}-${idx}`} className="flex justify-between items-center text-sm">
-                  <span className="text-text-primary">{item.description}</span>
-                  <span className="font-medium text-primary">{formatBDT(parseFloat(String(item.amount)) || 0)}</span>
+                  <div className="min-w-0 pr-3">
+                    <span className="text-text-primary">{formatInvoiceItemLabel(item)}</span>
+                    {getInvoiceItemLineTotal(item) > 0 && (
+                      <p className="text-xs text-text-secondary">
+                        {formatBDT(getInvoiceItemLineTotal(item) / Math.max(Number(item.quantity) || 1, 1))} each
+                      </p>
+                    )}
+                  </div>
+                  <span className="font-medium text-primary">{formatBDT(getInvoiceItemLineTotal(item))}</span>
                 </div>
               ))}
               <div className="pt-2 border-t border-gray-200 space-y-1">
@@ -488,16 +509,16 @@ function InvoiceRow({
                   <span className="text-text-secondary">Subtotal</span>
                   <span>{formatBDT(subtotal)}</span>
                 </div>
-                {invoice.discount_amount > 0 && (
+                {(invoice.discount_amount || 0) > 0 && (
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-text-secondary">Discount</span>
-                    <span className="text-green-600">-{formatBDT(invoice.discount_amount)}</span>
+                    <span className="text-green-600">-{formatBDT(invoice.discount_amount || 0)}</span>
                   </div>
                 )}
-                {invoice.tax_amount > 0 && (
+                {(invoice.tax_amount || 0) > 0 && (
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-text-secondary">Tax ({invoice.tax_rate || 0}%)</span>
-                    <span>{formatBDT(invoice.tax_amount)}</span>
+                    <span>{formatBDT(invoice.tax_amount || 0)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-200">

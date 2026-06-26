@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 
 interface PaymentEntryModalProps {
@@ -53,20 +54,45 @@ export function PaymentEntryModal({
     setSaving(true)
 
     try {
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert({
+      const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
+      let paymentStored = false
+      let paymentSchemaError: unknown = null
+      const paymentPayloads = [
+        {
           invoice_id: invoiceId,
           amount: parsedAmount,
           payment_method: paymentMethod,
-          payment_date: new Date(`${paymentDate}T00:00:00`).toISOString(),
+          payment_date: paymentDateIso,
           notes: notes || null,
-        })
+        },
+        {
+          invoice_id: invoiceId,
+          amount: parsedAmount,
+          payment_date: paymentDateIso,
+        },
+        {
+          invoice_id: invoiceId,
+          amount: parsedAmount,
+        },
+      ]
 
-      if (paymentError) throw paymentError
+      for (const payload of paymentPayloads) {
+        const { error: paymentError } = await supabase.from('payments').insert(payload)
+        if (!paymentError) {
+          paymentStored = true
+          paymentSchemaError = null
+          break
+        }
+
+        if (!isSchemaCompatibilityError(paymentError)) {
+          throw paymentError
+        }
+
+        paymentSchemaError = paymentError
+      }
 
       const newPaidAmount = invoicePaid + parsedAmount
-      const newStatus = newPaidAmount >= invoiceTotal ? 'Paid' : 'Pending'
+      const newStatus = newPaidAmount >= invoiceTotal ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
 
       const { error: invoiceError } = await supabase
         .from('invoices')
@@ -85,13 +111,20 @@ export function PaymentEntryModal({
           amount: parsedAmount,
           payment_method: paymentMethod,
         },
-      })
+      }).then(() => {}, () => {})
 
-      alert(`Payment recorded. Remaining balance: ${remainingAfterPayment.toFixed(2)}`)
+      if (!paymentStored && paymentSchemaError) {
+        logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId, amount: parsedAmount })
+      }
+
+      const warning = !paymentStored
+        ? ' Payment total was updated, but detailed payment history could not be stored on this database schema yet.'
+        : ''
+      alert(`Payment recorded. Remaining balance: ${remainingAfterPayment.toFixed(2)}.${warning}`)
       onSaved()
     } catch (error) {
-      console.error('Failed to record payment:', error)
-      alert('Failed to record payment')
+      logBillingError('Failed to record payment', error, { invoiceId, amount: parsedAmount })
+      alert(`Failed to record payment: ${getFriendlySupabaseErrorMessage(error)}`)
     } finally {
       setSaving(false)
     }

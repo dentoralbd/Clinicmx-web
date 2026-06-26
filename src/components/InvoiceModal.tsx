@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckSquare, ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import {
+  buildLegacySafeInvoicePayload,
+  buildTreatmentInvoiceItems,
+  createInvoiceItem,
+  extractTreatmentIdsFromInvoiceItems,
+  getFriendlySupabaseErrorMessage,
+  getInvoiceItemLineTotal,
+  getInvoiceItemSubtotal,
+  logBillingError,
+  normalizeInvoiceItems,
+  QUICK_TREATMENT_OPTIONS,
+  type BillingLineItem,
+} from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
@@ -12,11 +25,6 @@ interface InvoiceModalProps {
   hidePatientSelect?: boolean
   invoiceType?: 'basic' | 'advanced'
   template?: InvoiceTemplateData | null
-}
-
-interface InvoiceItem {
-  description: string
-  amount: string
 }
 
 interface PatientRow {
@@ -33,6 +41,8 @@ interface PendingTreatment {
   tooth_number: number | null
   status: string
   cost: number
+  is_invoiced?: boolean
+  invoice_id?: string | null
 }
 
 export function InvoiceModal({
@@ -54,10 +64,15 @@ export function InvoiceModal({
     recurring_enabled: false,
     recurring_frequency: 'monthly',
   })
-  const [items, setItems] = useState<InvoiceItem[]>(
+  const [items, setItems] = useState<BillingLineItem[]>(
     template?.items?.length
-      ? template.items.map((item) => ({ description: item.description, amount: String(item.amount) }))
-      : [{ description: '', amount: '' }]
+      ? template.items.map((item) => ({
+          description: item.description,
+          quantity: String(item.quantity || 1),
+          unit_price: String(item.unit_price ?? item.amount ?? ''),
+          amount: String(item.line_total ?? item.amount ?? ''),
+        }))
+      : [createInvoiceItem()]
   )
   const [discountAmount, setDiscountAmount] = useState(String(template?.discount_amount || ''))
   const [saving, setSaving] = useState(false)
@@ -98,15 +113,43 @@ export function InvoiceModal({
     try {
       const { data, error } = await supabase
         .from('treatments')
-        .select('id, treatment_type, description, tooth_number, status, cost')
+        .select('id, treatment_type, description, tooth_number, status, cost, is_invoiced, invoice_id')
         .eq('patient_id', patientId)
-        .eq('is_invoiced', false)
         .order('created_at', { ascending: false })
       if (error) throw error
-      setPendingTreatments((data as PendingTreatment[]) || [])
-    } catch {
-      // is_invoiced column may not exist yet in the live DB — silently degrade
-      setPendingTreatments([])
+
+      const safeTreatments = ((data as PendingTreatment[]) || []).filter(
+        (treatment) => !treatment.is_invoiced && !treatment.invoice_id
+      )
+      setPendingTreatments(safeTreatments)
+    } catch (error) {
+      try {
+        const [{ data: treatmentsData, error: treatmentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+          supabase
+            .from('treatments')
+            .select('id, treatment_type, description, tooth_number, status, cost')
+            .eq('patient_id', patientId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('invoices')
+            .select('items')
+            .eq('patient_id', patientId),
+        ])
+
+        if (treatmentsError) throw treatmentsError
+        if (invoicesError) throw invoicesError
+
+        const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+          (invoicesData || []).flatMap((invoice: { items?: unknown }) => (Array.isArray(invoice.items) ? invoice.items : []))
+        )
+
+        setPendingTreatments(
+          ((treatmentsData as PendingTreatment[]) || []).filter((treatment) => !linkedTreatmentIds.has(treatment.id))
+        )
+      } catch (fallbackError) {
+        logBillingError('Failed to load pending treatments', fallbackError, { patientId, initialError: error })
+        setPendingTreatments([])
+      }
     }
     setSelectedTreatmentIds(new Set())
   }
@@ -131,42 +174,48 @@ export function InvoiceModal({
     setSelectedTreatmentIds(new Set())
   }
 
-  /** Convert selected pending treatments into invoice line items */
-  function importTreatmentsAsItems() {
-    const selected = pendingTreatments.filter((t) => selectedTreatmentIds.has(t.id))
-    if (selected.length === 0) return
-
-    const newItems: InvoiceItem[] = selected.map((t) => {
-      const tooth = t.tooth_number ? ` (Tooth ${t.tooth_number})` : ''
-      const desc = t.description ? `${t.treatment_type}${tooth} – ${t.description}` : `${t.treatment_type}${tooth}`
-      return { description: desc, amount: String(t.cost || '') }
-    })
+  function appendItems(nextItems: BillingLineItem[]) {
+    if (nextItems.length === 0) return
 
     setItems((prev) => {
-      // Remove blank placeholder rows before appending
-      const nonEmpty = prev.filter((i) => i.description.trim() || i.amount)
-      return nonEmpty.length ? [...nonEmpty, ...newItems] : newItems
+      const nonEmpty = prev.filter((item) => item.description.trim() || item.unit_price || item.amount)
+      return nonEmpty.length > 0 ? [...nonEmpty, ...nextItems] : nextItems
     })
   }
 
+  /** Convert selected pending treatments into invoice line items */
+  function importTreatmentsAsItems(treatmentIds = Array.from(selectedTreatmentIds)) {
+    const selected = pendingTreatments.filter((t) => treatmentIds.includes(t.id))
+    if (selected.length === 0) return
+
+    appendItems(buildTreatmentInvoiceItems(selected))
+    setSelectedTreatmentIds(new Set(treatmentIds))
+  }
+
+  function importAllPendingTreatments() {
+    const allTreatmentIds = pendingTreatments.map((treatment) => treatment.id)
+    importTreatmentsAsItems(allTreatmentIds)
+  }
+
   function addItem() {
-    setItems((prev) => [...prev, { description: '', amount: '' }])
+    setItems((prev) => [...prev, createInvoiceItem()])
+  }
+
+  function addQuickTreatment(description: string) {
+    appendItems([createInvoiceItem(description)])
   }
 
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function updateItem(index: number, field: keyof InvoiceItem, value: string) {
+  function updateItem(index: number, field: keyof BillingLineItem, value: string) {
     const updated = [...items]
     updated[index] = { ...updated[index], [field]: value }
     setItems(updated)
   }
 
-  const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
-    [items]
-  )
+  const subtotal = useMemo(() => getInvoiceItemSubtotal(items), [items])
   const discount = parseFloat(discountAmount) || 0
   const taxRate = parseFloat(formData.tax_rate) || 0
   const taxAmount = Math.max(subtotal - discount, 0) * (taxRate / 100)
@@ -175,28 +224,21 @@ export function InvoiceModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    const validItems = items.filter((item) => item.description.trim() && item.amount)
-    if (validItems.length === 0) {
+    const normalizedItems = normalizeInvoiceItems(items)
+    if (normalizedItems.length === 0) {
       alert('Please add at least one valid item')
       return
     }
-
     setSaving(true)
-
     try {
-      // Use only the baseline columns guaranteed to exist in the original schema.
-      // Advanced columns (credit_amount, late_fee_amount, tax_rate, discount_type,
-      // discount_value, invoice_type, invoice_number, recurring_*, template_id, notes,
-      // payment_terms) are intentionally omitted until database migrations are confirmed.
-      const basePayload = {
-        patient_id: formData.patient_id,
-        items: validItems,
-        total_amount: totalAmount,
-        paid_amount: 0,
-        discount_amount: discount,
+      const basePayload = buildLegacySafeInvoicePayload({
+        patientId: formData.patient_id,
+        items: normalizedItems,
+        totalAmount,
+        paidAmount: 0,
         status: formData.status,
-        due_date: formData.due_date || null,
-      }
+        dueDate: formData.due_date,
+      })
 
       const { data, error } = await supabase
         .from('invoices')
@@ -229,12 +271,13 @@ export function InvoiceModal({
 
       onSave()
     } catch (error) {
-      console.error('Error creating invoice:', error)
-      const message =
-        (error as any)?.message ||
-        (error instanceof Error ? error.message : null) ||
-        'Unknown error occurred. Check the browser console for details.'
-      alert(`Failed to create invoice: ${message}`)
+      logBillingError('Failed to create invoice', error, {
+        patientId: formData.patient_id,
+        itemCount: normalizedItems.length,
+        totalAmount,
+      })
+      const message = getFriendlySupabaseErrorMessage(error)
+      alert(`Failed to create invoice. Only legacy-safe invoice fields are sent, but the database still rejected the request: ${message}`)
     } finally {
       setSaving(false)
     }
@@ -343,7 +386,7 @@ export function InvoiceModal({
                     <Button
                       type="button"
                       size="sm"
-                      onClick={() => { selectAllTreatments(); setTimeout(importTreatmentsAsItems, 0) }}
+                      onClick={importAllPendingTreatments}
                       className="w-full sm:w-auto text-xs"
                     >
                       Use all pending treatments
@@ -373,9 +416,21 @@ export function InvoiceModal({
                 Add Item
               </Button>
             </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {QUICK_TREATMENT_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => addQuickTreatment(option)}
+                  className="px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium hover:bg-primary/10"
+                >
+                  + {option}
+                </button>
+              ))}
+            </div>
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <div key={idx} className="flex flex-col sm:flex-row gap-2">
+                <div key={idx} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_90px_120px_110px_auto] gap-2 items-start">
                   <input
                     type="text"
                     placeholder="Description *"
@@ -385,12 +440,24 @@ export function InvoiceModal({
                   />
                   <input
                     type="number"
-                    step="0.01"
-                    placeholder="Amount *"
-                    value={item.amount}
-                    onChange={(e) => updateItem(idx, 'amount', e.target.value)}
-                    className="w-full sm:w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    min="1"
+                    step="1"
+                    placeholder="Qty"
+                    value={item.quantity || '1'}
+                    onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Unit price *"
+                    value={item.unit_price || ''}
+                    onChange={(e) => updateItem(idx, 'unit_price', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <div className="px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm font-medium text-right">
+                    {formatBDT(getInvoiceItemLineTotal(item))}
+                  </div>
                   {items.length > 1 && (
                     <button
                       type="button"
@@ -499,4 +566,3 @@ export function InvoiceModal({
     </div>
   )
 }
-

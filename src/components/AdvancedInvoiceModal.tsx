@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import {
+  buildLegacySafeInvoicePayload,
+  createInvoiceItem,
+  getFriendlySupabaseErrorMessage,
+  getInvoiceItemLineTotal,
+  getInvoiceItemSubtotal,
+  logBillingError,
+  normalizeInvoiceItems,
+  QUICK_TREATMENT_OPTIONS,
+  type BillingLineItem,
+} from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
@@ -9,11 +20,6 @@ interface AdvancedInvoiceModalProps {
   onSave: () => void
   defaultPatientId?: string
   template?: InvoiceTemplateData | null
-}
-
-interface ItemRow {
-  description: string
-  amount: string
 }
 
 export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', template = null }: AdvancedInvoiceModalProps) {
@@ -31,17 +37,19 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
     recurring_frequency: 'monthly',
     installment_count: '1',
   })
-  const [items, setItems] = useState<ItemRow[]>(
+  const [items, setItems] = useState<BillingLineItem[]>(
     Array.isArray(template?.items) && template.items.length > 0
-      ? template.items.map((item) => ({ description: item.description, amount: String(item.amount) }))
-      : [{ description: '', amount: '' }]
+      ? template.items.map((item) => ({
+          description: item.description,
+          quantity: String(item.quantity || 1),
+          unit_price: String(item.unit_price ?? item.amount ?? ''),
+          amount: String(item.line_total ?? item.amount ?? ''),
+        }))
+      : [createInvoiceItem()]
   )
   const [saving, setSaving] = useState(false)
 
-  const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
-    [items]
-  )
+  const subtotal = useMemo(() => getInvoiceItemSubtotal(items), [items])
   const discountValue = parseFloat(formData.discount_value) || 0
   const discountAmount = formData.discount_type === 'percentage'
     ? subtotal * (discountValue / 100)
@@ -51,14 +59,18 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
   const creditAmount = parseFloat(formData.credit_amount) || 0
   const totalAmount = Math.max(subtotal - discountAmount + taxAmount - creditAmount, 0)
 
-  function updateItem(index: number, field: keyof ItemRow, value: string) {
+  function updateItem(index: number, field: keyof BillingLineItem, value: string) {
     const next = [...items]
     next[index] = { ...next[index], [field]: value }
     setItems(next)
   }
 
   function addItem() {
-    setItems((prev) => [...prev, { description: '', amount: '' }])
+    setItems((prev) => [...prev, createInvoiceItem()])
+  }
+
+  function addQuickTreatment(description: string) {
+    setItems((prev) => [...prev.filter((item) => item.description.trim() || item.unit_price || item.amount), createInvoiceItem(description)])
   }
 
   function removeItem(index: number) {
@@ -67,35 +79,28 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const validItems = items.filter((item) => item.description.trim() && item.amount)
+    const normalizedItems = normalizeInvoiceItems(items)
 
     if (!formData.patient_id) {
       alert('Please select a patient')
       return
     }
 
-    if (validItems.length === 0) {
+    if (normalizedItems.length === 0) {
       alert('Please add at least one invoice item')
       return
     }
 
     setSaving(true)
-
     try {
-      // Use only the baseline columns guaranteed to exist in the original schema.
-      // Advanced columns (credit_amount, discount_type, discount_value, tax_amount,
-      // tax_rate, notes, payment_terms, invoice_number, invoice_type, recurring_*,
-      // template_id) are intentionally omitted until database migrations are confirmed.
-      // The credit and discount are already factored into totalAmount / discountAmount.
-      const basePayload = {
-        patient_id: formData.patient_id,
-        items: validItems,
-        total_amount: totalAmount,
-        paid_amount: 0,
-        discount_amount: discountAmount,
+      const basePayload = buildLegacySafeInvoicePayload({
+        patientId: formData.patient_id,
+        items: normalizedItems,
+        totalAmount,
+        paidAmount: 0,
         status: 'Pending',
-        due_date: formData.due_date || null,
-      }
+        dueDate: formData.due_date,
+      })
 
       const { data, error } = await supabase
         .from('invoices')
@@ -135,12 +140,13 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
 
       onSave()
     } catch (error) {
-      console.error('Error creating advanced invoice:', error)
-      const message =
-        (error as any)?.message ||
-        (error instanceof Error ? error.message : null) ||
-        'Unknown error occurred. Check the browser console for details.'
-      alert(`Failed to create advanced invoice: ${message}`)
+      logBillingError('Failed to create advanced invoice', error, {
+        patientId: formData.patient_id,
+        itemCount: normalizedItems.length,
+        totalAmount,
+      })
+      const message = getFriendlySupabaseErrorMessage(error)
+      alert(`Failed to create advanced invoice. Legacy-safe fields were used, but the database still rejected the request: ${message}`)
     } finally {
       setSaving(false)
     }
@@ -199,9 +205,21 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
               <label className="block text-sm font-medium">Items</label>
               <Button type="button" size="sm" onClick={addItem}>Add Item</Button>
             </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {QUICK_TREATMENT_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => addQuickTreatment(option)}
+                  className="px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium hover:bg-primary/10"
+                >
+                  + {option}
+                </button>
+              ))}
+            </div>
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <div key={idx} className="flex gap-2">
+                <div key={idx} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_90px_120px_110px_auto] gap-2 items-start">
                   <input
                     value={item.description}
                     placeholder="Description"
@@ -210,12 +228,24 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
                   />
                   <input
                     type="number"
-                    step="0.01"
-                    value={item.amount}
-                    placeholder="Amount"
-                    onChange={(e) => updateItem(idx, 'amount', e.target.value)}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    min="1"
+                    step="1"
+                    value={item.quantity || '1'}
+                    placeholder="Qty"
+                    onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={item.unit_price || ''}
+                    placeholder="Unit price"
+                    onChange={(e) => updateItem(idx, 'unit_price', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <div className="px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm font-medium text-right">
+                    {formatBDT(getInvoiceItemLineTotal(item))}
+                  </div>
                   {items.length > 1 && (
                     <Button type="button" variant="outline" size="sm" onClick={() => removeItem(idx)}>Remove</Button>
                   )}

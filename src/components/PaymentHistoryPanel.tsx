@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
@@ -20,6 +21,7 @@ interface PaymentRow {
 export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [schemaUnavailable, setSchemaUnavailable] = useState(false)
 
   useEffect(() => {
     loadPayments()
@@ -27,14 +29,40 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
 
   async function loadPayments() {
     setLoading(true)
-    const { data } = await supabase
-      .from('payments')
-      .select('id, amount, payment_date, payment_method, notes, payment_methods(name)')
-      .eq('invoice_id', invoiceId)
-      .order('payment_date', { ascending: false })
+    setSchemaUnavailable(false)
 
-    setPayments((data as PaymentRow[]) || [])
-    setLoading(false)
+    try {
+      const primaryQuery = await supabase
+        .from('payments')
+        .select('id, amount, payment_date, payment_method, notes, payment_methods(name)')
+        .eq('invoice_id', invoiceId)
+        .order('payment_date', { ascending: false })
+
+      if (primaryQuery.error && !isSchemaCompatibilityError(primaryQuery.error)) {
+        throw primaryQuery.error
+      }
+
+      if (!primaryQuery.error) {
+        setPayments((primaryQuery.data as PaymentRow[]) || [])
+        return
+      }
+
+      const fallbackQuery = await supabase
+        .from('payments')
+        .select('id, amount, payment_date, payment_method, notes')
+        .eq('invoice_id', invoiceId)
+        .order('payment_date', { ascending: false })
+
+      if (fallbackQuery.error) throw fallbackQuery.error
+
+      setPayments((fallbackQuery.data as PaymentRow[]) || [])
+    } catch (error) {
+      logBillingError('Failed to load payment history', error, { invoiceId })
+      setPayments([])
+      setSchemaUnavailable(isSchemaCompatibilityError(error) || /payments/i.test(getFriendlySupabaseErrorMessage(error)))
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) {
@@ -42,7 +70,11 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
   }
 
   if (payments.length === 0) {
-    return <div className="text-sm text-text-secondary">No payments recorded yet.</div>
+    return (
+      <div className="text-sm text-text-secondary">
+        {schemaUnavailable ? 'Detailed payment history is unavailable on this database schema yet.' : 'No payments recorded yet.'}
+      </div>
+    )
   }
 
   return (
