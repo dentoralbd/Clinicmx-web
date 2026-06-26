@@ -104,7 +104,7 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
 
       const { data, error } = await supabase
         .from('invoices')
-        .insert(attemptedPayload)
+        .insert([basePayload])
         .select('id')
         .single()
 

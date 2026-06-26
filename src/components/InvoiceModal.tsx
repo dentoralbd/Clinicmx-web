@@ -242,7 +242,7 @@ export function InvoiceModal({
 
       const { data, error } = await supabase
         .from('invoices')
-        .insert([attemptedPayload])
+        .insert([basePayload])
         .select('id')
         .single()
 
