@@ -10,6 +10,7 @@ import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getInvoiceItemLineTotal, getInvoiceItemSubtotal } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
+import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { format } from 'date-fns'
 import { formatBDT } from '@/lib/utils'
 
@@ -267,16 +268,10 @@ export function PatientProfile() {
 
   async function loadDoctorProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await (supabase as any)
-        .from('doctor_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const data = await loadSavedDoctorProfile()
       if (data) setDoctorProfile(data)
     } catch {
-      // table may not exist yet – silently ignore
+      // silently ignore
     }
   }
 
@@ -1194,11 +1189,8 @@ export function PatientProfile() {
                       let doc = doctorProfile
                       if (!doc) {
                         try {
-                          const { data: { user } } = await supabase.auth.getUser()
-                          if (user) {
-                            const { data } = await (supabase as any).from('doctor_profiles').select('*').eq('user_id', user.id).maybeSingle()
-                            if (data) { setDoctorProfile(data); doc = data }
-                          }
+                          const data = await loadSavedDoctorProfile()
+                          if (data) { setDoctorProfile(data); doc = data }
                         } catch { /* ignore */ }
                       }
                       setPrintingPrescription(prescription)

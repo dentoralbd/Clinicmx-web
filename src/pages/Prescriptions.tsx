@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
+import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { format } from 'date-fns'
 import { safeFormat } from '@/lib/utils'
 
@@ -96,16 +97,10 @@ export function Prescriptions() {
 
   async function loadDoctorProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await (supabase as any)
-        .from('doctor_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const data = await loadSavedDoctorProfile()
       if (data) setDoctorProfile(data)
     } catch {
-      // table may not exist yet – silently ignore
+      // silently ignore
     }
   }
 

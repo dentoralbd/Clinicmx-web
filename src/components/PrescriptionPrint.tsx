@@ -53,7 +53,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   const filteredInvs = prescription.investigations.filter((i) => i.name?.trim())
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:inset-auto print:fixed-none">
+    <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
       {/* Action bar – hidden on print */}
       <div className="print:hidden fixed top-4 right-4 flex gap-2 z-[101]">
         <button
