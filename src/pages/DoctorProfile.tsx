@@ -38,13 +38,18 @@ export function DoctorProfile() {
 
   async function loadProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await (supabase as any)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (!user || authError) {
+        console.warn('Not authenticated, cannot load doctor profile')
+        setLoading(false)
+        return
+      }
+      const { data, error } = await (supabase as any)
         .from('doctor_profiles')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle()
+      if (error) console.error('Error loading doctor profile:', error)
       if (data) setForm(data)
     } catch (err) {
       console.error('Error loading doctor profile:', err)
@@ -57,24 +62,30 @@ export function DoctorProfile() {
     e.preventDefault()
     setSaving(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const payload = { ...form, user_id: user.id, updated_at: new Date().toISOString() }
-      if (form.id) {
-        await (supabase as any).from('doctor_profiles').update(payload).eq('id', form.id)
-      } else {
-        const { data } = await (supabase as any)
-          .from('doctor_profiles')
-          .insert([payload])
-          .select()
-          .single()
-        if (data) setForm(data)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (!user || authError) {
+        alert('You must be logged in to save your profile.')
+        return
       }
+      const payload = {
+        ...form,
+        user_id: user.id,
+        updated_at: new Date().toISOString(),
+      }
+      // Remove id from payload for upsert to avoid conflicts
+      const { id: _id, ...payloadWithoutId } = payload as any
+      const { data, error } = await (supabase as any)
+        .from('doctor_profiles')
+        .upsert([payloadWithoutId], { onConflict: 'user_id' })
+        .select()
+        .single()
+      if (error) throw error
+      if (data) setForm(data)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving doctor profile:', err)
-      alert('Failed to save profile')
+      alert(`Failed to save profile: ${err?.message || String(err)}`)
     } finally {
       setSaving(false)
     }

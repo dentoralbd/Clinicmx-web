@@ -974,6 +974,96 @@ export function PatientProfile() {
             <MetricTile label="In Progress" value={treatments.filter((treatment) => treatment.status === 'In Progress').length.toString()} />
           </div>
         </InfoCard>
+
+        {/* Clinical Consultation History — CC and O/E from prescriptions */}
+        {(visits.length > 0 || prescriptions.some(p => p.chief_complaint || p.on_examination)) && (
+          <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold">Clinical Consultation History</h3>
+                <p className="text-xs text-text-secondary mt-0.5">Chief complaints and examination findings from prescriptions</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => updateSection('prescriptions')}>
+                View Prescriptions
+              </Button>
+            </div>
+            {prescriptions.filter(p => p.chief_complaint || p.on_examination).length === 0 &&
+             visits.filter(v => v.chief_complaint || v.examination_findings).length === 0 ? (
+              <EmptyState message="No clinical findings recorded yet. Add CC and O/E when writing a prescription." />
+            ) : (
+              <div className="space-y-3">
+                {/* Show from prescriptions (most recent 5) */}
+                {prescriptions
+                  .filter(p => p.chief_complaint || p.on_examination)
+                  .slice(0, 5)
+                  .map((prescription) => (
+                    <div key={prescription.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {formatDateValue(prescription.prescribed_date, 'MMMM d, yyyy')}
+                        </span>
+                        {prescription.diagnosis && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium border border-blue-200">
+                            {prescription.diagnosis.length > 40 ? prescription.diagnosis.slice(0, 40) + '…' : prescription.diagnosis}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {prescription.chief_complaint && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <span className="flex-shrink-0 font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs">CC</span>
+                            <span className="text-gray-700">{prescription.chief_complaint}</span>
+                          </div>
+                        )}
+                        {prescription.on_examination && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <span className="flex-shrink-0 font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-xs">O/E</span>
+                            <span className="text-gray-700">{prescription.on_examination}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                {/* Also show from manually-entered visits that have clinical data */}
+                {visits
+                  .filter(v => v.chief_complaint || v.examination_findings)
+                  .filter(v => !prescriptions.some(p =>
+                    p.chief_complaint === v.chief_complaint &&
+                    formatDateValue(p.prescribed_date) === formatDateValue(v.visit_date)
+                  ))
+                  .slice(0, 3)
+                  .map((visit) => (
+                    <div key={visit.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {formatDateValue(visit.visit_date, 'MMMM d, yyyy')}
+                        </span>
+                        {visit.diagnosis && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium border border-blue-200">
+                            {visit.diagnosis.length > 40 ? visit.diagnosis.slice(0, 40) + '…' : visit.diagnosis}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {visit.chief_complaint && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <span className="flex-shrink-0 font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs">CC</span>
+                            <span className="text-gray-700">{visit.chief_complaint}</span>
+                          </div>
+                        )}
+                        {visit.examination_findings && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <span className="flex-shrink-0 font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-xs">O/E</span>
+                            <span className="text-gray-700">{visit.examination_findings}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
