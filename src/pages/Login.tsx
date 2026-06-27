@@ -35,7 +35,9 @@ export function Login() {
       <div className={`bg-white rounded-2xl shadow-xl p-8 w-full max-w-md ${shake ? 'shake' : ''}`}>
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
-            <img src="/logo.png" alt="ClinicMx Logo" className="w-24 h-24 object-contain" />
+            <div className="w-28 h-28 rounded-full border-4 border-primary bg-white shadow-md flex items-center justify-center overflow-hidden">
+              <img src="/logo.png" alt="ClinicMx Logo" className="w-24 h-24 object-contain" />
+            </div>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">ClinicMx</h1>
           <p className="text-text-secondary">Dental Clinic Management</p>
