@@ -37,8 +37,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full border-2 border-primary bg-white shadow-sm flex items-center justify-center overflow-hidden flex-shrink-0">
-                <img src="/logo.png" alt="ClinicMx Logo" className="w-9 h-9 object-contain" />
+              <div className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                <img src="/logo.png" alt="ClinicMx Logo" className="w-8 h-8 object-contain" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-primary">ClinicMx</h1>
