@@ -5,6 +5,21 @@ import { supabase } from '@/lib/supabase'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
+import {
+  getComplaintTemplates,
+  getExaminationTemplates,
+  getFilledInvestigationItems,
+  getFilledMedicationItems,
+  getInvestigationSectionTemplates,
+  getMedicationSectionTemplates,
+  saveComplaintTemplate,
+  saveExaminationTemplate,
+  saveInvestigationSectionTemplate,
+  saveMedicationSectionTemplate,
+  type SectionTemplate,
+  type MedicationTemplateItem,
+  type InvestigationTemplateItem,
+} from '@/lib/prescriptionSectionTemplates'
 import { format } from 'date-fns'
 import { safeFormat } from '@/lib/utils'
 
@@ -30,7 +45,13 @@ export function Prescriptions() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showMedTemplates, setShowMedTemplates] = useState(false)
   const [showInvTemplates, setShowInvTemplates] = useState(false)
+  const [showComplaintTemplates, setShowComplaintTemplates] = useState(false)
+  const [showExamTemplates, setShowExamTemplates] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [complaintTemplates, setComplaintTemplates] = useState<Array<SectionTemplate<string>>>([])
+  const [examinationTemplates, setExaminationTemplates] = useState<Array<SectionTemplate<string>>>([])
+  const [savedMedicationTemplates, setSavedMedicationTemplates] = useState<Array<SectionTemplate<MedicationTemplateItem[]>>>([])
+  const [savedInvestigationTemplates, setSavedInvestigationTemplates] = useState<Array<SectionTemplate<InvestigationTemplateItem[]>>>([])
 
   const [localMeds, setLocalMeds] = useState<any[]>([])
   const [localInvs, setLocalInvs] = useState<any[]>([])
@@ -55,7 +76,15 @@ export function Prescriptions() {
     loadPatients()
     loadTemplates()
     loadDoctorProfile()
+    refreshSectionTemplates()
   }, [])
+
+  function refreshSectionTemplates() {
+    setComplaintTemplates(getComplaintTemplates())
+    setExaminationTemplates(getExaminationTemplates())
+    setSavedMedicationTemplates(getMedicationSectionTemplates())
+    setSavedInvestigationTemplates(getInvestigationSectionTemplates())
+  }
 
   async function loadPrescriptions() {
     try {
@@ -265,6 +294,64 @@ export function Prescriptions() {
     setShowInvTemplates(false)
   }
 
+  function applyMedicationSectionTemplate(template: SectionTemplate<MedicationTemplateItem[]>) {
+    setFormData({
+      ...formData,
+      medications: template.value.length > 0
+        ? template.value.map((item) => ({ ...item }))
+        : [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
+    })
+    setShowMedTemplates(false)
+  }
+
+  function applyInvestigationSectionTemplate(template: SectionTemplate<InvestigationTemplateItem[]>) {
+    setFormData({
+      ...formData,
+      investigations: template.value.length > 0
+        ? template.value.map((item) => ({ ...item }))
+        : [{ name: '', description: '', urgency: 'Routine' }],
+    })
+    setShowInvTemplates(false)
+  }
+
+  function handleSaveComplaintTemplate() {
+    if (!formData.chief_complaint.trim()) {
+      alert('Enter a chief complaint before saving a template.')
+      return
+    }
+    setComplaintTemplates(saveComplaintTemplate(formData.chief_complaint))
+    setShowComplaintTemplates(true)
+  }
+
+  function handleSaveExaminationTemplate() {
+    if (!formData.on_examination.trim()) {
+      alert('Enter on-examination notes before saving a template.')
+      return
+    }
+    setExaminationTemplates(saveExaminationTemplate(formData.on_examination))
+    setShowExamTemplates(true)
+  }
+
+  function handleSaveMedicationTemplate() {
+    const nextTemplates = saveMedicationSectionTemplate(formData.medications)
+    if (getFilledMedicationItems(formData.medications).length === 0) {
+      alert('Add at least one medication before saving a template.')
+      return
+    }
+    setSavedMedicationTemplates(nextTemplates)
+    setShowMedTemplates(true)
+  }
+
+  function handleSaveInvestigationTemplate() {
+    const nextTemplates = saveInvestigationSectionTemplate(formData.investigations)
+    if (getFilledInvestigationItems(formData.investigations).length === 0) {
+      alert('Add at least one investigation before saving a template.')
+      return
+    }
+    setSavedInvestigationTemplates(nextTemplates)
+    setShowInvTemplates(true)
+  }
+
   function applyLocalMedication(med: any) {
     const newMeds = [...formData.medications]
     const emptyIndex = newMeds.findIndex((m) => !m.name.trim())
@@ -468,7 +555,23 @@ export function Prescriptions() {
 
               {/* ── Chief Complaint ── */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Chief Complaint</label>
+                <div className="mb-2 flex items-center gap-2">
+                  <label className="block text-sm font-semibold text-gray-700">Chief Complaint</label>
+                  <div className="ml-auto flex gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={handleSaveComplaintTemplate}>
+                      Save Template
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowComplaintTemplates(!showComplaintTemplates)}
+                    >
+                      <Lightbulb className="w-4 h-4 mr-1" />
+                      Templates ({complaintTemplates.length})
+                    </Button>
+                  </div>
+                </div>
                 <textarea
                   rows={2}
                   value={formData.chief_complaint}
@@ -476,6 +579,35 @@ export function Prescriptions() {
                   placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
                 />
+                {showComplaintTemplates && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h4 className="font-semibold text-sm text-amber-900">Chief Complaint Templates</h4>
+                      <button type="button" onClick={() => setShowComplaintTemplates(false)} className="text-amber-500 hover:text-amber-700">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {complaintTemplates.length === 0 ? (
+                      <p className="text-sm text-amber-900/80">Save a complaint once, then reuse it from here.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {complaintTemplates.map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, chief_complaint: template.value })
+                              setShowComplaintTemplates(false)
+                            }}
+                            className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-left text-sm text-amber-900 hover:border-primary hover:text-primary"
+                          >
+                            {template.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <PrescMemoryChips
                   memoryKey={MEMORY_KEYS.COMPLAINTS}
                   onSelect={(val) => setFormData({ ...formData, chief_complaint: val })}
@@ -484,7 +616,23 @@ export function Prescriptions() {
 
               {/* ── On Examination ── */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">On Examination</label>
+                <div className="mb-2 flex items-center gap-2">
+                  <label className="block text-sm font-semibold text-gray-700">On Examination</label>
+                  <div className="ml-auto flex gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={handleSaveExaminationTemplate}>
+                      Save Template
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowExamTemplates(!showExamTemplates)}
+                    >
+                      <Lightbulb className="w-4 h-4 mr-1" />
+                      Templates ({examinationTemplates.length})
+                    </Button>
+                  </div>
+                </div>
                 <textarea
                   rows={2}
                   value={formData.on_examination}
@@ -492,6 +640,35 @@ export function Prescriptions() {
                   placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
                 />
+                {showExamTemplates && (
+                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h4 className="font-semibold text-sm text-sky-900">On Examination Templates</h4>
+                      <button type="button" onClick={() => setShowExamTemplates(false)} className="text-sky-500 hover:text-sky-700">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {examinationTemplates.length === 0 ? (
+                      <p className="text-sm text-sky-900/80">Save examination notes once, then reuse them from here.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {examinationTemplates.map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, on_examination: template.value })
+                              setShowExamTemplates(false)
+                            }}
+                            className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-left text-sm text-sky-900 hover:border-primary hover:text-primary"
+                          >
+                            {template.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <PrescMemoryChips
                   memoryKey={MEMORY_KEYS.EXAMINATIONS}
                   onSelect={(val) => setFormData({ ...formData, on_examination: val })}
@@ -522,15 +699,23 @@ export function Prescriptions() {
                       type="button"
                       size="sm"
                       variant="outline"
+                      onClick={handleSaveMedicationTemplate}
+                    >
+                      Save Template
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={() => setShowMedTemplates(!showMedTemplates)}
                     >
                       <Lightbulb className="w-4 h-4 mr-1" />
-                      Templates ({medicationTemplates.length})
+                      Templates ({savedMedicationTemplates.length})
                     </Button>
                   </div>
                 </div>
 
-                {showMedTemplates && medicationTemplates.length > 0 && (
+                {showMedTemplates && (
                   <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-semibold text-sm text-blue-800">📋 Medication Templates</h4>
@@ -538,21 +723,49 @@ export function Prescriptions() {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {medicationTemplates.slice(0, 10).map((template) => (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => addMedicationFromTemplate(template)}
-                          className="text-left p-2.5 bg-white rounded-lg border border-blue-200 hover:border-primary hover:bg-primary/5 transition-colors"
-                        >
-                          <div className="font-medium text-sm text-gray-800">{template.name}</div>
-                          <div className="text-xs text-gray-500">
-                            {template.dosage} • {template.frequency} • {template.duration}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    {savedMedicationTemplates.length > 0 && (
+                      <div className="mb-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">Saved prescription templates</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {savedMedicationTemplates.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => applyMedicationSectionTemplate(template)}
+                              className="text-left p-2.5 bg-white rounded-lg border border-blue-200 hover:border-primary hover:bg-primary/5 transition-colors"
+                            >
+                              <div className="font-medium text-sm text-gray-800">{template.label}</div>
+                              <div className="text-xs text-gray-500">
+                                {template.value.length} medication{template.value.length === 1 ? '' : 's'}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {medicationTemplates.length > 0 && (
+                      <div>
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">Quick-add common medications</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {medicationTemplates.slice(0, 10).map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => addMedicationFromTemplate(template)}
+                              className="text-left p-2.5 bg-white rounded-lg border border-blue-200 hover:border-primary hover:bg-primary/5 transition-colors"
+                            >
+                              <div className="font-medium text-sm text-gray-800">{template.name}</div>
+                              <div className="text-xs text-gray-500">
+                                {template.dosage} • {template.frequency} • {template.duration}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {savedMedicationTemplates.length === 0 && medicationTemplates.length === 0 && (
+                      <p className="text-sm text-blue-900/80">Save a medication set once, then reuse it from here.</p>
+                    )}
                   </div>
                 )}
 
@@ -709,15 +922,23 @@ export function Prescriptions() {
                       type="button"
                       size="sm"
                       variant="outline"
+                      onClick={handleSaveInvestigationTemplate}
+                    >
+                      Save Template
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={() => setShowInvTemplates(!showInvTemplates)}
                     >
                       <Lightbulb className="w-4 h-4 mr-1" />
-                      Templates ({investigationTemplates.length})
+                      Templates ({savedInvestigationTemplates.length})
                     </Button>
                   </div>
                 </div>
 
-                {showInvTemplates && investigationTemplates.length > 0 && (
+                {showInvTemplates && (
                   <div className="mb-4 p-4 bg-teal-50 rounded-xl border border-teal-200 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-semibold text-sm text-teal-800">📋 Investigation Templates</h4>
@@ -725,21 +946,49 @@ export function Prescriptions() {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {investigationTemplates.slice(0, 12).map((template) => (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => addInvestigationFromTemplate(template)}
-                          className="text-left p-2.5 bg-white rounded-lg border border-teal-200 hover:border-teal-500 hover:bg-teal-50/50 transition-colors"
-                        >
-                          <div className="font-medium text-sm text-gray-800">{template.name}</div>
-                          {template.description && (
-                            <div className="text-xs text-gray-500 truncate">{template.description}</div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                    {savedInvestigationTemplates.length > 0 && (
+                      <div className="mb-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Saved prescription templates</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {savedInvestigationTemplates.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => applyInvestigationSectionTemplate(template)}
+                              className="text-left p-2.5 bg-white rounded-lg border border-teal-200 hover:border-teal-500 hover:bg-teal-50/50 transition-colors"
+                            >
+                              <div className="font-medium text-sm text-gray-800">{template.label}</div>
+                              <div className="text-xs text-gray-500">
+                                {template.value.length} investigation{template.value.length === 1 ? '' : 's'}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {investigationTemplates.length > 0 && (
+                      <div>
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-teal-700">Quick-add common investigations</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {investigationTemplates.slice(0, 12).map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => addInvestigationFromTemplate(template)}
+                              className="text-left p-2.5 bg-white rounded-lg border border-teal-200 hover:border-teal-500 hover:bg-teal-50/50 transition-colors"
+                            >
+                              <div className="font-medium text-sm text-gray-800">{template.name}</div>
+                              {template.description && (
+                                <div className="text-xs text-gray-500 truncate">{template.description}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {savedInvestigationTemplates.length === 0 && investigationTemplates.length === 0 && (
+                      <p className="text-sm text-teal-900/80">Save an investigation set once, then reuse it from here.</p>
+                    )}
                   </div>
                 )}
 
