@@ -1,4 +1,5 @@
 import { getScopedStorageKey } from './appSession'
+import { readSecureJson, writeSecureJson } from './secureLocalStorage'
 
 type TemplateSection = 'chief_complaint' | 'on_examination' | 'medications' | 'investigations'
 
@@ -31,22 +32,13 @@ function storageKey(section: TemplateSection) {
   return getScopedStorageKey(`${STORAGE_PREFIX}:${section}`)
 }
 
-function readTemplates<T>(section: TemplateSection) {
-  if (typeof window === 'undefined') return [] as Array<SectionTemplate<T>>
-
-  try {
-    const raw = localStorage.getItem(storageKey(section))
-    if (!raw) return [] as Array<SectionTemplate<T>>
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return [] as Array<SectionTemplate<T>>
-  }
+async function readTemplates<T>(section: TemplateSection) {
+  const parsed = await readSecureJson<Array<SectionTemplate<T>>>(storageKey(section))
+  return Array.isArray(parsed) ? parsed : []
 }
 
-function writeTemplates<T>(section: TemplateSection, templates: Array<SectionTemplate<T>>) {
-  if (typeof window === 'undefined') return templates
-  localStorage.setItem(storageKey(section), JSON.stringify(templates))
+async function writeTemplates<T>(section: TemplateSection, templates: Array<SectionTemplate<T>>) {
+  await writeSecureJson(storageKey(section), templates)
   return templates
 }
 
@@ -77,13 +69,13 @@ export function getFilledInvestigationItems(items: InvestigationTemplateItem[]) 
     .filter((item) => item.name || item.description)
 }
 
-function upsertTemplate<T>(
+async function upsertTemplate<T>(
   section: TemplateSection,
   nextValue: T,
   label: string,
   isSameValue: (template: SectionTemplate<T>) => boolean
 ) {
-  const templates = readTemplates<T>(section)
+  const templates = await readTemplates<T>(section)
   const remaining = templates.filter((template) => !isSameValue(template))
   const updated = [
     {

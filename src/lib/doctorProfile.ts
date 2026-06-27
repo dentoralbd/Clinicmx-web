@@ -1,4 +1,5 @@
 import { getScopedStorageKey, isAppAuthenticated } from './appSession'
+import { readSecureJson, writeSecureJson } from './secureLocalStorage'
 import { supabase } from './supabase'
 
 export interface DoctorProfileData {
@@ -17,21 +18,12 @@ export interface DoctorProfileData {
 
 const LOCAL_DOCTOR_PROFILE_KEY = 'clinicmx_doctor_profile'
 
-function readLocalDoctorProfile() {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const raw = localStorage.getItem(getScopedStorageKey(LOCAL_DOCTOR_PROFILE_KEY))
-    if (!raw) return null
-    return JSON.parse(raw) as DoctorProfileData
-  } catch {
-    return null
-  }
+async function readLocalDoctorProfile() {
+ return readSecureJson<DoctorProfileData>(getScopedStorageKey(LOCAL_DOCTOR_PROFILE_KEY))
 }
 
-function writeLocalDoctorProfile(profile: DoctorProfileData) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(getScopedStorageKey(LOCAL_DOCTOR_PROFILE_KEY), JSON.stringify(profile))
+async function writeLocalDoctorProfile(profile: DoctorProfileData) {
+ await writeSecureJson(getScopedStorageKey(LOCAL_DOCTOR_PROFILE_KEY), profile)
 }
 
 async function getSupabaseUserId() {
@@ -47,7 +39,7 @@ export function isDoctorProfileAuthError(error: unknown) {
 }
 
 export async function loadDoctorProfile() {
-  const localProfile = readLocalDoctorProfile()
+  const localProfile = await readLocalDoctorProfile()
   const userId = await getSupabaseUserId()
 
   if (!userId) return localProfile
@@ -62,7 +54,7 @@ export async function loadDoctorProfile() {
     if (error) throw error
 
     if (data) {
-      writeLocalDoctorProfile(data)
+      await writeLocalDoctorProfile(data)
       return data as DoctorProfileData
     }
   } catch (error) {
@@ -84,7 +76,7 @@ export async function saveDoctorProfile(profile: DoctorProfileData) {
 
   const userId = await getSupabaseUserId()
   if (!userId) {
-    writeLocalDoctorProfile(nextProfile)
+    await writeLocalDoctorProfile(nextProfile)
     return nextProfile
   }
 
@@ -101,6 +93,6 @@ export async function saveDoctorProfile(profile: DoctorProfileData) {
 
   if (error) throw error
 
-  writeLocalDoctorProfile(data)
+  await writeLocalDoctorProfile(data)
   return data as DoctorProfileData
 }

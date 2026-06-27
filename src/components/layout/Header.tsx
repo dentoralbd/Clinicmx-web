@@ -1,5 +1,6 @@
 import { Bell, Search, User, Menu, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -11,6 +12,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
 
   function handleLogout() {
+    clearSecureStorageSession()
     localStorage.removeItem('clinicmx_auth')
     navigate('/login')
   }

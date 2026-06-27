@@ -76,14 +76,14 @@ export function Prescriptions() {
     loadPatients()
     loadTemplates()
     loadDoctorProfile()
-    refreshSectionTemplates()
+    void refreshSectionTemplates()
   }, [])
 
-  function refreshSectionTemplates() {
-    setComplaintTemplates(getComplaintTemplates())
-    setExaminationTemplates(getExaminationTemplates())
-    setSavedMedicationTemplates(getMedicationSectionTemplates())
-    setSavedInvestigationTemplates(getInvestigationSectionTemplates())
+  async function refreshSectionTemplates() {
+    setComplaintTemplates(await getComplaintTemplates())
+    setExaminationTemplates(await getExaminationTemplates())
+    setSavedMedicationTemplates(await getMedicationSectionTemplates())
+    setSavedInvestigationTemplates(await getInvestigationSectionTemplates())
   }
 
   async function loadPrescriptions() {
@@ -314,41 +314,39 @@ export function Prescriptions() {
     setShowInvTemplates(false)
   }
 
-  function handleSaveComplaintTemplate() {
+  async function handleSaveComplaintTemplate() {
     if (!formData.chief_complaint.trim()) {
       alert('Enter a chief complaint before saving a template.')
       return
     }
-    setComplaintTemplates(saveComplaintTemplate(formData.chief_complaint))
+    setComplaintTemplates(await saveComplaintTemplate(formData.chief_complaint))
     setShowComplaintTemplates(true)
   }
 
-  function handleSaveExaminationTemplate() {
+  async function handleSaveExaminationTemplate() {
     if (!formData.on_examination.trim()) {
       alert('Enter on-examination notes before saving a template.')
       return
     }
-    setExaminationTemplates(saveExaminationTemplate(formData.on_examination))
+    setExaminationTemplates(await saveExaminationTemplate(formData.on_examination))
     setShowExamTemplates(true)
   }
 
-  function handleSaveMedicationTemplate() {
-    const nextTemplates = saveMedicationSectionTemplate(formData.medications)
+  async function handleSaveMedicationTemplate() {
     if (getFilledMedicationItems(formData.medications).length === 0) {
       alert('Add at least one medication before saving a template.')
       return
     }
-    setSavedMedicationTemplates(nextTemplates)
+    setSavedMedicationTemplates(await saveMedicationSectionTemplate(formData.medications))
     setShowMedTemplates(true)
   }
 
-  function handleSaveInvestigationTemplate() {
-    const nextTemplates = saveInvestigationSectionTemplate(formData.investigations)
+  async function handleSaveInvestigationTemplate() {
     if (getFilledInvestigationItems(formData.investigations).length === 0) {
       alert('Add at least one investigation before saving a template.')
       return
     }
-    setSavedInvestigationTemplates(nextTemplates)
+    setSavedInvestigationTemplates(await saveInvestigationSectionTemplate(formData.investigations))
     setShowInvTemplates(true)
   }
 
