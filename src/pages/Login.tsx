@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { initializeSecureStorage } from '@/lib/secureLocalStorage'
 
@@ -35,8 +34,8 @@ export function Login() {
     <div className="min-h-screen bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center p-4">
       <div className={`bg-white rounded-2xl shadow-xl p-8 w-full max-w-md ${shake ? 'shake' : ''}`}>
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
-            <Lock className="w-8 h-8 text-primary" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img src="/logo.png" alt="ClinicMx Logo" className="w-24 h-24 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">ClinicMx</h1>
           <p className="text-text-secondary">Dental Clinic Management</p>
