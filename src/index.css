@@ -130,8 +130,29 @@
 
 /* ── Print styles for prescriptions ── */
 @media print {
-  body > * { display: none !important; }
-  #prescription-print-root { display: block !important; }
+  body {
+    background: #fff !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .prescription-print-overlay,
+  .prescription-print-overlay * {
+    visibility: visible !important;
+  }
+  .prescription-print-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  #prescription-print-root {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
   .prescription-print-container {
     margin: 0;
     padding: 20px;

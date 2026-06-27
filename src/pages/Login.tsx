@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { initializeSecureStorage } from '@/lib/secureLocalStorage'
 
 export function Login() {
   const [password, setPassword] = useState('')
@@ -18,6 +19,7 @@ export function Login() {
     await new Promise((r) => setTimeout(r, 400))
 
     if (password === '6040') {
+      await initializeSecureStorage(password)
       localStorage.setItem('clinicmx_auth', 'true')
       navigate('/dashboard')
     } else {
@@ -84,4 +86,3 @@ export function Login() {
     </div>
   )
 }
-
