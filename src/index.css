@@ -127,3 +127,16 @@
   border-radius: 0.375rem;
   animation: skeleton-pulse 1.4s ease-in-out infinite, shimmer 1.8s linear infinite;
 }
+
+/* ── Print styles for prescriptions ── */
+@media print {
+  body > * { display: none !important; }
+  #prescription-print-root { display: block !important; }
+  .prescription-print-container {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Times New Roman', Times, serif;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}

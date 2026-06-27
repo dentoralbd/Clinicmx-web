@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X, UserCircle } from 'lucide-react'
 
 interface SidebarProps {
   isOpen: boolean
@@ -49,7 +49,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </button>
           </div>
 
-          <nav className="flex-1 p-4 space-y-1">
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
             {menuItems.map((item) => (
               <NavLink
                 key={item.path}
@@ -67,6 +67,24 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <span className="font-medium">{item.label}</span>
               </NavLink>
             ))}
+
+            {/* Settings section */}
+            <div className="pt-3 mt-2 border-t border-gray-200">
+              <NavLink
+                to="/doctor-profile"
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-primary text-white'
+                      : 'text-text-secondary hover:bg-gray-100 hover:text-text-primary'
+                  }`
+                }
+              >
+                <UserCircle className="w-5 h-5" />
+                <span className="font-medium">Doctor Profile</span>
+              </NavLink>
+            </div>
           </nav>
 
           <div className="p-4 border-t border-gray-200">

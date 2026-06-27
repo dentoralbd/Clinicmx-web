@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { PrescriptionPrint } from '@/components/PrescriptionPrint'
+import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { format } from 'date-fns'
 import { safeFormat } from '@/lib/utils'
 
@@ -34,6 +36,8 @@ export function Prescriptions() {
 
   const [formData, setFormData] = useState({
     patient_id: '',
+    chief_complaint: '',
+    on_examination: '',
     diagnosis: '',
     notes: '',
     prescribed_date: format(new Date(), 'yyyy-MM-dd'),
@@ -41,10 +45,15 @@ export function Prescriptions() {
     investigations: [{ name: '', description: '', urgency: 'Routine' }],
   })
 
+  const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
+  const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
+  const [printingPatient, setPrintingPatient] = useState<any | null>(null)
+
   useEffect(() => {
     loadPrescriptions()
     loadPatients()
     loadTemplates()
+    loadDoctorProfile()
   }, [])
 
   async function loadPrescriptions() {
@@ -85,11 +94,28 @@ export function Prescriptions() {
     setInvestigationTemplates(invTemplates || [])
   }
 
+  async function loadDoctorProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await (supabase as any)
+        .from('doctor_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (data) setDoctorProfile(data)
+    } catch {
+      // table may not exist yet – silently ignore
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      const payload = {
+      const payload: any = {
         patient_id: formData.patient_id,
+        chief_complaint: formData.chief_complaint,
+        on_examination: formData.on_examination,
         diagnosis: formData.diagnosis,
         notes: formData.notes,
         prescribed_date: formData.prescribed_date,
@@ -108,6 +134,16 @@ export function Prescriptions() {
         setLocalInvs((items) =>
           formData.investigations.reduce((nextItems, inv) => mergeRecentItem(nextItems, inv), items)
         )
+
+        // Save to localStorage-based smart memory
+        if (formData.chief_complaint.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, formData.chief_complaint)
+        if (formData.on_examination.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, formData.on_examination)
+        for (const med of formData.medications) {
+          if (med.name.trim()) rememberItem(MEMORY_KEYS.MEDICATIONS, med.name)
+        }
+        for (const inv of formData.investigations) {
+          if (inv.name.trim()) rememberItem(MEMORY_KEYS.INVESTIGATIONS, inv.name)
+        }
       }
 
       setShowForm(false)
@@ -124,6 +160,8 @@ export function Prescriptions() {
     setEditingId(prescription.id)
     setFormData({
       patient_id: prescription.patient_id || '',
+      chief_complaint: prescription.chief_complaint || '',
+      on_examination: prescription.on_examination || '',
       diagnosis: prescription.diagnosis || '',
       notes: prescription.notes || '',
       prescribed_date: prescription.prescribed_date
@@ -156,6 +194,8 @@ export function Prescriptions() {
     setEditingId(null)
     setFormData({
       patient_id: '',
+      chief_complaint: '',
+      on_examination: '',
       diagnosis: '',
       notes: '',
       prescribed_date: format(new Date(), 'yyyy-MM-dd'),
@@ -334,24 +374,36 @@ export function Prescriptions() {
                         : 'None'}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(prescription)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Edit"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(prescription.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                     <div className="flex gap-2">
+                       <button
+                         type="button"
+                         onClick={() => {
+                           const pat = patients.find((p) => p.id === prescription.patient_id)
+                           setPrintingPatient(pat || null)
+                           setPrintingPrescription(prescription)
+                         }}
+                         className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                         title="Print"
+                       >
+                         <Printer className="w-4 h-4" />
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => startEdit(prescription)}
+                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                         title="Edit"
+                       >
+                         <Pencil className="w-4 h-4" />
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => handleDelete(prescription.id)}
+                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                         title="Delete"
+                       >
+                         <Trash2 className="w-4 h-4" />
+                       </button>
+                     </div>
                     </td>
                   </tr>
                 ))}
@@ -419,9 +471,41 @@ export function Prescriptions() {
                 </div>
               </div>
 
+              {/* ── Chief Complaint ── */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Chief Complaint</label>
+                <textarea
+                  rows={2}
+                  value={formData.chief_complaint}
+                  onChange={(e) => setFormData({ ...formData, chief_complaint: e.target.value })}
+                  placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+                />
+                <PrescMemoryChips
+                  memoryKey={MEMORY_KEYS.COMPLAINTS}
+                  onSelect={(val) => setFormData({ ...formData, chief_complaint: val })}
+                />
+              </div>
+
+              {/* ── On Examination ── */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">On Examination</label>
+                <textarea
+                  rows={2}
+                  value={formData.on_examination}
+                  onChange={(e) => setFormData({ ...formData, on_examination: e.target.value })}
+                  placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+                />
+                <PrescMemoryChips
+                  memoryKey={MEMORY_KEYS.EXAMINATIONS}
+                  onSelect={(val) => setFormData({ ...formData, on_examination: val })}
+                />
+              </div>
+
               {/* ── Diagnosis ── */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Diagnosis / Chief Complaint</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Diagnosis</label>
                 <textarea
                   rows={2}
                   value={formData.diagnosis}
@@ -794,6 +878,53 @@ export function Prescriptions() {
           </div>
         </div>
       )}
+
+      {printingPrescription && (
+        <PrescriptionPrint
+          prescription={{
+            prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
+            chief_complaint: printingPrescription.chief_complaint || '',
+            on_examination: printingPrescription.on_examination || '',
+            diagnosis: printingPrescription.diagnosis || '',
+            medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
+            investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
+            notes: printingPrescription.notes || '',
+          }}
+          patient={{
+            first_name: printingPatient?.first_name || printingPrescription.patients?.first_name || '',
+            last_name: printingPatient?.last_name || printingPrescription.patients?.last_name || '',
+            date_of_birth: printingPatient?.date_of_birth,
+            gender: printingPatient?.gender,
+            phone: printingPatient?.phone,
+            patient_code: printingPatient?.patient_code,
+          }}
+          doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
+          onClose={() => { setPrintingPrescription(null); setPrintingPatient(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Helper: shows recently-used chips from localStorage memory
+function PrescMemoryChips({ memoryKey, onSelect }: { memoryKey: string; onSelect: (val: string) => void }) {
+  const [items, setItems] = useState<string[]>([])
+  useEffect(() => {
+    setItems(getMemory(memoryKey).slice(0, 8))
+  }, [memoryKey])
+  if (items.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item, idx) => (
+        <button
+          key={idx}
+          type="button"
+          onClick={() => onSelect(item)}
+          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+        >
+          {item.length > 40 ? item.slice(0, 40) + '…' : item}
+        </button>
+      ))}
     </div>
   )
 }

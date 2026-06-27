@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getInvoiceItemLineTotal, getInvoiceItemSubtotal } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
+import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { format } from 'date-fns'
 import { formatBDT } from '@/lib/utils'
 
@@ -160,11 +162,16 @@ export function PatientProfile() {
   })
 
   const [prescriptionForm, setPrescriptionForm] = useState({
+    chief_complaint: '',
+    on_examination: '',
     diagnosis: '',
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
     investigations: [{ name: '', description: '' }],
     notes: '',
   })
+
+  const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
+  const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
 
   useEffect(() => {
     if (id) {
@@ -173,6 +180,7 @@ export function PatientProfile() {
     }
     setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
     setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
+    loadDoctorProfile()
   }, [id])
 
   async function loadPatientData() {
@@ -257,6 +265,21 @@ export function PatientProfile() {
     setInvestigationTemplates(invTemplates || [])
   }
 
+  async function loadDoctorProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await (supabase as any)
+        .from('doctor_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (data) setDoctorProfile(data)
+    } catch {
+      // table may not exist yet – silently ignore
+    }
+  }
+
   async function saveToothCondition(toothNumber: number, condition: string, notes: string) {
     if (!id) return
 
@@ -339,9 +362,11 @@ export function PatientProfile() {
     if (!id) return
 
     try {
-      const payload = {
+      const payload: any = {
         patient_id: id,
         prescribed_date: format(new Date(), 'yyyy-MM-dd'),
+        chief_complaint: prescriptionForm.chief_complaint,
+        on_examination: prescriptionForm.on_examination,
         diagnosis: prescriptionForm.diagnosis,
         medications: prescriptionForm.medications.filter(m => m.name.trim()),
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
@@ -353,6 +378,7 @@ export function PatientProfile() {
       } else {
         await supabase.from('prescriptions').insert([payload])
 
+        // Save to session memory (legacy in-memory)
         for (const med of prescriptionForm.medications) {
           if (med.name.trim()) saveLocalItem(LOCAL_MEDS_KEY, med)
         }
@@ -361,6 +387,31 @@ export function PatientProfile() {
         }
         setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
         setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
+
+        // Save to localStorage-based smart memory
+        if (prescriptionForm.chief_complaint.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, prescriptionForm.chief_complaint)
+        if (prescriptionForm.on_examination.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, prescriptionForm.on_examination)
+        for (const med of prescriptionForm.medications) {
+          if (med.name.trim()) rememberItem(MEMORY_KEYS.MEDICATIONS, med.name)
+        }
+        for (const inv of prescriptionForm.investigations) {
+          if (inv.name.trim()) rememberItem(MEMORY_KEYS.INVESTIGATIONS, inv.name)
+        }
+
+        // Auto-save visit record if CC or OE is provided
+        if (prescriptionForm.chief_complaint.trim() || prescriptionForm.on_examination.trim()) {
+          try {
+            await supabase.from('patient_visits').insert([{
+              patient_id: id,
+              visit_date: new Date().toISOString(),
+              chief_complaint: prescriptionForm.chief_complaint || '',
+              examination_findings: prescriptionForm.on_examination || '',
+              diagnosis: prescriptionForm.diagnosis || '',
+            }])
+          } catch {
+            // non-fatal – visit record is optional
+          }
+        }
       }
 
       setShowPrescriptionForm(false)
@@ -368,6 +419,8 @@ export function PatientProfile() {
       setShowMedTemplates(false)
       setShowInvTemplates(false)
       setPrescriptionForm({
+        chief_complaint: '',
+        on_examination: '',
         diagnosis: '',
         medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
         investigations: [{ name: '', description: '' }],
@@ -384,6 +437,8 @@ export function PatientProfile() {
   function startEditPrescription(prescription: any) {
     setEditingPrescriptionId(prescription.id)
     setPrescriptionForm({
+      chief_complaint: prescription.chief_complaint || '',
+      on_examination: prescription.on_examination || '',
       diagnosis: prescription.diagnosis || '',
       medications:
         Array.isArray(prescription.medications) && prescription.medications.length > 0
@@ -1028,7 +1083,7 @@ export function PatientProfile() {
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Prescription History</h3>
-        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }], investigations: [{ name: '', description: '', urgency: 'Routine' }], notes: '' }); setShowPrescriptionForm(true) }}>
+        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); setShowPrescriptionForm(true) }}>
           <Plus className="w-4 h-4 mr-1" />
           Add Prescription
         </Button>
@@ -1042,6 +1097,27 @@ export function PatientProfile() {
               <div className="flex items-center justify-between mb-3">
                 <div className="font-bold text-gray-800">{formatDateValue(prescription.prescribed_date, 'MMMM d, yyyy')}</div>
                 <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // Lazily reload doctor profile if not available
+                      let doc = doctorProfile
+                      if (!doc) {
+                        try {
+                          const { data: { user } } = await supabase.auth.getUser()
+                          if (user) {
+                            const { data } = await (supabase as any).from('doctor_profiles').select('*').eq('user_id', user.id).maybeSingle()
+                            if (data) { setDoctorProfile(data); doc = data }
+                          }
+                        } catch { /* ignore */ }
+                      }
+                      setPrintingPrescription(prescription)
+                    }}
+                    className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"
+                    title="Print"
+                  >
+                    <Printer className="w-4 h-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => startEditPrescription(prescription)}
@@ -1060,6 +1136,21 @@ export function PatientProfile() {
                   </button>
                 </div>
               </div>
+              {/* CC / O&E chips */}
+              {(prescription.chief_complaint || prescription.on_examination) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {prescription.chief_complaint && (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-medium border border-amber-200">
+                      CC: {prescription.chief_complaint}
+                    </span>
+                  )}
+                  {prescription.on_examination && (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-50 text-purple-800 text-xs font-medium border border-purple-200">
+                      O/E: {prescription.on_examination}
+                    </span>
+                  )}
+                </div>
+              )}
               {prescription.diagnosis && (
                 <div className="mb-3">
                   <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-sm font-medium">
@@ -1666,6 +1757,30 @@ export function PatientProfile() {
         />
       )}
 
+      {printingPrescription && patient && (
+        <PrescriptionPrint
+          prescription={{
+            prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
+            chief_complaint: printingPrescription.chief_complaint || '',
+            on_examination: printingPrescription.on_examination || '',
+            diagnosis: printingPrescription.diagnosis || '',
+            medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
+            investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
+            notes: printingPrescription.notes || '',
+          }}
+          patient={{
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            date_of_birth: patient.date_of_birth,
+            gender: patient.gender,
+            phone: patient.phone,
+            patient_code: patient.patient_code,
+          }}
+          doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
+          onClose={() => setPrintingPrescription(null)}
+        />
+      )}
+
       {showTreatmentPlanForm && (
         <TreatmentPlanModal
           formData={treatmentPlanForm}
@@ -1937,6 +2052,29 @@ function VisitFormModal({ formData, setFormData, onSubmit, onClose }: any) {
   )
 }
 
+// Helper: shows recently-used chips from localStorage memory
+function RecentChips({ memoryKey, onSelect }: { memoryKey: string; onSelect: (val: string) => void }) {
+  const [items, setItems] = useState<string[]>([])
+  useEffect(() => {
+    setItems(getMemory(memoryKey).slice(0, 8))
+  }, [memoryKey])
+  if (items.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item, idx) => (
+        <button
+          key={idx}
+          type="button"
+          onClick={() => onSelect(item)}
+          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+        >
+          {item.length > 40 ? item.slice(0, 40) + '…' : item}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function PrescriptionFormModal({
   formData,
   setFormData,
@@ -2064,9 +2202,41 @@ function PrescriptionFormModal({
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* ── Chief Complaint ── */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Chief Complaint</label>
+            <textarea
+              rows={2}
+              value={formData.chief_complaint || ''}
+              onChange={(e) => setFormData({ ...formData, chief_complaint: e.target.value })}
+              placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+            />
+            <RecentChips
+              memoryKey={MEMORY_KEYS.COMPLAINTS}
+              onSelect={(val) => setFormData({ ...formData, chief_complaint: val })}
+            />
+          </div>
+
+          {/* ── On Examination ── */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">On Examination</label>
+            <textarea
+              rows={2}
+              value={formData.on_examination || ''}
+              onChange={(e) => setFormData({ ...formData, on_examination: e.target.value })}
+              placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+            />
+            <RecentChips
+              memoryKey={MEMORY_KEYS.EXAMINATIONS}
+              onSelect={(val) => setFormData({ ...formData, on_examination: val })}
+            />
+          </div>
+
           {/* ── Diagnosis ── */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Diagnosis / Chief Complaint</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Diagnosis</label>
             <textarea
               rows={2}
               value={formData.diagnosis}
