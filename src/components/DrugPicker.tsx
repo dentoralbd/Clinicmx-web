@@ -2,6 +2,35 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pill } from 'lucide-react'
 import { DENTAL_DRUGS, type BDDrug, searchDrugs } from '@/lib/dentalDrugDatabase'
 
+const FORM_ABBREVIATIONS: Record<string, string> = {
+  Tab: 'Tab.',
+  Cap: 'Cap.',
+  Injection: 'Inj.',
+  Ointment: 'Oint.',
+  Solution: 'Sol.',
+  Spray: 'Spray',
+  Mouthwash: 'Mouthwash',
+  'Mouthwash/Gargle': 'Gargle',
+  Gel: 'Gel',
+  'Oral suspension': 'Susp.',
+  'Oral Paste': 'Paste',
+}
+
+function formatDrugName(drug: BDDrug): string {
+  const match = drug.dosageForm.match(/^([\d.,]+\s*(?:mg|gm|ml|%|IU\/ml|IU)[^\s]*)\s*(.*)$/i)
+  if (!match) {
+    return `${drug.brand} ${drug.dosageForm}`.trim()
+  }
+
+  const strength = match[1].trim()
+  const formWord = match[2].trim()
+  const formLabel = FORM_ABBREVIATIONS[formWord] ?? formWord
+  const strengthNum = strength.match(/[\d.]+/)?.[0]
+  const brand = strengthNum ? drug.brand.replace(new RegExp(`[\\s-]*${strengthNum}%?$`), '').trim() : drug.brand
+
+  return `${formLabel} ${brand} ${strength}`.replace(/\s+/g, ' ').trim()
+}
+
 interface DrugPickerProps {
   value: string
   onChange: (value: string) => void
@@ -25,9 +54,11 @@ const CATEGORY_META: Record<
   'Anti-inflammatory': { bg: '#FAECE7', text: '#993C1D' },
   'Local anesthetic': { bg: '#EEEDFE', text: '#3C3489' },
   Antifungal: { bg: '#FAEEDA', text: '#854F0B' },
+  Antiviral: { bg: '#E8F0FE', text: '#1A4DA1' },
   Antiseptic: { bg: '#EAF3DE', text: '#3B6D11' },
   Anxiolytic: { bg: '#FBEAF0', text: '#993556' },
   Steroid: { bg: '#E6F1FB', text: '#185FA5' },
+  Antifibrinolytic: { bg: '#FDECEC', text: '#A12B2B' },
 }
 
 const CATEGORY_ORDER: BDDrug['category'][] = [
@@ -36,9 +67,11 @@ const CATEGORY_ORDER: BDDrug['category'][] = [
   'Anti-inflammatory',
   'Local anesthetic',
   'Antifungal',
+  'Antiviral',
   'Antiseptic',
   'Anxiolytic',
   'Steroid',
+  'Antifibrinolytic',
 ]
 
 interface IndexedDrug {
@@ -106,7 +139,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
   }, [])
 
   const applyDrug = (drug: BDDrug) => {
-    const name = `${drug.brand} ${drug.dosageForm}`.trim()
+    const name = formatDrugName(drug)
 
     onChange(name)
     onDrugSelect({
@@ -178,7 +211,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
               <Pill className="h-4 w-4 text-primary" />
               BD Drug Directory
             </div>
-            <div className="text-xs text-gray-500">Source: DIMS BD · MedEx · ≥10 brands per generic</div>
+            <div className="text-xs text-gray-500">Bangladesh dental drug database · ≥10 brands per generic</div>
             <div className="mt-1 text-xs font-medium text-gray-600">{visibleDrugs.length} drugs found</div>
           </div>
 
@@ -231,6 +264,9 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
                                   {drug.company} · {drug.priceLabel}
                                 </div>
                                 <div className="truncate text-[11px] text-gray-500">{drug.dentalUse}</div>
+                                <div className="truncate text-[11px] text-gray-400">
+                                  Adult: {drug.ageDosing.adult} · Child: {drug.ageDosing.child} · Infant: {drug.ageDosing.infant}
+                                </div>
                               </button>
                             )
                           })}
