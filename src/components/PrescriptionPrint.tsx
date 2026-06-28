@@ -3,10 +3,12 @@ import { format, differenceInYears } from 'date-fns'
 
 interface PrescriptionPrintProps {
   prescription: {
+    id?: string
     prescribed_date: string
     chief_complaint?: string
     on_examination?: string
     diagnosis?: string
+    treatment_plan?: string
     medications: Array<{
       name: string
       dosage: string
@@ -25,6 +27,7 @@ interface PrescriptionPrintProps {
     gender?: string
     phone?: string
     patient_code?: string
+    medical_history?: string | null
   }
   doctor: {
     full_name: string
@@ -48,9 +51,40 @@ function calcAge(dob?: string): string {
   }
 }
 
+// ─── MEDICAL HISTORY CHECKBOX DERIVATION ─────────────
+const MEDICAL_HISTORY_KEYWORDS: Array<[string, string[]]> = [
+  ['BP', ['bp', 'hypertension', 'blood pressure']],
+  ['Heart Disease', ['heart', 'cardiac']],
+  ['Diabetic', ['diabet']],
+  ['Hepatitis', ['hepatitis', 'hep b', 'hep c']],
+  ['Bleeding disorder', ['bleed']],
+  ['Allergy', ['allerg']],
+  ['Pregnant/Lactating', ['pregnan', 'lactat']],
+]
+
+function getMedicalHistoryChecks(medicalHistory?: string | null) {
+  const raw = (medicalHistory || '').trim()
+  const segments = raw ? raw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean) : []
+  const checked = new Set<string>()
+  const otherSegments: string[] = []
+  for (const segment of segments) {
+    const lower = segment.toLowerCase()
+    const matched = MEDICAL_HISTORY_KEYWORDS.find(([, keywords]) => keywords.some((kw) => lower.includes(kw)))
+    if (matched) {
+      checked.add(matched[0])
+    } else {
+      otherSegments.push(segment)
+    }
+  }
+  const items = MEDICAL_HISTORY_KEYWORDS.map(([label]) => ({ label, checked: checked.has(label) }))
+  return { items, other: otherSegments.join(', ') }
+}
+// ─────────────────────────────────────────────────────
+
 export function PrescriptionPrint({ prescription, patient, doctor, onClose }: PrescriptionPrintProps) {
   const filteredMeds = prescription.medications.filter((m) => m.name?.trim())
   const filteredInvs = prescription.investigations.filter((i) => i.name?.trim())
+  const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
 
   return (
     <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
@@ -75,10 +109,10 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       {/* Prescription document */}
       <div
         id="prescription-print-root"
-        className="prescription-print-container bg-white w-full max-w-2xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
+        className="prescription-print-container bg-white w-full max-w-3xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
-        {/* ── Letterhead ── */}
+        {/* ── Letterhead (doctor + chamber info) ── */}
         <div className="border-b-2 border-gray-800 pb-4 mb-4">
           <div className="flex justify-between items-start">
             <div>
@@ -101,7 +135,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               )}
               <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
                 {doctor.bmdc_reg && <span>BMDC Reg: {doctor.bmdc_reg}</span>}
-                {doctor.phone && <span>Ph: {doctor.phone}</span>}
+                {doctor.phone && <span className="font-semibold text-gray-700">Ph: {doctor.phone}</span>}
                 {doctor.email && <span>Email: {doctor.email}</span>}
               </div>
             </div>
@@ -115,6 +149,12 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         {/* ── Patient Info ── */}
         <div className="border border-gray-300 rounded-lg px-4 py-3 mb-4 bg-gray-50">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            {prescription.id && (
+              <div>
+                <span className="font-semibold">Prescription ID:</span>{' '}
+                {prescription.id.slice(0, 8).toUpperCase()}
+              </div>
+            )}
             <div>
               <span className="font-semibold">Patient:</span>{' '}
               {patient.first_name} {patient.last_name}
@@ -140,87 +180,114 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
           </div>
         </div>
 
-        {/* ── Clinical Notes ── */}
-        {(prescription.chief_complaint || prescription.on_examination || prescription.diagnosis) && (
-          <div className="border border-gray-200 rounded-lg px-4 py-3 mb-4 space-y-1 text-sm">
+        {/* ── Two-column body ── */}
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-4">
+          {/* Left column — clinical sections */}
+          <div className="space-y-4 text-sm">
             {prescription.chief_complaint && (
               <div>
-                <span className="font-semibold">Chief Complaint:</span>{' '}
-                {prescription.chief_complaint}
+                <div className="font-semibold text-gray-800">Chief Complaint</div>
+                <div className="text-gray-700">{prescription.chief_complaint}</div>
               </div>
             )}
+
             {prescription.on_examination && (
               <div>
-                <span className="font-semibold">On Examination:</span>{' '}
-                {prescription.on_examination}
+                <div className="font-semibold text-gray-800">Clinical Findings</div>
+                <div className="text-gray-700">{prescription.on_examination}</div>
               </div>
             )}
+
             {prescription.diagnosis && (
               <div>
-                <span className="font-semibold">Diagnosis:</span>{' '}
-                {prescription.diagnosis}
+                <div className="font-semibold text-gray-800">Diagnosis</div>
+                <div className="text-gray-700">{prescription.diagnosis}</div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* ── Rx ── */}
-        {filteredMeds.length > 0 && (
-          <div className="mb-4">
+            {filteredInvs.length > 0 && (
+              <div>
+                <div className="font-semibold text-gray-800 mb-1">Investigations</div>
+                <ul className="space-y-1">
+                  {filteredInvs.map((inv, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="mt-0.5">☐</span>
+                      <span>
+                        <span className="font-medium">{inv.name}</span>
+                        {inv.urgency && inv.urgency !== 'Routine' && (
+                          <span className="ml-2 text-xs text-orange-700 font-medium">({inv.urgency})</span>
+                        )}
+                        {inv.description && (
+                          <span className="text-gray-500"> — {inv.description}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {prescription.treatment_plan && (
+              <div>
+                <div className="font-semibold text-gray-800">Treatment Plan</div>
+                <div className="text-gray-700">{prescription.treatment_plan}</div>
+              </div>
+            )}
+
+            <div>
+              <div className="font-semibold text-gray-800 mb-1">Medical History</div>
+              <ul className="space-y-0.5">
+                {historyChecks.map(({ label, checked }) => (
+                  <li key={label} className="flex items-center gap-2">
+                    <span>{checked ? '☑' : '☐'}</span>
+                    <span>{label}</span>
+                  </li>
+                ))}
+                <li className="flex items-center gap-2">
+                  <span>{historyOther ? '☑' : '☐'}</span>
+                  <span>Other{historyOther ? `: ${historyOther}` : ''}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Vertical divider */}
+          <div className="border-l border-dashed border-gray-400" />
+
+          {/* Right column — Rx */}
+          <div className="text-sm">
             <div className="text-2xl font-bold text-gray-800 mb-2" style={{ fontFamily: 'serif' }}>
               ℞
             </div>
-            <ol className="space-y-3">
-              {filteredMeds.map((med, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm">
-                  <span className="font-bold min-w-[1.2rem]">{idx + 1}.</span>
-                  <div>
-                    <span className="font-bold">{med.name}</span>
-                    {med.dosage && <span className="text-gray-700"> — {med.dosage}</span>}
-                    {med.route && <span className="text-gray-600"> ({med.route})</span>}
-                    {med.frequency && <span className="text-gray-600"> · {med.frequency}</span>}
-                    {med.duration && <span className="text-gray-600"> · {med.duration}</span>}
-                    {med.instructions && (
-                      <div className="text-xs text-gray-500 mt-0.5 ml-2">
-                        Instructions: {med.instructions}
-                      </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
+            {filteredMeds.length > 0 && (
+              <ol className="space-y-3">
+                {filteredMeds.map((med, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="font-bold min-w-[1.2rem]">{idx + 1}.</span>
+                    <div>
+                      <span className="font-bold">{med.name}</span>
+                      {med.dosage && <span className="text-gray-700"> — {med.dosage}</span>}
+                      {med.route && <span className="text-gray-600"> ({med.route})</span>}
+                      {med.frequency && <span className="text-gray-600"> · {med.frequency}</span>}
+                      {med.duration && <span className="text-gray-600"> · {med.duration}</span>}
+                      {med.instructions && (
+                        <div className="text-xs text-gray-500 mt-0.5 ml-2">
+                          Instructions: {med.instructions}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
 
-        {/* ── Investigations ── */}
-        {filteredInvs.length > 0 && (
-          <div className="mb-4 border-t border-dashed border-gray-300 pt-3">
-            <div className="font-semibold text-sm text-gray-700 mb-2">Investigations:</div>
-            <ul className="space-y-1">
-              {filteredInvs.map((inv, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm">
-                  <span className="mt-0.5">☐</span>
-                  <span>
-                    <span className="font-medium">{inv.name}</span>
-                    {inv.urgency && inv.urgency !== 'Routine' && (
-                      <span className="ml-2 text-xs text-orange-700 font-medium">({inv.urgency})</span>
-                    )}
-                    {inv.description && (
-                      <span className="text-gray-500"> — {inv.description}</span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {prescription.notes && (
+              <div className="mt-4 border-t border-dashed border-gray-300 pt-3">
+                <span className="font-semibold">Notes:</span> {prescription.notes}
+              </div>
+            )}
           </div>
-        )}
-
-        {/* ── Notes ── */}
-        {prescription.notes && (
-          <div className="mb-4 border-t border-dashed border-gray-300 pt-3 text-sm">
-            <span className="font-semibold">Notes:</span> {prescription.notes}
-          </div>
-        )}
+        </div>
 
         {/* ── Footer ── */}
         <div className="mt-8 flex justify-between items-end border-t border-gray-300 pt-4">

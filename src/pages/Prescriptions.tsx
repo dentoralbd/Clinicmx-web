@@ -36,6 +36,34 @@ function mergeRecentItem(items: any[], item: any) {
 }
 // ─────────────────────────────────────────────────────
 
+// ─── TREATMENT PLAN → OPERATIONS MAPPING ─────────────
+const TREATMENT_TYPE_KEYWORDS: Array<[string, string[]]> = [
+  ['Root Canal', ['rct', 'root canal']],
+  ['Crown', ['crown', 'cap']],
+  ['Bridge', ['bridge']],
+  ['Extraction', ['extraction', 'ext']],
+  ['Implant', ['implant']],
+  ['Cleaning', ['cleaning', 'scaling']],
+  ['Whitening', ['whitening', 'bleaching']],
+  ['Braces', ['braces', 'ortho']],
+  ['Dentures', ['denture']],
+  ['Veneer', ['veneer']],
+  ['Consultation', ['consultation', 'consult']],
+  ['Filling', ['filling', 'restoration']],
+]
+
+function mapTreatmentPlanToOperation(treatmentPlan: string) {
+  const text = treatmentPlan.toLowerCase()
+  const match = TREATMENT_TYPE_KEYWORDS.find(([, keywords]) =>
+    keywords.some((kw) => text.includes(kw))
+  )
+  const treatment_type = match ? match[0] : 'Other'
+  const toothMatch = treatmentPlan.match(/-\s*(\d{2})\s*$/)
+  const tooth_number = toothMatch ? parseInt(toothMatch[1], 10) : null
+  return { treatment_type, tooth_number, description: treatmentPlan }
+}
+// ─────────────────────────────────────────────────────
+
 export function Prescriptions() {
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
@@ -62,6 +90,7 @@ export function Prescriptions() {
     chief_complaint: '',
     on_examination: '',
     diagnosis: '',
+    treatment_plan: '',
     notes: '',
     prescribed_date: format(new Date(), 'yyyy-MM-dd'),
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
@@ -142,16 +171,19 @@ export function Prescriptions() {
         chief_complaint: formData.chief_complaint,
         on_examination: formData.on_examination,
         diagnosis: formData.diagnosis,
+        treatment_plan: formData.treatment_plan,
         notes: formData.notes,
         prescribed_date: formData.prescribed_date,
         medications: formData.medications.filter((m) => m.name.trim()),
         investigations: formData.investigations.filter((i) => i.name.trim()),
       }
 
+      let prescriptionId = editingId
       if (editingId) {
         await supabase.from('prescriptions').update(payload).eq('id', editingId)
       } else {
-        await supabase.from('prescriptions').insert([payload])
+        const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()
+        prescriptionId = inserted?.id || null
 
         setLocalMeds((items) =>
           formData.medications.reduce((nextItems, med) => mergeRecentItem(nextItems, med), items)
@@ -168,6 +200,27 @@ export function Prescriptions() {
         }
         for (const inv of formData.investigations) {
           if (inv.name.trim()) rememberItem(MEMORY_KEYS.INVESTIGATIONS, inv.name)
+        }
+      }
+
+      if (formData.treatment_plan.trim() && prescriptionId) {
+        const operation = mapTreatmentPlanToOperation(formData.treatment_plan)
+        const { data: existing } = await supabase
+          .from('treatments')
+          .select('id')
+          .eq('prescription_id', prescriptionId)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase.from('treatments').update(operation).eq('id', existing.id)
+        } else {
+          await supabase.from('treatments').insert([{
+            patient_id: formData.patient_id,
+            prescription_id: prescriptionId,
+            status: 'Planned',
+            notes: 'Added from prescription treatment plan',
+            ...operation,
+          }])
         }
       }
 
@@ -188,6 +241,7 @@ export function Prescriptions() {
       chief_complaint: prescription.chief_complaint || '',
       on_examination: prescription.on_examination || '',
       diagnosis: prescription.diagnosis || '',
+      treatment_plan: prescription.treatment_plan || '',
       notes: prescription.notes || '',
       prescribed_date: prescription.prescribed_date
         ? format(new Date(prescription.prescribed_date), 'yyyy-MM-dd')
@@ -222,6 +276,7 @@ export function Prescriptions() {
       chief_complaint: '',
       on_examination: '',
       diagnosis: '',
+      treatment_plan: '',
       notes: '',
       prescribed_date: format(new Date(), 'yyyy-MM-dd'),
       medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
@@ -687,6 +742,19 @@ export function Prescriptions() {
                 <p className="text-xs text-gray-400 mt-1">e.g., Dental caries (K02.1), Periapical abscess (K04.7)</p>
               </div>
 
+              {/* ── Treatment Plan ── */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Treatment Plan</label>
+                <textarea
+                  rows={2}
+                  value={formData.treatment_plan}
+                  onChange={(e) => setFormData({ ...formData, treatment_plan: e.target.value })}
+                  placeholder="e.g., RCT + Cap - 47"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">Also added to this patient's Operations tab as a treatment record.</p>
+              </div>
+
               {/* ── Medications ── */}
               <div>
                 <div className="flex items-center gap-2 mb-4">
@@ -1136,10 +1204,12 @@ export function Prescriptions() {
       {printingPrescription && (
         <PrescriptionPrint
           prescription={{
+            id: printingPrescription.id,
             prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
             chief_complaint: printingPrescription.chief_complaint || '',
             on_examination: printingPrescription.on_examination || '',
             diagnosis: printingPrescription.diagnosis || '',
+            treatment_plan: printingPrescription.treatment_plan || '',
             medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
@@ -1151,6 +1221,7 @@ export function Prescriptions() {
             gender: printingPatient?.gender,
             phone: printingPatient?.phone,
             patient_code: printingPatient?.patient_code,
+            medical_history: printingPatient?.medical_history,
           }}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => { setPrintingPrescription(null); setPrintingPatient(null) }}

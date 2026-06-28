@@ -103,6 +103,7 @@ export interface Database {
           id: string
           patient_id: string
           appointment_id: string | null
+          prescription_id: string | null
           tooth_number: number | null
           treatment_type: string
           description: string | null
@@ -117,6 +118,7 @@ export interface Database {
           id?: string
           patient_id: string
           appointment_id?: string | null
+          prescription_id?: string | null
           tooth_number?: number | null
           treatment_type: string
           description?: string | null
@@ -131,6 +133,7 @@ export interface Database {
           id?: string
           patient_id?: string
           appointment_id?: string | null
+          prescription_id?: string | null
           tooth_number?: number | null
           treatment_type?: string
           description?: string | null
@@ -158,7 +161,10 @@ export interface Database {
           appointment_id: string | null
           medications: Json
           investigations: Json
+          chief_complaint: string | null
+          on_examination: string | null
           diagnosis: string | null
+          treatment_plan: string | null
           notes: string | null
           prescribed_date: string
           created_at: string
@@ -169,7 +175,10 @@ export interface Database {
           appointment_id?: string | null
           medications?: Json
           investigations?: Json
+          chief_complaint?: string | null
+          on_examination?: string | null
           diagnosis?: string | null
+          treatment_plan?: string | null
           notes?: string | null
           prescribed_date?: string
           created_at?: string
@@ -180,7 +189,10 @@ export interface Database {
           appointment_id?: string | null
           medications?: Json
           investigations?: Json
+          chief_complaint?: string | null
+          on_examination?: string | null
           diagnosis?: string | null
+          treatment_plan?: string | null
           notes?: string | null
           prescribed_date?: string
           created_at?: string
