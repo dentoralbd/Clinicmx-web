@@ -13,6 +13,7 @@ import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
+import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
 import {
   getComplaintTemplates,
   getExaminationTemplates,
@@ -187,6 +188,7 @@ export function PatientProfile() {
     chief_complaint: '',
     on_examination: '',
     diagnosis: '',
+    treatment_plan: '',
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
     investigations: [{ name: '', description: '' }],
     notes: '',
@@ -409,6 +411,7 @@ export function PatientProfile() {
         chief_complaint: prescriptionForm.chief_complaint,
         on_examination: prescriptionForm.on_examination,
         diagnosis: prescriptionForm.diagnosis,
+        treatment_plan: prescriptionForm.treatment_plan,
         medications: prescriptionForm.medications.filter(m => m.name.trim()),
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
         notes: prescriptionForm.notes,
@@ -419,10 +422,12 @@ export function PatientProfile() {
         .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
         .eq('id', id)
 
+      let prescriptionId = editingPrescriptionId
       if (editingPrescriptionId) {
         await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
       } else {
-        await supabase.from('prescriptions').insert([payload])
+        const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()
+        prescriptionId = inserted?.id || null
 
         // Save to session memory (legacy in-memory)
         for (const med of prescriptionForm.medications) {
@@ -460,6 +465,27 @@ export function PatientProfile() {
         }
       }
 
+      if (prescriptionForm.treatment_plan.trim() && prescriptionId) {
+        const operation = mapTreatmentPlanToOperation(prescriptionForm.treatment_plan)
+        const { data: existing } = await supabase
+          .from('treatments')
+          .select('id')
+          .eq('prescription_id', prescriptionId)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase.from('treatments').update(operation).eq('id', existing.id)
+        } else {
+          await supabase.from('treatments').insert([{
+            patient_id: id,
+            prescription_id: prescriptionId,
+            status: 'Planned',
+            notes: 'Added from prescription treatment plan',
+            ...operation,
+          }])
+        }
+      }
+
       setShowPrescriptionForm(false)
       setEditingPrescriptionId(null)
       setShowMedTemplates(false)
@@ -468,6 +494,7 @@ export function PatientProfile() {
         chief_complaint: '',
         on_examination: '',
         diagnosis: '',
+        treatment_plan: '',
         medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
         investigations: [{ name: '', description: '' }],
         notes: '',
@@ -486,6 +513,7 @@ export function PatientProfile() {
       chief_complaint: prescription.chief_complaint || '',
       on_examination: prescription.on_examination || '',
       diagnosis: prescription.diagnosis || '',
+      treatment_plan: prescription.treatment_plan || '',
       medications:
         Array.isArray(prescription.medications) && prescription.medications.length > 0
           ? prescription.medications
@@ -1247,7 +1275,7 @@ export function PatientProfile() {
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Prescription History</h3>
-        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
+        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', treatment_plan: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
           <Plus className="w-4 h-4 mr-1" />
           Add Prescription
         </Button>
@@ -2596,6 +2624,19 @@ function PrescriptionFormModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             />
             <p className="text-xs text-gray-400 mt-1">e.g., Dental caries (K02.1), Periapical abscess (K04.7)</p>
+          </div>
+
+          {/* ── Treatment Plan ── */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Treatment Plan</label>
+            <textarea
+              rows={2}
+              value={formData.treatment_plan}
+              onChange={(e) => setFormData({ ...formData, treatment_plan: e.target.value })}
+              placeholder="e.g., RCT + Cap - 47"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+            />
+            <p className="text-xs text-gray-400 mt-1">Also added to this patient's Operations tab as a treatment record.</p>
           </div>
 
           {/* ── Medications ── */}

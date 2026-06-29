@@ -26,6 +26,7 @@ import { safeFormat } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
+import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -36,34 +37,6 @@ function mergeRecentItem(items: any[], item: any) {
     return [item, ...items].slice(0, 30)
   }
   return items
-}
-// ─────────────────────────────────────────────────────
-
-// ─── TREATMENT PLAN → OPERATIONS MAPPING ─────────────
-const TREATMENT_TYPE_KEYWORDS: Array<[string, string[]]> = [
-  ['Root Canal', ['rct', 'root canal']],
-  ['Crown', ['crown', 'cap']],
-  ['Bridge', ['bridge']],
-  ['Extraction', ['extraction', 'ext']],
-  ['Implant', ['implant']],
-  ['Cleaning', ['cleaning', 'scaling']],
-  ['Whitening', ['whitening', 'bleaching']],
-  ['Braces', ['braces', 'ortho']],
-  ['Dentures', ['denture']],
-  ['Veneer', ['veneer']],
-  ['Consultation', ['consultation', 'consult']],
-  ['Filling', ['filling', 'restoration']],
-]
-
-function mapTreatmentPlanToOperation(treatmentPlan: string) {
-  const text = treatmentPlan.toLowerCase()
-  const match = TREATMENT_TYPE_KEYWORDS.find(([, keywords]) =>
-    keywords.some((kw) => text.includes(kw))
-  )
-  const treatment_type = match ? match[0] : 'Other'
-  const toothMatch = treatmentPlan.match(/-\s*(\d{2})\s*$/)
-  const tooth_number = toothMatch ? parseInt(toothMatch[1], 10) : null
-  return { treatment_type, tooth_number, description: treatmentPlan }
 }
 // ─────────────────────────────────────────────────────
 
@@ -747,7 +720,7 @@ export function Prescriptions() {
               </div>
 
               {/* ── Medical History ── */}
-              {formData.patient_id && (
+              {(formData.patient_id || patientMode === 'new') && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Medical History</div>
                   <MedicalHistoryFields
