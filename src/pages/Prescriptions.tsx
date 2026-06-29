@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { createPatient } from '@/lib/patients'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -101,6 +102,11 @@ export function Prescriptions() {
 
   const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
 
+  const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
+  const [newPatientData, setNewPatientData] = useState({
+    first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male',
+  })
+
   function selectPatientHistory(patientId: string) {
     const selected = patients.find((p) => p.id === patientId)
     const { items, other } = getMedicalHistoryChecks(selected?.medical_history)
@@ -176,8 +182,30 @@ export function Prescriptions() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
+      let patientId = formData.patient_id
+
+      if (patientMode === 'new') {
+        if (!newPatientData.first_name || !newPatientData.last_name || !newPatientData.phone) {
+          alert('Please fill in all required patient fields')
+          return
+        }
+        const newPatient = await createPatient({
+          first_name: newPatientData.first_name,
+          last_name: newPatientData.last_name,
+          phone: newPatientData.phone,
+          date_of_birth: newPatientData.date_of_birth || null,
+          gender: newPatientData.gender,
+        })
+        patientId = newPatient.id
+      }
+
+      if (!patientId) {
+        alert('Please select or create a patient')
+        return
+      }
+
       const payload: any = {
-        patient_id: formData.patient_id,
+        patient_id: patientId,
         chief_complaint: formData.chief_complaint,
         on_examination: formData.on_examination,
         diagnosis: formData.diagnosis,
@@ -191,7 +219,7 @@ export function Prescriptions() {
       await supabase
         .from('patients')
         .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
-        .eq('id', formData.patient_id)
+        .eq('id', patientId)
 
       let prescriptionId = editingId
       if (editingId) {
@@ -230,7 +258,7 @@ export function Prescriptions() {
           await supabase.from('treatments').update(operation).eq('id', existing.id)
         } else {
           await supabase.from('treatments').insert([{
-            patient_id: formData.patient_id,
+            patient_id: patientId,
             prescription_id: prescriptionId,
             status: 'Planned',
             notes: 'Added from prescription treatment plan',
@@ -271,6 +299,7 @@ export function Prescriptions() {
           ? prescription.investigations
           : [{ name: '', description: '' }],
     })
+    setPatientMode('existing')
     selectPatientHistory(prescription.patient_id || '')
     setShowForm(true)
   }
@@ -300,6 +329,8 @@ export function Prescriptions() {
       investigations: [{ name: '', description: '', urgency: 'Routine' }],
     })
     setMedicalHistoryForm({ checked: [], other: '' })
+    setPatientMode('existing')
+    setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male' })
   }
 
   function addMedication() {
@@ -596,26 +627,113 @@ export function Prescriptions() {
               {/* ── Patient & Date ── */}
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Patient &amp; Date</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
-                    <select
-                      required
-                      value={formData.patient_id}
-                      onChange={(e) => {
-                        setFormData({ ...formData, patient_id: e.target.value })
-                        selectPatientHistory(e.target.value)
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                {!editingId && (
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setPatientMode('existing')}
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium flex items-center justify-center gap-2 transition ${
+                        patientMode === 'existing'
+                          ? 'bg-primary text-white'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                      }`}
                     >
-                      <option value="">Select patient</option>
-                      {patients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.first_name} {patient.last_name}
-                        </option>
-                      ))}
-                    </select>
+                      <Users className="w-4 h-4" />
+                      Existing Patient
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPatientMode('new')}
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium flex items-center justify-center gap-2 transition ${
+                        patientMode === 'new'
+                          ? 'bg-primary text-white'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      New Patient
+                    </button>
                   </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {patientMode === 'existing' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+                      <select
+                        required
+                        value={formData.patient_id}
+                        onChange={(e) => {
+                          setFormData({ ...formData, patient_id: e.target.value })
+                          selectPatientHistory(e.target.value)
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                      >
+                        <option value="">Select patient</option>
+                        {patients.map((patient) => (
+                          <option key={patient.id} value={patient.id}>
+                            {patient.first_name} {patient.last_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={newPatientData.first_name}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, first_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          placeholder="John"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={newPatientData.last_name}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, last_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          placeholder="Doe"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                        <input
+                          type="tel"
+                          required
+                          value={newPatientData.phone}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, phone: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          placeholder="+1234567890"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                        <input
+                          type="date"
+                          value={newPatientData.date_of_birth}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, date_of_birth: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                        <select
+                          value={newPatientData.gender}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, gender: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                        >
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                     <input
