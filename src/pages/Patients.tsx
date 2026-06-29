@@ -244,7 +244,10 @@ export function Patients() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
+                      <div
+                        className="flex items-center gap-3 cursor-pointer"
+                        onClick={() => navigate(`/patients/${patient.id}`)}
+                      >
                         <div className={`w-8 h-8 ${getAvatarColor(patient.id)} rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0`}>
                           {patient.first_name?.[0] || '?'}
                         </div>

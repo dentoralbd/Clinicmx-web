@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
@@ -242,13 +243,17 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
 
   const isClosed = appointment.status === 'Cancelled' || appointment.status === 'Completed'
   const patientDobOrAge = getPatientDobOrAge(appointment.patients?.date_of_birth, appointment.patients?.age, '')
+  const navigate = useNavigate()
 
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium">
+            <p
+              className="font-medium cursor-pointer hover:text-primary transition-colors"
+              onClick={() => navigate(`/patients/${appointment.patient_id}`)}
+            >
               {appointment.patients?.first_name} {appointment.patients?.last_name}
             </p>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[appointment.status] || 'bg-gray-100'}`}>

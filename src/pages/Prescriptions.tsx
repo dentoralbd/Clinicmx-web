@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
@@ -45,6 +46,7 @@ function mergeRecentItem(items: any[], item: any) {
 // ─────────────────────────────────────────────────────
 
 export function Prescriptions() {
+  const navigate = useNavigate()
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
   const [medicationTemplates, setMedicationTemplates] = useState<any[]>([])
@@ -540,7 +542,10 @@ export function Prescriptions() {
                 {filteredPrescriptions.map((prescription) => (
                   <tr key={prescription.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <div className="font-medium">
+                      <div
+                        className="font-medium cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => navigate(`/patients/${prescription.patient_id}`)}
+                      >
                         {prescription.patients?.first_name} {prescription.patients?.last_name}
                       </div>
                     </td>
