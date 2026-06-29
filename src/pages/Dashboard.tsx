@@ -104,7 +104,7 @@ export function Dashboard() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+            <div key={i} className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
               <div className="skeleton h-4 w-32 mb-3" />
               <div className="skeleton h-8 w-20" />
             </div>
@@ -164,7 +164,7 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Today's Appointments</h3>
             <button
@@ -201,7 +201,7 @@ export function Dashboard() {
           )}
         </div>
 
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Recent Patients</h3>
             <button
@@ -251,14 +251,14 @@ function StatCard({ title, value, icon, color, onClick }: any) {
   return (
     <button
       onClick={onClick}
-      className="bg-card rounded-lg shadow-sm border border-gray-200 p-6 text-left w-full hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 group"
+      className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6 text-left w-full hover:shadow-elevation-high hover:-translate-y-1 active:translate-y-0 active:shadow-elevation-md transition-all duration-200 group"
     >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-text-secondary text-sm">{title}</p>
           <p className="text-2xl font-bold mt-1">{value}</p>
         </div>
-        <div className={`w-12 h-12 rounded-lg ${colors[color]} flex items-center justify-center group-hover:scale-110 transition-transform duration-150`}>
+        <div className={`w-12 h-12 rounded-xl ${colors[color]} flex items-center justify-center shadow-elevation-low group-hover:scale-110 transition-transform duration-150`}>
           {icon}
         </div>
       </div>
@@ -275,7 +275,7 @@ const statusColors: Record<string, string> = {
 
 function AppointmentItem({ time, patient, patientMeta, type, status }: any) {
   return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors">
+    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low transition-all duration-150">
       <div>
         <p className="font-medium">{patient}</p>
         {patientMeta && <p className="text-xs text-text-secondary">{patientMeta}</p>}
@@ -303,7 +303,7 @@ function PatientItem({ id, name, lastVisit, onClick }: any) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg w-full text-left hover:bg-blue-50 hover:shadow-sm transition-all group"
+      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100 w-full text-left hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low hover:-translate-y-0.5 transition-all duration-150 group"
     >
       <div className={`w-10 h-10 ${avatarColors[colorIndex]} rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0`}>
         {name[0]}

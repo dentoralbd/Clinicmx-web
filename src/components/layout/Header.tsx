@@ -18,13 +18,13 @@ export function Header({ onMenuClick }: HeaderProps) {
   }
 
   return (
-    <header className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4">
+    <header className="bg-white border-b border-gray-200 shadow-elevation-low px-4 lg:px-6 py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button
             onClick={onMenuClick}
             aria-label="Open navigation menu"
-            className="lg:hidden icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="lg:hidden icon-button p-2 hover:bg-gray-100 hover:shadow-elevation-low rounded-lg transition-all duration-150"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -43,17 +43,17 @@ export function Header({ onMenuClick }: HeaderProps) {
           <span className="hidden md:inline-flex px-2 py-1 text-xs font-mono bg-gray-100 text-gray-600 rounded border border-gray-200">
             Build {BUILD_VERSION}
           </span>
-          <button aria-label="Notifications" className="icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
+          <button aria-label="Notifications" className="icon-button p-2 hover:bg-gray-100 hover:shadow-elevation-low rounded-lg transition-all duration-150 relative">
             <Bell className="w-5 h-5 text-text-secondary" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
           </button>
-          <button aria-label="User profile" className="icon-button p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <button aria-label="User profile" className="icon-button p-2 hover:bg-gray-100 hover:shadow-elevation-low rounded-lg transition-all duration-150">
             <User className="w-5 h-5 text-text-secondary" />
           </button>
-          <button 
+          <button
             onClick={handleLogout}
             aria-label="Logout"
-            className="icon-button p-2 hover:bg-red-50 rounded-lg transition-colors group"
+            className="icon-button p-2 hover:bg-red-50 hover:shadow-elevation-low rounded-lg transition-all duration-150 group"
             title="Logout"
           >
             <LogOut className="w-5 h-5 text-text-secondary group-hover:text-red-600" />

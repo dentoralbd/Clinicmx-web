@@ -8,7 +8,7 @@ interface CardProps {
 
 export function Card({ children, className }: CardProps) {
   return (
-    <div className={cn('bg-card rounded-lg shadow-sm border border-gray-200', className)}>
+    <div className={cn('bg-card rounded-xl shadow-elevation-low border border-gray-200/80 transition-shadow duration-200 hover:shadow-elevation-md', className)}>
       {children}
     </div>
   )

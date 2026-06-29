@@ -1152,13 +1152,13 @@ export function Prescriptions() {
                                   <button
                                     type="button"
                                     onClick={() => setAiPanelOpenIndex((current) => (current === index ? null : index))}
-                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
+                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1 ${
                                       dosageSource === 'ai-estimate'
-                                        ? 'bg-primary text-white'
-                                        : 'text-gray-600 hover:bg-gray-200'
+                                        ? 'bg-gradient-to-r from-primary to-highlight text-white shadow-md shadow-primary/30 scale-[1.03]'
+                                        : 'text-primary bg-white hover:bg-gradient-to-r hover:from-primary/10 hover:to-highlight/10 border border-primary/20 hover:shadow-sm'
                                     }`}
                                   >
-                                    <Sparkles className="w-3 h-3" /> AI
+                                    <Sparkles className={`w-3 h-3 ${dosageSource === 'ai-estimate' ? 'animate-pulse' : ''}`} /> AI
                                   </button>
                                 )}
                               </div>
