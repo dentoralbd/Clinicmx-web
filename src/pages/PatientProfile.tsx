@@ -787,21 +787,44 @@ export function PatientProfile() {
   const renderProfileSection = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <InfoCard title="Patient Information">
-          {patient.patient_code && (
-            <div className="flex items-center justify-between py-1 border-b border-gray-100 mb-2">
-              <span className="text-sm text-text-secondary font-medium">Patient ID</span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-                {patient.patient_code}
-              </span>
+        <div className="flex flex-col gap-4">
+          <InfoCard title="Patient Information">
+            {patient.patient_code && (
+              <div className="flex items-center justify-between py-1 border-b border-gray-100 mb-2">
+                <span className="text-sm text-text-secondary font-medium">Patient ID</span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                  {patient.patient_code}
+                </span>
+              </div>
+            )}
+            <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
+            <InfoRow label="Gender" value={patient.gender || 'N/A'} />
+            <InfoRow label="Phone" value={patient.phone || 'N/A'} />
+            <InfoRow label="Email" value={patient.email || 'N/A'} />
+            <InfoRow label="Address" value={patient.address || 'N/A'} />
+          </InfoCard>
+
+          <InfoCard title="Quick Access">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {['medical', 'clinical', 'prescriptions', 'files'].map((sectionId) => {
+                const section = sectionOptions.find((item) => item.id === sectionId)!
+                const Icon = section.icon
+
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => updateSection(section.id)}
+                    className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+                  >
+                    <Icon className="h-5 w-5 text-primary" />
+                    <div className="mt-3 font-medium">{section.label}</div>
+                    <div className="mt-1 text-sm text-text-secondary">{section.description}</div>
+                  </button>
+                )
+              })}
             </div>
-          )}
-          <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
-          <InfoRow label="Gender" value={patient.gender || 'N/A'} />
-          <InfoRow label="Phone" value={patient.phone || 'N/A'} />
-          <InfoRow label="Email" value={patient.email || 'N/A'} />
-          <InfoRow label="Address" value={patient.address || 'N/A'} />
-        </InfoCard>
+          </InfoCard>
+        </div>
 
         <div className="rounded-3xl bg-gradient-to-br from-primary via-[#1b4e70] to-slate-900 p-4 sm:p-6 text-white shadow-sm">
           <p className="text-sm text-white/70">Financial dashboard</p>
@@ -886,7 +909,7 @@ export function PatientProfile() {
         </InfoCard>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <InfoCard title="Recent Activity">
           <div className="space-y-3">
             {visits.slice(0, 3).map((visit) => (
@@ -900,27 +923,6 @@ export function PatientProfile() {
               </div>
             ))}
             {visits.length === 0 && <EmptyState message="No visits recorded for this patient." />}
-          </div>
-        </InfoCard>
-
-        <InfoCard title="Quick Access">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {['medical', 'clinical', 'prescriptions', 'files'].map((sectionId) => {
-              const section = sectionOptions.find((item) => item.id === sectionId)!
-              const Icon = section.icon
-
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => updateSection(section.id)}
-                  className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
-                >
-                  <Icon className="h-5 w-5 text-primary" />
-                  <div className="mt-3 font-medium">{section.label}</div>
-                  <div className="mt-1 text-sm text-text-secondary">{section.description}</div>
-                </button>
-              )
-            })}
           </div>
         </InfoCard>
       </div>
