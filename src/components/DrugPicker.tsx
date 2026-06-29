@@ -14,6 +14,8 @@ const FORM_ABBREVIATIONS: Record<string, string> = {
   Gel: 'Gel',
   'Oral suspension': 'Susp.',
   'Oral Paste': 'Paste',
+  Suspension: 'Susp.',
+  'Pediatric Drop': 'Drop',
 }
 
 function formatDrugName(drug: BDDrug): string {
@@ -43,6 +45,7 @@ interface DrugPickerProps {
     route: string
     ageDosing: AgeDosing
     generic: string
+    dosageForm: string
     drugKey: string
   }) => void
   className?: string
@@ -154,6 +157,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
       route: drug.defaultRoute,
       ageDosing: drug.ageDosing,
       generic: drug.generic,
+      dosageForm: drug.dosageForm,
       drugKey: `${drug.brand}-${drug.company}-${drug.pack}`,
     })
     setIsOpen(false)

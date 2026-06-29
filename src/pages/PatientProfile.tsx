@@ -35,6 +35,7 @@ import { DrugPicker } from '@/components/DrugPicker'
 import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
+import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
 
 type SectionId =
   | 'profile'
@@ -2794,6 +2795,7 @@ function PrescriptionFormModal({
                             route: drug.route,
                             ageDosing: drug.ageDosing,
                             generic: drug.generic,
+                            dosageForm: drug.dosageForm,
                             selectedAgeTier: defaultTier,
                             dosageSource: 'manual',
                           }
@@ -2841,6 +2843,10 @@ function PrescriptionFormModal({
                     const weightKg = formData.weight ? Number.parseFloat(formData.weight) : 0
                     const formula = generic && aiTier !== 'adult' ? WEIGHT_DOSING_FORMULAS[generic]?.[aiTier] : undefined
                     const estimate = formula && weightKg > 0 ? calculateWeightDose(formula, weightKg) : null
+                    const dosageForm = (med as any).dosageForm as string | undefined
+                    const concentration = dosageForm && isLiquidDosageForm(dosageForm) ? parseLiquidConcentration(dosageForm) : null
+                    const volume = estimate && concentration ? calculateVolumeDose(estimate, concentration.mgPerMl) : null
+                    const volumeText = volume && dosageForm ? formatVolumeDoseSuggestion(volume, estimate?.dosesPerDay, isSpoonableDosageForm(dosageForm)) : null
 
                     return (
                       <div className="mb-3">
@@ -2893,6 +2899,7 @@ function PrescriptionFormModal({
                               ✨ Estimated from weight ({weightKg}kg, {AGE_TIER_LABELS[aiTier]} tier)
                             </div>
                             <div>{formatWeightDoseSuggestion(estimate)}</div>
+                            {volumeText && <div className="font-medium text-primary">{volumeText}</div>}
                             <div className="mt-1 text-gray-500">Based on: "{estimate.sourceText}"</div>
                             <div className="mt-2 flex gap-2">
                               <button
@@ -2902,7 +2909,9 @@ function PrescriptionFormModal({
                                   newMeds[index] = {
                                     ...newMeds[index],
                                     selectedAgeTier: aiTier,
-                                    dosage: formatWeightDoseSuggestion(estimate),
+                                    dosage: volumeText
+                                      ? `${formatWeightDoseSuggestion(estimate)}; ${volumeText}`
+                                      : formatWeightDoseSuggestion(estimate),
                                     dosageSource: 'ai-estimate',
                                   }
                                   setFormData({ ...formData, medications: newMeds })

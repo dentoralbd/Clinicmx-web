@@ -518,6 +518,10 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'amoxicillin', brand: 'Ultramox 500', company: 'Globe Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳7.50', priceNum: 7.5, dentalUse: 'Oral infections' },
   { genericKey: 'amoxicillin', brand: 'Demoxil 500', company: 'Drug International Ltd', pack: '3×10', priceLabel: '৳7.50', priceNum: 7.5, dentalUse: 'Dental/periapical infections' },
   { genericKey: 'amoxicillin', brand: 'Xtramox 500', company: 'Bengal Drugs Ltd', pack: "50's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Odontogenic & periodontal infections' },
+  { genericKey: 'amoxicillin', brand: 'Moxacil Suspension 125', company: 'Square Pharmaceuticals PLC', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳70.00', priceNum: 70, dentalUse: 'Dental/periapical infection in children unable to swallow tablets', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'amoxicillin', brand: 'Moxacil Pediatric Drop', company: 'Square Pharmaceuticals PLC', pack: '125mg/1.25ml, 15ml bottle', priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Dental infection dosing for infants', dosageForm: '125mg/1.25ml Pediatric Drop' },
+  { genericKey: 'amoxicillin', brand: 'Tycil Suspension 125', company: 'Beximco Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳70.00', priceNum: 70, dentalUse: 'Odontogenic infections, post-extraction prophylaxis in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'amoxicillin', brand: 'SK-mox Suspension 125', company: 'Eskayef Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳70.00', priceNum: 70, dentalUse: 'Periapical/periodontal infections in children', dosageForm: '125mg/5ml Suspension' },
 
   { genericKey: 'amoxiclav', brand: 'Moxaclav 625', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳~30', priceNum: 30, dentalUse: 'Beta-lactamase resistant dental infections' },
   { genericKey: 'amoxiclav', brand: 'Tyclav 625', company: 'Beximco Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳~28', priceNum: 28, dentalUse: 'Refractory dental infections, deep space infections' },
@@ -531,6 +535,10 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'amoxiclav', brand: 'Co-Clav 625', company: 'Ad-din Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳32', priceNum: 32, dentalUse: 'Dental infections with resistant bacteria' },
   { genericKey: 'amoxiclav', brand: 'Demoxiclave 625', company: 'Drug International Ltd', pack: "20's", priceLabel: '৳~28', priceNum: 28, dentalUse: 'Pericoronitis, post-extraction infection' },
   { genericKey: 'amoxiclav', brand: 'Bioclavid 625', company: 'Novartis (Bangladesh) Ltd', pack: "20's", priceLabel: '৳~32', priceNum: 32, dentalUse: 'Severe odontogenic infections' },
+  { genericKey: 'amoxiclav', brand: 'Moxaclav Suspension', company: 'Square Pharmaceuticals PLC', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Beta-lactamase resistant dental infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
+  { genericKey: 'amoxiclav', brand: 'Tyclav Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Refractory dental infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
+  { genericKey: 'amoxiclav', brand: 'Augment Suspension', company: 'Eskayef Pharmaceuticals Ltd', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Post-surgical oral infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
+  { genericKey: 'amoxiclav', brand: 'Clamox Suspension', company: 'Opsonin Pharma Ltd', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳225.00', priceNum: 225, dentalUse: 'Dental abscess with resistant organisms in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
 
   { genericKey: 'metronidazole', brand: 'Flagyl 400', company: 'Synovia Pharma PLC', pack: '30×10', priceLabel: '৳1.70', priceNum: 1.7, dentalUse: 'Acute ulcerative gingivitis, anaerobic dental infections' },
   { genericKey: 'metronidazole', brand: 'Amodis 400', company: 'Square Pharmaceuticals PLC', pack: '24×10', priceLabel: '৳1.70', priceNum: 1.7, dentalUse: 'Anaerobic oral infections, ANUG, NOMA' },
@@ -544,6 +552,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'metronidazole', brand: 'Metsina 400', company: 'Ibn Sina Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳1.70', priceNum: 1.7, dentalUse: 'Periodontal disease, anaerobic infections' },
   { genericKey: 'metronidazole', brand: 'D Metro 400', company: 'Desh Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳1.70', priceNum: 1.7, dentalUse: 'Acute ulcerative gingivitis, pericoronitis' },
   { genericKey: 'metronidazole', brand: 'Micogyl 400', company: 'Globe Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳1.70', priceNum: 1.7, dentalUse: 'Anaerobic dental infections' },
+  { genericKey: 'metronidazole', brand: 'Flagyl Suspension 200', company: 'Synovia Pharma PLC', pack: '200mg/5ml, 60ml bottle', priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Acute ulcerative gingivitis, anaerobic infections in children', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'metronidazole', brand: 'Amodis Suspension 200', company: 'Square Pharmaceuticals PLC', pack: '200mg/5ml, 60ml bottle', priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Anaerobic oral infections, ANUG in children', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'metronidazole', brand: 'Metryl Suspension 200', company: 'Opsonin Pharma Ltd', pack: '200mg/5ml, 60ml bottle', priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Anaerobic bacterial dental infections in children', dosageForm: '200mg/5ml Suspension' },
 
   { genericKey: 'azithromycin', brand: 'Zimax 500', company: 'Square Pharmaceuticals PLC', pack: '3×6', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Penicillin-allergy dental infections, ANUG, pericoronitis' },
   { genericKey: 'azithromycin', brand: 'Zibac 500', company: 'Popular Pharmaceuticals Ltd', pack: '3×6', priceLabel: '৳45.00', priceNum: 45, dentalUse: 'Alternative antibiotic in oral infections' },
@@ -557,6 +568,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'azithromycin', brand: 'Romycin 500', company: 'Ibn Sina Pharmaceuticals Ltd', pack: '2×10', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Orofacial infections, macrolide alternative' },
   { genericKey: 'azithromycin', brand: 'Zithrox 500', company: 'Eskayef Pharmaceuticals Ltd', pack: '2×6', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Dental infections in penicillin allergy' },
   { genericKey: 'azithromycin', brand: 'Azyth 500', company: 'SANDOZ (A Novartis Division)', pack: '3×3', priceLabel: '৳55.50', priceNum: 55.5, dentalUse: 'Dental & oral bacterial infections' },
+  { genericKey: 'azithromycin', brand: 'Abacten Suspension', company: 'Arges Life Science Limited', pack: '200mg/5ml, 30ml bottle', priceLabel: '৳130.00', priceNum: 130, dentalUse: 'Penicillin-allergy dental infections in children', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'azithromycin', brand: 'Accuzith Suspension', company: 'DBL Pharmaceuticals Ltd', pack: '200mg/5ml, 35ml bottle', priceLabel: '৳170.00', priceNum: 170, dentalUse: 'Pediatric oral infections, 3-day macrolide course', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'azithromycin', brand: 'Adiz Suspension', company: 'Euro Pharma Ltd', pack: '200mg/5ml, 15ml bottle', priceLabel: '৳95.00', priceNum: 95, dentalUse: 'Dental infections in penicillin-allergic children', dosageForm: '200mg/5ml Suspension' },
 
   { genericKey: 'ibuprofen', brand: 'Profen 400', company: 'ACME Laboratories Ltd', pack: '10×10', priceLabel: '৳1.43', priceNum: 1.43, dentalUse: 'Dental/pulpal pain, post-extraction swelling, pericoronitis' },
   { genericKey: 'ibuprofen', brand: 'Inflam 400', company: 'Synovia Pharma PLC', pack: '10×10', priceLabel: '৳1.43', priceNum: 1.43, dentalUse: 'Inflammatory dental pain, post-surgical analgesia' },
@@ -570,6 +584,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'ibuprofen', brand: 'Erofen 400', company: 'Edruc Limited', pack: "100's", priceLabel: '৳1.35', priceNum: 1.35, dentalUse: 'Dental/periapical pain' },
   { genericKey: 'ibuprofen', brand: 'Siflam 400', company: 'Silva Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳1.20', priceNum: 1.2, dentalUse: 'Dental inflammation & pain' },
   { genericKey: 'ibuprofen', brand: 'Deflam 400', company: 'Desh Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳1.00', priceNum: 1, dentalUse: 'Post-operative orofacial pain' },
+  { genericKey: 'ibuprofen', brand: 'Profen Suspension 100', company: 'ACME Laboratories Ltd', pack: '100mg/5ml, 100ml bottle', priceLabel: '৳37.00', priceNum: 37, dentalUse: 'Dental/pulpal pain and swelling in children', dosageForm: '100mg/5ml Suspension' },
+  { genericKey: 'ibuprofen', brand: 'Reumafen Suspension 100', company: 'Beximco Pharmaceuticals Ltd', pack: '100mg/5ml, 100ml bottle', priceLabel: '৳33.82', priceNum: 33.82, dentalUse: 'Pulpitis, dental pain in children', dosageForm: '100mg/5ml Suspension' },
+  { genericKey: 'ibuprofen', brand: 'Inflam Suspension 100', company: 'Synovia Pharma PLC', pack: '100mg/5ml, 100ml bottle', priceLabel: '৳33.80', priceNum: 33.8, dentalUse: 'Inflammatory dental pain in children', dosageForm: '100mg/5ml Suspension' },
 
   { genericKey: 'diclofenac', brand: 'Clofenac 50', company: 'Square Pharmaceuticals PLC', pack: '20×10', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Post-surgical dental pain & swelling, TMJ, alveolar osteitis' },
   { genericKey: 'diclofenac', brand: 'A-Fenac 50', company: 'ACME Laboratories Ltd', pack: '10×10', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Inflammatory dental/orofacial pain' },
@@ -596,6 +613,11 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'paracetamol', brand: 'Ceta 500', company: 'Drug International Ltd', pack: "100's", priceLabel: '৳1.50', priceNum: 1.5, dentalUse: 'Post-extraction pain' },
   { genericKey: 'paracetamol', brand: 'G-Paracetamol 500', company: 'Gonoshasthaya Pharma Ltd', pack: "100's", priceLabel: '৳1.20', priceNum: 1.2, dentalUse: 'Toothache, mild oral pain' },
   { genericKey: 'paracetamol', brand: 'Dolomol 500', company: 'Beximco Pharmaceuticals Ltd', pack: "100's", priceLabel: '৳1.50', priceNum: 1.5, dentalUse: 'Dental pain, analgesic for dental use' },
+  { genericKey: 'paracetamol', brand: 'Napa Syrup 120', company: 'Beximco Pharmaceuticals Ltd', pack: '120mg/5ml, 100ml bottle', priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Dental pain/fever in children unable to take tablets', dosageForm: '120mg/5ml Syrup' },
+  { genericKey: 'paracetamol', brand: 'Napa Pediatric Drop', company: 'Beximco Pharmaceuticals Ltd', pack: '80mg/ml, 15ml bottle', priceLabel: '৳20.00', priceNum: 20, dentalUse: 'Dental pain/fever dosing for infants', dosageForm: '80mg/ml Pediatric Drop' },
+  { genericKey: 'paracetamol', brand: 'Ace Syrup 120', company: 'Square Pharmaceuticals PLC', pack: '120mg/5ml, 100ml bottle', priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Toothache, post-operative pain in children', dosageForm: '120mg/5ml Syrup' },
+  { genericKey: 'paracetamol', brand: 'Renova Suspension 120', company: 'Opsonin Pharma Ltd', pack: '120mg/5ml, 100ml bottle', priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Dental pain, post-extraction analgesia in children', dosageForm: '120mg/5ml Suspension' },
+  { genericKey: 'paracetamol', brand: 'Fast Suspension 120', company: 'ACME Laboratories Ltd', pack: '120mg/5ml, 100ml bottle', priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Dental pain relief, fever control in children', dosageForm: '120mg/5ml Suspension' },
 
   { genericKey: 'lidocaine', brand: 'Jasocaine 2%', company: 'Jayson Pharmaceuticals Ltd', pack: 'Vial', priceLabel: '৳~30', priceNum: 30, dentalUse: 'Inferior alveolar nerve block, infiltration anesthesia', dosageForm: '2% Injection' },
   { genericKey: 'lidocaine', brand: 'G-Lignocaine 2%', company: 'Gonoshasthaya Pharmaceuticals Ltd', pack: 'Vial', priceLabel: '৳~30', priceNum: 30, dentalUse: 'Local dental anesthesia, nerve blocks', dosageForm: '2% Injection' },
@@ -664,6 +686,8 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'clindamycin', brand: 'Clindacin 300', company: 'Incepta Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Odontogenic infections, periodontal abscess' },
   { genericKey: 'clindamycin', brand: 'Klinda 300', company: 'Opsonin Pharma Ltd', pack: "20's", priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Resistant dental infections' },
   { genericKey: 'clindamycin', brand: 'Cling 300', company: 'ACI Limited', pack: "20's", priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental & jaw bone infections' },
+  { genericKey: 'clindamycin', brand: 'Clindacin Suspension', company: 'Incepta Pharmaceuticals Ltd', pack: '75mg/5ml, 100ml bottle', priceLabel: '৳280.00', priceNum: 280, dentalUse: 'Penicillin-allergy dental infections in children', dosageForm: '75mg/5ml Suspension' },
+  { genericKey: 'clindamycin', brand: 'Clindax Suspension', company: 'Opsonin Pharma Ltd', pack: '75mg/5ml, 100ml bottle', priceLabel: '৳250.94', priceNum: 250.94, dentalUse: 'Dental abscess in penicillin-allergic children', dosageForm: '75mg/5ml Suspension' },
 
   { genericKey: 'cefixime', brand: 'Cef-3 200', company: 'Beximco Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳14.00', priceNum: 14, dentalUse: 'Odontogenic infections resistant to amoxicillin' },
   { genericKey: 'cefixime', brand: 'Tofib 200', company: 'ACME Laboratories Ltd', pack: "10's", priceLabel: '৳14.00', priceNum: 14, dentalUse: 'Dental infections, broad-spectrum cephalosporin cover' },
@@ -671,6 +695,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'cefixime', brand: 'Maxpro 200', company: 'Square Pharmaceuticals PLC', pack: "10's", priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental abscess, post-surgical infection' },
   { genericKey: 'cefixime', brand: 'Ceforal 200', company: 'Eskayef Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳14.00', priceNum: 14, dentalUse: 'Odontogenic infections' },
   { genericKey: 'cefixime', brand: 'Trustcef 200', company: 'Renata PLC', pack: "10's", priceLabel: '৳14.00', priceNum: 14, dentalUse: 'Dental & soft tissue infections' },
+  { genericKey: 'cefixime', brand: '3-C Suspension', company: 'Edruc Limited', pack: '100mg/5ml, 100ml bottle', priceLabel: '৳195.00', priceNum: 195, dentalUse: 'Odontogenic infections resistant to amoxicillin in children', dosageForm: '100mg/5ml Suspension' },
+  { genericKey: 'cefixime', brand: 'Adexim Suspension', company: 'Supreme Pharmaceutical Ltd', pack: '100mg/5ml, 50ml bottle', priceLabel: '৳160.00', priceNum: 160, dentalUse: 'Dental abscess, post-surgical infection in children', dosageForm: '100mg/5ml Suspension' },
+  { genericKey: 'cefixime', brand: 'Cef-3 Pediatric Drop', company: 'Square Pharmaceuticals PLC', pack: '25mg/ml, 21ml bottle', priceLabel: '৳100.30', priceNum: 100.3, dentalUse: 'Odontogenic infection dosing for infants', dosageForm: '25mg/ml Pediatric Drop' },
 
   { genericKey: 'doxycycline', brand: 'Doxyl 100', company: 'Aristopharma Ltd', pack: "10's", priceLabel: '৳1.50', priceNum: 1.5, dentalUse: 'Aggressive/refractory periodontitis adjunct' },
   { genericKey: 'doxycycline', brand: 'Biodoxi 100', company: 'ACI Limited', pack: "10's", priceLabel: '৳1.50', priceNum: 1.5, dentalUse: 'Chronic periodontitis, perio-systemic link cases' },
@@ -683,6 +710,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'mefenamic', brand: 'Maxgesic 500', company: 'Beacon Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Dental pain & inflammation' },
   { genericKey: 'mefenamic', brand: 'Forapain 500', company: 'ACI Limited', pack: '10×10', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Moderate orofacial pain relief' },
   { genericKey: 'mefenamic', brand: 'Tarpon 500', company: 'Opsonin Pharma Ltd', pack: '10×10', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Dental pain, mild-moderate inflammation' },
+  { genericKey: 'mefenamic', brand: 'Fenamic Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳28.00', priceNum: 28, dentalUse: 'Post-extraction & pulpitis pain in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'mefenamic', brand: 'Mefalgin Suspension', company: 'Cosmic Pharma Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳30.00', priceNum: 30, dentalUse: 'Dental pain & inflammation in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'mefenamic', brand: 'Amifen Suspension', company: 'Opsonin Pharma Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳28.11', priceNum: 28.11, dentalUse: 'Moderate orofacial pain relief in children', dosageForm: '50mg/5ml Suspension' },
 
   { genericKey: 'tranexamic', brand: 'Texamic 500', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Post-extraction bleeding control, anticoagulated patients' },
   { genericKey: 'tranexamic', brand: 'Transamin 500', company: 'Eskayef Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Hemostasis after oral surgery' },
@@ -709,6 +739,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'amoxiclav875', brand: 'Clacido DS', company: 'Healthcare Pharmaceuticals Ltd', pack: "14's", priceLabel: '৳44.00', priceNum: 44, dentalUse: 'Oral/maxillofacial infections, severe presentation' },
   { genericKey: 'amoxiclav875', brand: 'Fimoxyclav DS', company: 'Synovia Pharma PLC', pack: "14's", priceLabel: '৳44.00', priceNum: 44, dentalUse: 'Perimandibular space infections, higher dosing' },
   { genericKey: 'amoxiclav875', brand: 'Demoxiclave DS', company: 'Drug International Ltd', pack: "14's", priceLabel: '৳44.00', priceNum: 44, dentalUse: 'Severe pericoronitis, post-extraction infection' },
+  { genericKey: 'amoxiclav875', brand: 'Moxaclav Forte Suspension', company: 'Square Pharmaceuticals PLC', pack: '(400mg+57.5mg)/5ml, 50ml bottle', priceLabel: '৳230.00', priceNum: 230, dentalUse: 'Severe odontogenic infections needing higher-dose suspension', dosageForm: '400mg/57.5mg/5ml Suspension' },
+  { genericKey: 'amoxiclav875', brand: 'Tyclav BID Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '(400mg+57.5mg)/5ml, 50ml bottle', priceLabel: '৳230.00', priceNum: 230, dentalUse: 'Deep space dental infections in children needing higher dosing', dosageForm: '400mg/57.5mg/5ml Suspension' },
+  { genericKey: 'amoxiclav875', brand: 'Avloclav BID Suspension', company: 'ACI Limited', pack: '(400mg+57.5mg)/5ml, 50ml bottle', priceLabel: '৳245.00', priceNum: 245, dentalUse: 'Severe dental abscess in children, beta-lactamase producers', dosageForm: '400mg/57.5mg/5ml Suspension' },
 
   { genericKey: 'cephalexin', brand: 'Cepha-500', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Dental/soft tissue infections, penicillin-allergy alternative' },
   { genericKey: 'cephalexin', brand: 'Keflexin 500', company: 'Beximco Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Odontogenic infections, first-gen cephalosporin cover' },
@@ -720,6 +753,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'cephalexin', brand: 'Rancef 500', company: 'Renata PLC', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Acute dental infections' },
   { genericKey: 'cephalexin', brand: 'Globacef 500', company: 'Globe Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳5.80', priceNum: 5.8, dentalUse: 'Dental & periodontal infections' },
   { genericKey: 'cephalexin', brand: 'Sinacef 500', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Odontogenic infections, soft tissue cover' },
+  { genericKey: 'cephalexin', brand: 'Acelex Suspension', company: 'ACME Laboratories Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳77.50', priceNum: 77.5, dentalUse: 'Dental/soft tissue infections in children, penicillin-allergy alternative', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cephalexin', brand: 'Cephalen Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳84.27', priceNum: 84.27, dentalUse: 'Odontogenic infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cephalexin', brand: 'G-Cephalexin Suspension', company: 'Gonoshasthaya Pharma Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳75.00', priceNum: 75, dentalUse: 'Dental abscess, periodontal infection in children', dosageForm: '125mg/5ml Suspension' },
 
   { genericKey: 'cephradine', brand: 'Velosef 500', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳6.50', priceNum: 6.5, dentalUse: 'Dental & oral soft tissue infections (widely used 1st-gen cephalosporin)' },
   { genericKey: 'cephradine', brand: 'Cradex 500', company: 'Beximco Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Odontogenic infections, post-extraction prophylaxis' },
@@ -731,6 +767,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'cephradine', brand: 'Cradine 500', company: 'Renata PLC', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Acute dental & periodontal infections' },
   { genericKey: 'cephradine', brand: 'Globradine 500', company: 'Globe Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳5.80', priceNum: 5.8, dentalUse: 'Dental infections, penicillin-sensitive patients' },
   { genericKey: 'cephradine', brand: 'Sinaradine 500', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Odontogenic & soft tissue infections' },
+  { genericKey: 'cephradine', brand: 'Cephid Suspension', company: 'Zenith Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳80.00', priceNum: 80, dentalUse: 'Dental & oral soft tissue infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cephradine', brand: 'Acefra Suspension', company: 'Apollo Pharmaceutical Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳78.00', priceNum: 78, dentalUse: 'Odontogenic infections, post-extraction prophylaxis in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cephradine', brand: 'Elocef Suspension', company: 'Ethical Drugs Limited', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳80.00', priceNum: 80, dentalUse: 'Dental abscess, periapical infection in children', dosageForm: '125mg/5ml Suspension' },
 
   { genericKey: 'cefuroxime', brand: 'Cef-2 250', company: 'Beximco Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳22.00', priceNum: 22, dentalUse: 'Beta-lactamase resistant odontogenic infections' },
   { genericKey: 'cefuroxime', brand: 'Cefoxim 250', company: 'Square Pharmaceuticals PLC', pack: "10's", priceLabel: '৳23.00', priceNum: 23, dentalUse: 'Dental infections resistant to amoxicillin' },
@@ -797,6 +836,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'acyclovir', brand: 'Heporal 400', company: 'Eskayef Pharmaceuticals Ltd', pack: "35's", priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Oral HSV infections' },
   { genericKey: 'acyclovir', brand: 'Acivex 400', company: 'Globe Pharmaceuticals Ltd', pack: "35's", priceLabel: '৳5.80', priceNum: 5.8, dentalUse: 'Recurrent herpetic lesions' },
   { genericKey: 'acyclovir', brand: 'Zovirax 400', company: 'GSK/Imported distributors BD', pack: "35's", priceLabel: '৳18.00', priceNum: 18, dentalUse: 'Reference brand for herpetic stomatitis' },
+  { genericKey: 'acyclovir', brand: 'Virux Suspension', company: 'Square Pharmaceuticals PLC', pack: '200mg/5ml, 70ml bottle', priceLabel: '৳125.85', priceNum: 125.85, dentalUse: 'Primary herpetic gingivostomatitis in children', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'acyclovir', brand: 'Acerux Suspension', company: 'Opsonin Pharma Ltd', pack: '200mg/5ml, 70ml bottle', priceLabel: '৳125.47', priceNum: 125.47, dentalUse: 'Herpetic oral lesions in children', dosageForm: '200mg/5ml Suspension' },
+  { genericKey: 'acyclovir', brand: 'Simplovir Suspension', company: 'Incepta Pharmaceuticals Ltd', pack: '200mg/5ml, 70ml bottle', priceLabel: '৳125.00', priceNum: 125, dentalUse: 'Recurrent herpetic oral lesions in children', dosageForm: '200mg/5ml Suspension' },
 
   { genericKey: 'valacyclovir', brand: 'Valavir 500', company: 'Square Pharmaceuticals PLC', pack: "10's", priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Recurrent herpes labialis, herpetic stomatitis (better bioavailability)' },
   { genericKey: 'valacyclovir', brand: 'Valcin 500', company: 'Beximco Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳34.00', priceNum: 34, dentalUse: 'Oral herpes simplex, shorter dosing course' },
@@ -819,6 +861,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'fluconazole', brand: 'Mycofin 150', company: 'Eskayef Pharmaceuticals Ltd', pack: "1's/4's", priceLabel: '৳30.00', priceNum: 30, dentalUse: 'Oral fungal infections' },
   { genericKey: 'fluconazole', brand: 'Fungidor 150', company: 'Globe Pharmaceuticals Ltd', pack: "1's/4's", priceLabel: '৳28.00', priceNum: 28, dentalUse: 'Topical-resistant oral candidiasis' },
   { genericKey: 'fluconazole', brand: 'Flusafe 150', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "1's/4's", priceLabel: '৳29.00', priceNum: 29, dentalUse: 'Oral candidiasis in denture wearers' },
+  { genericKey: 'fluconazole', brand: 'Flucon Suspension', company: 'Opsonin Pharma Ltd', pack: '50mg/5ml, 35ml bottle', priceLabel: '৳78.52', priceNum: 78.52, dentalUse: 'Resistant oral candidiasis in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'fluconazole', brand: 'Fluconal Suspension', company: 'ACME Laboratories Ltd', pack: '50mg/5ml, 35ml bottle', priceLabel: '৳78.53', priceNum: 78.53, dentalUse: 'Denture-related candidiasis in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'fluconazole', brand: 'Omastin Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '50mg/5ml, 35ml bottle', priceLabel: '৳78.00', priceNum: 78, dentalUse: 'Oral thrush in immunocompromised children', dosageForm: '50mg/5ml Suspension' },
 
   { genericKey: 'ketoconazole', brand: 'Ketocon 200', company: 'Square Pharmaceuticals PLC', pack: "10's", priceLabel: '৳8.00', priceNum: 8, dentalUse: 'Resistant oral candidiasis, angular cheilitis (second-line)' },
   { genericKey: 'ketoconazole', brand: 'Funtus 200', company: 'Beximco Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳8.00', priceNum: 8, dentalUse: 'Recurrent oral fungal infections' },
@@ -841,6 +886,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'penicillinV', brand: 'Vecillin 250', company: 'Eskayef Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳2.50', priceNum: 2.5, dentalUse: 'Streptococcal dental infections' },
   { genericKey: 'penicillinV', brand: 'Pentab 250', company: 'Globe Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳2.30', priceNum: 2.3, dentalUse: 'Narrow-spectrum dental infection cover' },
   { genericKey: 'penicillinV', brand: 'Bipen 250', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳2.50', priceNum: 2.5, dentalUse: 'Odontogenic infections in low-resistance settings' },
+  { genericKey: 'penicillinV', brand: 'Penicillin-V Suspension', company: 'Indo Bangla Pharmaceutical', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳~70', priceNum: 70, dentalUse: 'Streptococcal odontogenic infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'penicillinV', brand: 'G-Penicillin V Suspension', company: 'Gonoshasthaya Pharma Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳~65', priceNum: 65, dentalUse: 'Low-resistance dental infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'penicillinV', brand: 'Open Suspension', company: 'Opsonin Pharma Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳~70', priceNum: 70, dentalUse: 'Odontogenic streptococcal infections in children', dosageForm: '125mg/5ml Suspension' },
 
   { genericKey: 'ampicillin', brand: 'Ampicin 500', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Odontogenic infections, alternative to amoxicillin' },
   { genericKey: 'ampicillin', brand: 'Ampilin 500', company: 'Beximco Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Dental abscess, soft tissue infections' },
@@ -852,6 +900,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'ampicillin', brand: 'Ampex 500', company: 'Eskayef Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Odontogenic infections' },
   { genericKey: 'ampicillin', brand: 'Globapen 500', company: 'Globe Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳2.80', priceNum: 2.8, dentalUse: 'Dental & soft tissue infection cover' },
   { genericKey: 'ampicillin', brand: 'Sinapen 500', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Odontogenic infections, alternative penicillin' },
+  { genericKey: 'ampicillin', brand: 'Acmecilin Suspension', company: 'ACME Laboratories Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Odontogenic infections in children, alternative to amoxicillin', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'ampicillin', brand: 'Seemacillin Suspension', company: 'Seema Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳45.00', priceNum: 45, dentalUse: 'Dental abscess, soft tissue infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'ampicillin', brand: 'Seemacillin Pediatric Drop', company: 'Seema Pharmaceuticals Ltd', pack: '125mg/1.25ml, 15ml bottle', priceLabel: '৳17.65', priceNum: 17.65, dentalUse: 'Periapical infection dosing for infants', dosageForm: '125mg/1.25ml Pediatric Drop' },
 
   { genericKey: 'cloxacillin', brand: 'Cloxin 500', company: 'Square Pharmaceuticals PLC', pack: "20's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Penicillinase-producing Staph infections of jaw/soft tissue' },
   { genericKey: 'cloxacillin', brand: 'Ablexin 500', company: 'Beximco Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Resistant odontogenic soft tissue infections' },
@@ -863,6 +914,9 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'cloxacillin', brand: 'Bactiklox 500', company: 'Eskayef Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Penicillinase-producing dental infections' },
   { genericKey: 'cloxacillin', brand: 'Globaclox 500', company: 'Globe Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳4.80', priceNum: 4.8, dentalUse: 'Resistant Staph odontogenic infections' },
   { genericKey: 'cloxacillin', brand: 'Sinaclox 500', company: 'Ibn Sina Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Staphylococcal jaw/soft tissue infections' },
+  { genericKey: 'cloxacillin', brand: 'Cloxin Suspension', company: 'Opsonin Pharma Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳44.84', priceNum: 44.84, dentalUse: 'Penicillinase-producing Staph infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cloxacillin', brand: 'Clobex Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳43.85', priceNum: 43.85, dentalUse: 'Resistant odontogenic soft tissue infections in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'cloxacillin', brand: 'Ficlox Suspension', company: 'Synovia Pharma PLC', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳45.00', priceNum: 45, dentalUse: 'Staphylococcal jaw infections in children', dosageForm: '125mg/5ml Suspension' },
 
   { genericKey: 'ketorolac', brand: 'Ketorol 10', company: 'Square Pharmaceuticals PLC', pack: "10's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Moderate-severe post-surgical dental pain, third molar surgery' },
   { genericKey: 'ketorolac', brand: 'Ketolac 10', company: 'Beximco Pharmaceuticals Ltd', pack: "10's", priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Short-term potent NSAID for dental pain' },

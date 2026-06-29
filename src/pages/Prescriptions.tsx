@@ -30,6 +30,7 @@ import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
 import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
+import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -1060,6 +1061,7 @@ export function Prescriptions() {
                                 route: drug.route,
                                 ageDosing: drug.ageDosing,
                                 generic: drug.generic,
+                                dosageForm: drug.dosageForm,
                                 selectedAgeTier: defaultTier,
                                 dosageSource: 'manual',
                               } as any
@@ -1112,6 +1114,10 @@ export function Prescriptions() {
                         const weightKg = prescriptionWeight ? Number.parseFloat(prescriptionWeight) : 0
                         const formula = generic && aiTier !== 'adult' ? WEIGHT_DOSING_FORMULAS[generic]?.[aiTier] : undefined
                         const estimate = formula && weightKg > 0 ? calculateWeightDose(formula, weightKg) : null
+                        const dosageForm = (med as any).dosageForm as string | undefined
+                        const concentration = dosageForm && isLiquidDosageForm(dosageForm) ? parseLiquidConcentration(dosageForm) : null
+                        const volume = estimate && concentration ? calculateVolumeDose(estimate, concentration.mgPerMl) : null
+                        const volumeText = volume && dosageForm ? formatVolumeDoseSuggestion(volume, estimate?.dosesPerDay, isSpoonableDosageForm(dosageForm)) : null
 
                         return (
                           <div className="mb-3">
@@ -1164,6 +1170,7 @@ export function Prescriptions() {
                                   ✨ Estimated from weight ({weightKg}kg, {AGE_TIER_LABELS[aiTier]} tier)
                                 </div>
                                 <div>{formatWeightDoseSuggestion(estimate)}</div>
+                                {volumeText && <div className="font-medium text-primary">{volumeText}</div>}
                                 <div className="mt-1 text-gray-500">Based on: "{estimate.sourceText}"</div>
                                 <div className="mt-2 flex gap-2">
                                   <button
@@ -1173,7 +1180,9 @@ export function Prescriptions() {
                                       newMeds[index] = {
                                         ...newMeds[index],
                                         selectedAgeTier: aiTier,
-                                        dosage: formatWeightDoseSuggestion(estimate),
+                                        dosage: volumeText
+                                          ? `${formatWeightDoseSuggestion(estimate)}; ${volumeText}`
+                                          : formatWeightDoseSuggestion(estimate),
                                         dosageSource: 'ai-estimate',
                                       } as any
                                       setFormData({ ...formData, medications: newMeds })
