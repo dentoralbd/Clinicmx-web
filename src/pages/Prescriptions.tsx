@@ -27,7 +27,7 @@ import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
-import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
+import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 
@@ -80,7 +80,7 @@ export function Prescriptions() {
 
   const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
   const [newPatientData, setNewPatientData] = useState({
-    first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male',
+    first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male',
   })
 
   // Weight for this visit — kept separate from formData so it can never interact with
@@ -176,11 +176,19 @@ export function Prescriptions() {
           alert('Please fill in all required patient fields')
           return
         }
+        const parsedAge = Number.parseInt(newPatientData.age, 10)
+        const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+        const dateOfBirth =
+          newPatientData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
+        if (!dateOfBirth) {
+          alert('Please provide Date of Birth or Age for the new patient')
+          return
+        }
         const newPatient = await createPatient({
           first_name: newPatientData.first_name,
           last_name: newPatientData.last_name,
           phone: newPatientData.phone,
-          date_of_birth: newPatientData.date_of_birth || null,
+          date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
         })
         patientId = newPatient.id
@@ -319,7 +327,7 @@ export function Prescriptions() {
     })
     setMedicalHistoryForm({ checked: [], other: '' })
     setPatientMode('existing')
-    setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male' })
+    setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male' })
     setPrescriptionWeight('')
     setAiPanelOpenIndex(null)
   }
@@ -708,6 +716,20 @@ export function Prescriptions() {
                           type="date"
                           value={newPatientData.date_of_birth}
                           onChange={(e) => setNewPatientData({ ...newPatientData, date_of_birth: e.target.value })}
+                          required={!newPatientData.age}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={130}
+                          value={newPatientData.age}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, age: e.target.value })}
+                          required={!newPatientData.date_of_birth}
+                          placeholder="Enter age if DOB is unknown"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
                         />
                       </div>
@@ -723,6 +745,7 @@ export function Prescriptions() {
                           <option value="Other">Other</option>
                         </select>
                       </div>
+                      <p className="md:col-span-2 text-sm text-gray-500">Provide either Date of Birth or Age.</p>
                     </>
                   )}
                   <div>
@@ -1021,8 +1044,12 @@ export function Prescriptions() {
                             }}
                             onDrugSelect={(drug) => {
                               const newMeds = [...formData.medications]
-                              const selectedPatient = patients.find((p) => p.id === formData.patient_id)
-                              const defaultTier = getAgeTierFromDOB(selectedPatient?.date_of_birth)
+                              const selectedPatientDOB =
+                                patientMode === 'new'
+                                  ? newPatientData.date_of_birth ||
+                                    (newPatientData.age ? deriveDateOfBirthFromAge(Number.parseInt(newPatientData.age, 10)) : '')
+                                  : patients.find((p) => p.id === formData.patient_id)?.date_of_birth
+                              const defaultTier = getAgeTierFromDOB(selectedPatientDOB)
                               newMeds[index] = {
                                 ...newMeds[index],
                                 name: drug.name,
@@ -1076,8 +1103,12 @@ export function Prescriptions() {
                         const generic = (med as any).generic as string | undefined
                         const dosageSource = (med as any).dosageSource as string | undefined
                         const selectedTier = ((med as any).selectedAgeTier ?? 'adult') as AgeTier
-                        const selectedPatient = patients.find((p) => p.id === formData.patient_id)
-                        const aiTier = getAgeTierFromDOB(selectedPatient?.date_of_birth)
+                        const selectedPatientDOB =
+                          patientMode === 'new'
+                            ? newPatientData.date_of_birth ||
+                              (newPatientData.age ? deriveDateOfBirthFromAge(Number.parseInt(newPatientData.age, 10)) : '')
+                            : patients.find((p) => p.id === formData.patient_id)?.date_of_birth
+                        const aiTier = getAgeTierFromDOB(selectedPatientDOB)
                         const weightKg = prescriptionWeight ? Number.parseFloat(prescriptionWeight) : 0
                         const formula = generic && aiTier !== 'adult' ? WEIGHT_DOSING_FORMULAS[generic]?.[aiTier] : undefined
                         const estimate = formula && weightKg > 0 ? calculateWeightDose(formula, weightKg) : null

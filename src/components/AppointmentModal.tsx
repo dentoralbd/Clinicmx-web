@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
+import { deriveDateOfBirthFromAge } from '@/lib/ageTier'
 import { UserPlus, Users } from 'lucide-react'
 
 export function AppointmentModal({ 
@@ -31,6 +32,7 @@ export function AppointmentModal({
     first_name: '',
     last_name: '',
     date_of_birth: '',
+    age: '',
     gender: 'Male',
     phone: '',
   })
@@ -122,10 +124,20 @@ export function AppointmentModal({
           return
         }
 
+        const parsedAge = Number.parseInt(newPatientData.age, 10)
+        const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+        const dateOfBirth =
+          newPatientData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
+        if (!dateOfBirth) {
+          alert('Please provide Date of Birth or Age for the new patient')
+          setSaving(false)
+          return
+        }
+
         const newPatient = await createPatient({
           first_name: newPatientData.first_name,
           last_name: newPatientData.last_name,
-          date_of_birth: newPatientData.date_of_birth || null,
+          date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
           phone: newPatientData.phone,
         })
@@ -315,6 +327,20 @@ export function AppointmentModal({
                     type="date"
                     value={newPatientData.date_of_birth}
                     onChange={(e) => setNewPatientData({ ...newPatientData, date_of_birth: e.target.value })}
+                    required={!newPatientData.age}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Age</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={130}
+                    value={newPatientData.age}
+                    onChange={(e) => setNewPatientData({ ...newPatientData, age: e.target.value })}
+                    required={!newPatientData.date_of_birth}
+                    placeholder="Enter age if DOB is unknown"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -330,6 +356,7 @@ export function AppointmentModal({
                     <option value="Other">Other</option>
                   </select>
                 </div>
+                <p className="text-sm text-gray-500 self-end">Provide either Date of Birth or Age.</p>
               </div>
 
               <div>

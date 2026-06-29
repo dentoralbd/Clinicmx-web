@@ -25,6 +25,14 @@ export function getAgeTierFromDOB(dateOfBirth: string | null | undefined): AgeTi
   return getAgeTier(calculateAgeYears(dateOfBirth))
 }
 
+export function deriveDateOfBirthFromAge(age: number): string {
+  const today = new Date()
+  const year = today.getFullYear() - age
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export const AGE_TIER_LABELS: Record<AgeTier, string> = {
   infant: 'Infant',
   child: 'Child',
