@@ -19,6 +19,7 @@ export interface Database {
           email: string | null
           date_of_birth: string | null
           gender: string | null
+          weight: number | null
           address: string | null
           medical_history: string | null
           notes: string | null
@@ -34,6 +35,7 @@ export interface Database {
           email?: string | null
           date_of_birth?: string | null
           gender?: string | null
+          weight?: number | null
           address?: string | null
           medical_history?: string | null
           notes?: string | null
@@ -49,6 +51,7 @@ export interface Database {
           email?: string | null
           date_of_birth?: string | null
           gender?: string | null
+          weight?: number | null
           address?: string | null
           medical_history?: string | null
           notes?: string | null
@@ -166,6 +169,7 @@ export interface Database {
           diagnosis: string | null
           treatment_plan: string | null
           notes: string | null
+          weight_at_prescription: number | null
           prescribed_date: string
           created_at: string
         }
@@ -180,6 +184,7 @@ export interface Database {
           diagnosis?: string | null
           treatment_plan?: string | null
           notes?: string | null
+          weight_at_prescription?: number | null
           prescribed_date?: string
           created_at?: string
         }
@@ -194,6 +199,7 @@ export interface Database {
           diagnosis?: string | null
           treatment_plan?: string | null
           notes?: string | null
+          weight_at_prescription?: number | null
           prescribed_date?: string
           created_at?: string
         }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -32,6 +32,9 @@ import {
 import { format } from 'date-fns'
 import { formatBDT } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
+import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
+import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
+import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 
 type SectionId =
   | 'profile'
@@ -192,7 +195,9 @@ export function PatientProfile() {
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
     investigations: [{ name: '', description: '' }],
     notes: '',
+    weight: '',
   })
+  const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
 
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
@@ -415,6 +420,7 @@ export function PatientProfile() {
         medications: prescriptionForm.medications.filter(m => m.name.trim()),
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
         notes: prescriptionForm.notes,
+        weight_at_prescription: prescriptionForm.weight ? Number.parseFloat(prescriptionForm.weight) : null,
       }
 
       await supabase
@@ -498,7 +504,9 @@ export function PatientProfile() {
         medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
         investigations: [{ name: '', description: '' }],
         notes: '',
+        weight: '',
       })
+      setAiPanelOpenIndex(null)
       loadPatientData()
       loadTemplates()
     } catch (error) {
@@ -523,7 +531,11 @@ export function PatientProfile() {
           ? prescription.investigations
           : [{ name: '', description: '' }],
       notes: prescription.notes || '',
+      weight: prescription.weight_at_prescription != null
+        ? String(prescription.weight_at_prescription)
+        : (patient?.weight != null ? String(patient.weight) : ''),
     })
+    setAiPanelOpenIndex(null)
     seedMedicalHistoryForm()
     setShowPrescriptionForm(true)
   }
@@ -1275,7 +1287,7 @@ export function PatientProfile() {
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Prescription History</h3>
-        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', treatment_plan: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
+        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', treatment_plan: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '', weight: patient?.weight != null ? String(patient.weight) : '' } as any); setAiPanelOpenIndex(null); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
           <Plus className="w-4 h-4 mr-1" />
           Add Prescription
         </Button>
@@ -1945,6 +1957,9 @@ export function PatientProfile() {
           setShowInvTemplates={setShowInvTemplates}
           medicalHistoryForm={medicalHistoryForm}
           setMedicalHistoryForm={setMedicalHistoryForm}
+          patientDOB={patient?.date_of_birth}
+          aiPanelOpenIndex={aiPanelOpenIndex}
+          setAiPanelOpenIndex={setAiPanelOpenIndex}
         />
       )}
 
@@ -2294,6 +2309,9 @@ function PrescriptionFormModal({
   setShowInvTemplates,
   medicalHistoryForm,
   setMedicalHistoryForm,
+  patientDOB,
+  aiPanelOpenIndex,
+  setAiPanelOpenIndex,
 }: any) {
   const [showComplaintTemplates, setShowComplaintTemplates] = useState(false)
   const [showExamTemplates, setShowExamTemplates] = useState(false)
@@ -2481,6 +2499,20 @@ function PrescriptionFormModal({
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* ── Weight for this visit ── */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg) for this visit</label>
+            <input
+              type="number"
+              min={0}
+              step="0.1"
+              value={formData.weight || ''}
+              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+              placeholder="Defaults from patient profile"
+              className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            />
+          </div>
+
           {/* ── Medical History ── */}
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Medical History</div>
@@ -2751,16 +2783,22 @@ function PrescriptionFormModal({
                         }}
                         onDrugSelect={(drug) => {
                           const newMeds = [...formData.medications]
+                          const defaultTier = getAgeTierFromDOB(patientDOB)
                           newMeds[index] = {
                             ...newMeds[index],
                             name: drug.name,
-                            dosage: drug.dosage,
+                            dosage: drug.ageDosing[defaultTier],
                             frequency: drug.frequency,
                             duration: drug.duration,
                             instructions: drug.instructions,
                             route: drug.route,
+                            ageDosing: drug.ageDosing,
+                            generic: drug.generic,
+                            selectedAgeTier: defaultTier,
+                            dosageSource: 'manual',
                           }
                           setFormData({ ...formData, medications: newMeds })
+                          setAiPanelOpenIndex((current: number | null) => (current === index ? null : current))
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       />
@@ -2794,6 +2832,100 @@ function PrescriptionFormModal({
                       />
                     </div>
                   </div>
+                  {med.ageDosing && (() => {
+                    const ageDosing = med.ageDosing as { infant: string; child: string; adult: string }
+                    const generic = med.generic as string | undefined
+                    const dosageSource = med.dosageSource as string | undefined
+                    const selectedTier = (med.selectedAgeTier ?? 'adult') as AgeTier
+                    const aiTier = getAgeTierFromDOB(patientDOB)
+                    const weightKg = formData.weight ? Number.parseFloat(formData.weight) : 0
+                    const formula = generic && aiTier !== 'adult' ? WEIGHT_DOSING_FORMULAS[generic]?.[aiTier] : undefined
+                    const estimate = formula && weightKg > 0 ? calculateWeightDose(formula, weightKg) : null
+
+                    return (
+                      <div className="mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-medium text-gray-500">Dosing for:</span>
+                          <div className="inline-flex rounded-lg border border-gray-300 bg-gray-50 p-0.5">
+                            {(['infant', 'child', 'adult'] as const).map((tier) => (
+                              <button
+                                key={tier}
+                                type="button"
+                                onClick={() => {
+                                  const newMeds = [...formData.medications]
+                                  newMeds[index] = {
+                                    ...newMeds[index],
+                                    selectedAgeTier: tier,
+                                    dosage: ageDosing[tier],
+                                    dosageSource: 'manual',
+                                  }
+                                  setFormData({ ...formData, medications: newMeds })
+                                  setAiPanelOpenIndex((current: number | null) => (current === index ? null : current))
+                                }}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                                  selectedTier === tier && dosageSource !== 'ai-estimate'
+                                    ? 'bg-primary text-white'
+                                    : 'text-gray-600 hover:bg-gray-200'
+                                }`}
+                              >
+                                {AGE_TIER_LABELS[tier]}
+                              </button>
+                            ))}
+                            {!!estimate && (
+                              <button
+                                type="button"
+                                onClick={() => setAiPanelOpenIndex((current: number | null) => (current === index ? null : index))}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
+                                  dosageSource === 'ai-estimate'
+                                    ? 'bg-primary text-white'
+                                    : 'text-gray-600 hover:bg-gray-200'
+                                }`}
+                              >
+                                <Sparkles className="w-3 h-3" /> AI
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {aiPanelOpenIndex === index && estimate && (
+                          <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-gray-700">
+                            <div className="font-medium text-gray-800 mb-1">
+                              ✨ Estimated from weight ({weightKg}kg, {AGE_TIER_LABELS[aiTier]} tier)
+                            </div>
+                            <div>{formatWeightDoseSuggestion(estimate)}</div>
+                            <div className="mt-1 text-gray-500">Based on: "{estimate.sourceText}"</div>
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newMeds = [...formData.medications]
+                                  newMeds[index] = {
+                                    ...newMeds[index],
+                                    selectedAgeTier: aiTier,
+                                    dosage: formatWeightDoseSuggestion(estimate),
+                                    dosageSource: 'ai-estimate',
+                                  }
+                                  setFormData({ ...formData, medications: newMeds })
+                                  setAiPanelOpenIndex(null)
+                                }}
+                                className="px-3 py-1 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary/90"
+                              >
+                                Use this dosage
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAiPanelOpenIndex(null)}
+                                className="px-3 py-1 rounded-md border border-gray-300 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                            <div className="mt-1 text-amber-700">⚠️ Estimate — verify before prescribing.</div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                   {/* Row 2: Frequency | Duration | Instructions */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>

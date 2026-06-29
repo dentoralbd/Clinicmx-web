@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
@@ -27,6 +27,9 @@ import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
+import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
+import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
+import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -79,6 +82,17 @@ export function Prescriptions() {
   const [newPatientData, setNewPatientData] = useState({
     first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male',
   })
+
+  // Weight for this visit — kept separate from formData so it can never interact with
+  // the patient_id select's onChange/selectPatientHistory wiring below.
+  const [prescriptionWeight, setPrescriptionWeight] = useState('')
+  const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (patientMode !== 'existing') return
+    const selected = patients.find((p) => p.id === formData.patient_id)
+    setPrescriptionWeight(selected?.weight != null ? String(selected.weight) : '')
+  }, [formData.patient_id, patientMode, patients])
 
   function selectPatientHistory(patientId: string) {
     const selected = patients.find((p) => p.id === patientId)
@@ -187,6 +201,7 @@ export function Prescriptions() {
         prescribed_date: formData.prescribed_date,
         medications: formData.medications.filter((m) => m.name.trim()),
         investigations: formData.investigations.filter((i) => i.name.trim()),
+        weight_at_prescription: prescriptionWeight ? Number.parseFloat(prescriptionWeight) : null,
       }
 
       await supabase
@@ -274,6 +289,7 @@ export function Prescriptions() {
     })
     setPatientMode('existing')
     selectPatientHistory(prescription.patient_id || '')
+    setPrescriptionWeight(prescription.weight_at_prescription != null ? String(prescription.weight_at_prescription) : '')
     setShowForm(true)
   }
 
@@ -304,6 +320,8 @@ export function Prescriptions() {
     setMedicalHistoryForm({ checked: [], other: '' })
     setPatientMode('existing')
     setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', gender: 'Male' })
+    setPrescriptionWeight('')
+    setAiPanelOpenIndex(null)
   }
 
   function addMedication() {
@@ -716,6 +734,18 @@ export function Prescriptions() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg) for this visit</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={prescriptionWeight}
+                      onChange={(e) => setPrescriptionWeight(e.target.value)}
+                      placeholder="Defaults from patient profile"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -991,16 +1021,23 @@ export function Prescriptions() {
                             }}
                             onDrugSelect={(drug) => {
                               const newMeds = [...formData.medications]
+                              const selectedPatient = patients.find((p) => p.id === formData.patient_id)
+                              const defaultTier = getAgeTierFromDOB(selectedPatient?.date_of_birth)
                               newMeds[index] = {
                                 ...newMeds[index],
                                 name: drug.name,
-                                dosage: drug.dosage,
+                                dosage: drug.ageDosing[defaultTier],
                                 frequency: drug.frequency,
                                 duration: drug.duration,
                                 instructions: drug.instructions,
                                 route: drug.route,
-                              }
+                                ageDosing: drug.ageDosing,
+                                generic: drug.generic,
+                                selectedAgeTier: defaultTier,
+                                dosageSource: 'manual',
+                              } as any
                               setFormData({ ...formData, medications: newMeds })
+                              setAiPanelOpenIndex((current) => (current === index ? null : current))
                             }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                           />
@@ -1034,6 +1071,101 @@ export function Prescriptions() {
                           />
                         </div>
                       </div>
+                      {(med as any).ageDosing && (() => {
+                        const ageDosing = (med as any).ageDosing as { infant: string; child: string; adult: string }
+                        const generic = (med as any).generic as string | undefined
+                        const dosageSource = (med as any).dosageSource as string | undefined
+                        const selectedTier = ((med as any).selectedAgeTier ?? 'adult') as AgeTier
+                        const selectedPatient = patients.find((p) => p.id === formData.patient_id)
+                        const aiTier = getAgeTierFromDOB(selectedPatient?.date_of_birth)
+                        const weightKg = prescriptionWeight ? Number.parseFloat(prescriptionWeight) : 0
+                        const formula = generic && aiTier !== 'adult' ? WEIGHT_DOSING_FORMULAS[generic]?.[aiTier] : undefined
+                        const estimate = formula && weightKg > 0 ? calculateWeightDose(formula, weightKg) : null
+
+                        return (
+                          <div className="mb-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-medium text-gray-500">Dosing for:</span>
+                              <div className="inline-flex rounded-lg border border-gray-300 bg-gray-50 p-0.5">
+                                {(['infant', 'child', 'adult'] as const).map((tier) => (
+                                  <button
+                                    key={tier}
+                                    type="button"
+                                    onClick={() => {
+                                      const newMeds = [...formData.medications]
+                                      newMeds[index] = {
+                                        ...newMeds[index],
+                                        selectedAgeTier: tier,
+                                        dosage: ageDosing[tier],
+                                        dosageSource: 'manual',
+                                      } as any
+                                      setFormData({ ...formData, medications: newMeds })
+                                      setAiPanelOpenIndex((current) => (current === index ? null : current))
+                                    }}
+                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                                      selectedTier === tier && dosageSource !== 'ai-estimate'
+                                        ? 'bg-primary text-white'
+                                        : 'text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    {AGE_TIER_LABELS[tier]}
+                                  </button>
+                                ))}
+                                {!!estimate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAiPanelOpenIndex((current) => (current === index ? null : index))}
+                                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
+                                      dosageSource === 'ai-estimate'
+                                        ? 'bg-primary text-white'
+                                        : 'text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    <Sparkles className="w-3 h-3" /> AI
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {aiPanelOpenIndex === index && estimate && (
+                              <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-gray-700">
+                                <div className="font-medium text-gray-800 mb-1">
+                                  ✨ Estimated from weight ({weightKg}kg, {AGE_TIER_LABELS[aiTier]} tier)
+                                </div>
+                                <div>{formatWeightDoseSuggestion(estimate)}</div>
+                                <div className="mt-1 text-gray-500">Based on: "{estimate.sourceText}"</div>
+                                <div className="mt-2 flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newMeds = [...formData.medications]
+                                      newMeds[index] = {
+                                        ...newMeds[index],
+                                        selectedAgeTier: aiTier,
+                                        dosage: formatWeightDoseSuggestion(estimate),
+                                        dosageSource: 'ai-estimate',
+                                      } as any
+                                      setFormData({ ...formData, medications: newMeds })
+                                      setAiPanelOpenIndex(null)
+                                    }}
+                                    className="px-3 py-1 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary/90"
+                                  >
+                                    Use this dosage
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAiPanelOpenIndex(null)}
+                                    className="px-3 py-1 rounded-md border border-gray-300 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                                <div className="mt-1 text-amber-700">⚠️ Estimate — verify before prescribing.</div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
                       {/* Row 2: Frequency | Duration | Instructions */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>

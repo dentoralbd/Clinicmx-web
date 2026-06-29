@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pill } from 'lucide-react'
-import { DENTAL_DRUGS, type BDDrug, searchDrugs } from '@/lib/dentalDrugDatabase'
+import { DENTAL_DRUGS, type AgeDosing, type BDDrug, searchDrugs } from '@/lib/dentalDrugDatabase'
 
 const FORM_ABBREVIATIONS: Record<string, string> = {
   Tab: 'Tab.',
@@ -41,6 +41,9 @@ interface DrugPickerProps {
     duration: string
     instructions: string
     route: string
+    ageDosing: AgeDosing
+    generic: string
+    drugKey: string
   }) => void
   className?: string
 }
@@ -149,6 +152,9 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
       duration: drug.defaultDuration,
       instructions: drug.defaultInstructions,
       route: drug.defaultRoute,
+      ageDosing: drug.ageDosing,
+      generic: drug.generic,
+      drugKey: `${drug.brand}-${drug.company}-${drug.pack}`,
     })
     setIsOpen(false)
   }

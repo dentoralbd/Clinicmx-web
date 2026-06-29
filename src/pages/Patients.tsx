@@ -53,6 +53,7 @@ export function Patients() {
     date_of_birth: '',
     age: '',
     gender: 'Male',
+    weight: '',
     address: '',
     medical_history: '',
     notes: '',
@@ -89,9 +90,12 @@ export function Patients() {
       return
     }
 
+    const parsedWeight = formData.weight.trim() ? Number.parseFloat(formData.weight) : null
+
     const { age: _age, ...patientPayload } = {
       ...formData,
       date_of_birth: dateOfBirth,
+      weight: parsedWeight,
     }
 
     try {
@@ -135,6 +139,7 @@ export function Patients() {
       date_of_birth: patient.date_of_birth,
       age: patient.date_of_birth ? String(calculateAgeFromDate(patient.date_of_birth)) : '',
       gender: patient.gender,
+      weight: patient.weight != null ? String(patient.weight) : '',
       address: patient.address || '',
       medical_history: patient.medical_history || '',
       notes: patient.notes || '',
@@ -153,6 +158,7 @@ export function Patients() {
       date_of_birth: '',
       age: '',
       gender: 'Male',
+      weight: '',
       address: '',
       medical_history: '',
       notes: '',
@@ -384,6 +390,19 @@ export function Patients() {
                     <option>Female</option>
                     <option>Other</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Weight (kg)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={formData.weight}
+                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
 
                 <p className="text-sm text-text-secondary">Provide either Date of Birth or Age.</p>
