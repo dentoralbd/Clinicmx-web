@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
@@ -58,12 +59,35 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
   const checkedHistoryLabels = historyChecks.filter((item) => item.checked).map((item) => item.label)
 
+  const originalTitleRef = useRef('')
+
+  useEffect(() => {
+    originalTitleRef.current = document.title
+    const restoreTitle = () => {
+      document.title = originalTitleRef.current
+    }
+    window.addEventListener('afterprint', restoreTitle)
+    return () => {
+      window.removeEventListener('afterprint', restoreTitle)
+      document.title = originalTitleRef.current
+    }
+  }, [])
+
+  const handlePrint = () => {
+    const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : ''
+    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
+    document.title =
+      [namePart, idPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
+      originalTitleRef.current
+    window.print()
+  }
+
   return (
     <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
       {/* Action bar – hidden on print */}
       <div className="print:hidden fixed top-4 right-4 flex gap-2 z-[101]">
         <button
-          onClick={() => window.print()}
+          onClick={handlePrint}
           className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
         >
           <Printer className="w-4 h-4" />
@@ -121,12 +145,6 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         {/* ── Patient Info ── */}
         <div className="border border-gray-300 rounded-lg px-4 py-3 mb-4 bg-gray-50">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            {prescription.id && (
-              <div>
-                <span className="font-semibold">Prescription ID:</span>{' '}
-                {prescription.id.slice(0, 8).toUpperCase()}
-              </div>
-            )}
             <div>
               <span className="font-semibold">Patient:</span>{' '}
               {patient.first_name} {patient.last_name}
@@ -265,22 +283,30 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
           </div>
         </div>
 
-        {/* ── Footer ── */}
-        <div className="mt-8 flex justify-between items-end border-t border-gray-300 pt-4">
-          <div className="text-sm text-gray-500">
-            Follow-up: ___________________
-          </div>
-          <div className="text-right">
-            <div className="border-t border-gray-800 w-40 mb-1" />
-            <div className="text-sm font-semibold">
-              {doctor.full_name
-                ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
-                : 'Doctor Signature'}
+        {/* ── Footer (pinned to bottom of printed page) ── */}
+        <div className="prescription-print-footer mt-8 print:mt-0">
+          <div className="flex justify-between items-end border-t border-gray-300 pt-4">
+            <div className="text-sm text-gray-500">
+              Follow-up: ___________________
             </div>
-            {doctor.designation && (
-              <div className="text-xs text-gray-600">{doctor.designation}</div>
-            )}
+            <div className="text-right">
+              <div className="border-t border-gray-800 w-40 mb-1" />
+              <div className="text-sm font-semibold">
+                {doctor.full_name
+                  ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
+                  : 'Doctor Signature'}
+              </div>
+              {doctor.designation && (
+                <div className="text-xs text-gray-600">{doctor.designation}</div>
+              )}
+            </div>
           </div>
+
+          {prescription.id && (
+            <div className="mt-3 pt-2 border-t border-gray-200 text-center text-xs text-gray-400">
+              Prescription ID: {prescription.id.slice(0, 8).toUpperCase()}
+            </div>
+          )}
         </div>
       </div>
     </div>
