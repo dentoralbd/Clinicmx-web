@@ -1,5 +1,6 @@
 import { Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
+import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 
 interface PrescriptionPrintProps {
   prescription: {
@@ -51,40 +52,11 @@ function calcAge(dob?: string): string {
   }
 }
 
-// ─── MEDICAL HISTORY CHECKBOX DERIVATION ─────────────
-const MEDICAL_HISTORY_KEYWORDS: Array<[string, string[]]> = [
-  ['BP', ['bp', 'hypertension', 'blood pressure']],
-  ['Heart Disease', ['heart', 'cardiac']],
-  ['Diabetic', ['diabet']],
-  ['Hepatitis', ['hepatitis', 'hep b', 'hep c']],
-  ['Bleeding disorder', ['bleed']],
-  ['Allergy', ['allerg']],
-  ['Pregnant/Lactating', ['pregnan', 'lactat']],
-]
-
-function getMedicalHistoryChecks(medicalHistory?: string | null) {
-  const raw = (medicalHistory || '').trim()
-  const segments = raw ? raw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean) : []
-  const checked = new Set<string>()
-  const otherSegments: string[] = []
-  for (const segment of segments) {
-    const lower = segment.toLowerCase()
-    const matched = MEDICAL_HISTORY_KEYWORDS.find(([, keywords]) => keywords.some((kw) => lower.includes(kw)))
-    if (matched) {
-      checked.add(matched[0])
-    } else {
-      otherSegments.push(segment)
-    }
-  }
-  const items = MEDICAL_HISTORY_KEYWORDS.map(([label]) => ({ label, checked: checked.has(label) }))
-  return { items, other: otherSegments.join(', ') }
-}
-// ─────────────────────────────────────────────────────
-
 export function PrescriptionPrint({ prescription, patient, doctor, onClose }: PrescriptionPrintProps) {
   const filteredMeds = prescription.medications.filter((m) => m.name?.trim())
   const filteredInvs = prescription.investigations.filter((i) => i.name?.trim())
   const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
+  const checkedHistoryLabels = historyChecks.filter((item) => item.checked).map((item) => item.label)
 
   return (
     <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
@@ -234,21 +206,25 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               </div>
             )}
 
-            <div>
-              <div className="font-semibold text-gray-800 mb-1">Medical History</div>
-              <ul className="space-y-0.5">
-                {historyChecks.map(({ label, checked }) => (
-                  <li key={label} className="flex items-center gap-2">
-                    <span>{checked ? '☑' : '☐'}</span>
-                    <span>{label}</span>
-                  </li>
-                ))}
-                <li className="flex items-center gap-2">
-                  <span>{historyOther ? '☑' : '☐'}</span>
-                  <span>Other{historyOther ? `: ${historyOther}` : ''}</span>
-                </li>
-              </ul>
-            </div>
+            {(checkedHistoryLabels.length > 0 || historyOther) && (
+              <div>
+                <div className="font-semibold text-gray-800 mb-1">Medical History</div>
+                <ul className="space-y-0.5">
+                  {checkedHistoryLabels.map((label) => (
+                    <li key={label} className="flex items-center gap-2">
+                      <span>☑</span>
+                      <span>{label}</span>
+                    </li>
+                  ))}
+                  {historyOther && (
+                    <li className="flex items-center gap-2">
+                      <span>☑</span>
+                      <span>Other: {historyOther}</span>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Vertical divider */}

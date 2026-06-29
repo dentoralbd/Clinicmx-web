@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
 import { format } from 'date-fns'
+import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
+import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 
 const avatarColors = [
   'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
@@ -399,11 +401,12 @@ export function Patients() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Medical History</label>
-                <textarea
-                  rows={3}
-                  value={formData.medical_history}
-                  onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                <MedicalHistoryFields
+                  checked={getMedicalHistoryChecks(formData.medical_history).items.filter((i) => i.checked).map((i) => i.label)}
+                  other={getMedicalHistoryChecks(formData.medical_history).other}
+                  onChange={({ checked, other }) =>
+                    setFormData({ ...formData, medical_history: buildMedicalHistoryString(checked, other) })
+                  }
                 />
               </div>
 

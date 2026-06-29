@@ -11,6 +11,8 @@ import { buildInvoiceItemPreview, extractTreatmentIdsFromInvoiceItems, formatInv
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
+import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
+import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import {
   getComplaintTemplates,
   getExaminationTemplates,
@@ -169,6 +171,9 @@ export function PatientProfile() {
     cost: '',
     notes: '',
   })
+
+  const [showMedicalHistoryForm, setShowMedicalHistoryForm] = useState(false)
+  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
 
   const [visitForm, setVisitForm] = useState({
     chief_complaint: '',
@@ -344,6 +349,31 @@ export function PatientProfile() {
     }
   }
 
+  function seedMedicalHistoryForm() {
+    const { items, other } = getMedicalHistoryChecks(patient?.medical_history)
+    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
+  }
+
+  function openMedicalHistoryForm() {
+    seedMedicalHistoryForm()
+    setShowMedicalHistoryForm(true)
+  }
+
+  async function handleMedicalHistorySubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!id) return
+
+    try {
+      const medical_history = buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other)
+      await supabase.from('patients').update({ medical_history }).eq('id', id)
+      setShowMedicalHistoryForm(false)
+      loadPatientData()
+    } catch (error) {
+      console.error('Error saving medical history:', error)
+      alert('Failed to save medical history')
+    }
+  }
+
   async function handleVisitSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!id) return
@@ -383,6 +413,11 @@ export function PatientProfile() {
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
         notes: prescriptionForm.notes,
       }
+
+      await supabase
+        .from('patients')
+        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
+        .eq('id', id)
 
       if (editingPrescriptionId) {
         await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
@@ -461,6 +496,7 @@ export function PatientProfile() {
           : [{ name: '', description: '' }],
       notes: prescription.notes || '',
     })
+    seedMedicalHistoryForm()
     setShowPrescriptionForm(true)
   }
 
@@ -849,23 +885,50 @@ export function PatientProfile() {
     </div>
   )
 
-  const renderMedicalSection = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-      <InfoCard title="Medical Snapshot">
-        <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
-        <InfoRow label="Gender" value={patient.gender || 'N/A'} />
-        <InfoRow label="Medical History" value={patient.medical_history || 'No medical history on file'} />
-        <InfoRow label="Notes" value={patient.notes || 'No patient notes added yet'} />
-      </InfoCard>
+  const renderMedicalSection = () => {
+    const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
 
-      <InfoCard title="Care Highlights">
-        <InfoRow label="Latest Visit" value={visits[0] ? formatDateValue(visits[0].visit_date, 'MMMM d, yyyy h:mm a') : 'No visits yet'} />
-        <InfoRow label="Latest Diagnosis" value={visits[0]?.diagnosis || prescriptions[0]?.diagnosis || 'No diagnosis recorded'} />
-        <InfoRow label="Active Prescriptions" value={prescriptions.length.toString()} />
-        <InfoRow label="Pending Balance" value={formatCurrency(totalDue)} className={totalDue > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'} />
-      </InfoCard>
-    </div>
-  )
+    return (
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <InfoCard title="Medical Snapshot">
+          <InfoRow label="DOB" value={formatDateValue(patient.date_of_birth)} />
+          <InfoRow label="Gender" value={patient.gender || 'N/A'} />
+          <InfoRow label="Notes" value={patient.notes || 'No patient notes added yet'} />
+        </InfoCard>
+
+        <InfoCard title="Care Highlights">
+          <InfoRow label="Latest Visit" value={visits[0] ? formatDateValue(visits[0].visit_date, 'MMMM d, yyyy h:mm a') : 'No visits yet'} />
+          <InfoRow label="Latest Diagnosis" value={visits[0]?.diagnosis || prescriptions[0]?.diagnosis || 'No diagnosis recorded'} />
+          <InfoRow label="Active Prescriptions" value={prescriptions.length.toString()} />
+          <InfoRow label="Pending Balance" value={formatCurrency(totalDue)} className={totalDue > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'} />
+        </InfoCard>
+
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6 xl:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Medical History</h3>
+            <Button size="sm" variant="outline" onClick={openMedicalHistoryForm}>
+              <Pencil className="w-3.5 h-3.5 mr-1.5" />
+              Edit
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {historyChecks.map(({ label, checked }) => (
+              <li key={label} className="flex items-center gap-2 text-sm">
+                <span>{checked ? '☑' : '☐'}</span>
+                <span className={checked ? 'text-gray-900 font-medium' : 'text-text-secondary'}>{label}</span>
+              </li>
+            ))}
+            <li className="flex items-center gap-2 text-sm">
+              <span>{historyOther ? '☑' : '☐'}</span>
+              <span className={historyOther ? 'text-gray-900 font-medium' : 'text-text-secondary'}>
+                Other{historyOther ? `: ${historyOther}` : ''}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    )
+  }
 
   const renderClinicalSection = () => {
     // FDI permanent quadrants (display order: distal → mesial)
@@ -1184,7 +1247,7 @@ export function PatientProfile() {
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Prescription History</h3>
-        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); setShowPrescriptionForm(true) }}>
+        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint: '', on_examination: '', diagnosis: '', medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '' }); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
           <Plus className="w-4 h-4 mr-1" />
           Add Prescription
         </Button>
@@ -1852,16 +1915,20 @@ export function PatientProfile() {
           setShowMedTemplates={setShowMedTemplates}
           showInvTemplates={showInvTemplates}
           setShowInvTemplates={setShowInvTemplates}
+          medicalHistoryForm={medicalHistoryForm}
+          setMedicalHistoryForm={setMedicalHistoryForm}
         />
       )}
 
       {printingPrescription && patient && (
         <PrescriptionPrint
           prescription={{
+            id: printingPrescription.id,
             prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
             chief_complaint: printingPrescription.chief_complaint || '',
             on_examination: printingPrescription.on_examination || '',
             diagnosis: printingPrescription.diagnosis || '',
+            treatment_plan: printingPrescription.treatment_plan || '',
             medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
@@ -1873,6 +1940,7 @@ export function PatientProfile() {
             gender: patient.gender,
             phone: patient.phone,
             patient_code: patient.patient_code,
+            medical_history: patient.medical_history,
           }}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => setPrintingPrescription(null)}
@@ -1885,6 +1953,15 @@ export function PatientProfile() {
           setFormData={setTreatmentPlanForm}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
+        />
+      )}
+
+      {showMedicalHistoryForm && (
+        <MedicalHistoryModal
+          formData={medicalHistoryForm}
+          setFormData={setMedicalHistoryForm}
+          onSubmit={handleMedicalHistorySubmit}
+          onClose={() => setShowMedicalHistoryForm(false)}
         />
       )}
 
@@ -2187,6 +2264,8 @@ function PrescriptionFormModal({
   setShowMedTemplates,
   showInvTemplates,
   setShowInvTemplates,
+  medicalHistoryForm,
+  setMedicalHistoryForm,
 }: any) {
   const [showComplaintTemplates, setShowComplaintTemplates] = useState(false)
   const [showExamTemplates, setShowExamTemplates] = useState(false)
@@ -2374,6 +2453,16 @@ function PrescriptionFormModal({
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* ── Medical History ── */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Medical History</div>
+            <MedicalHistoryFields
+              checked={medicalHistoryForm.checked}
+              other={medicalHistoryForm.other}
+              onChange={setMedicalHistoryForm}
+            />
+          </div>
+
           {/* ── Chief Complaint ── */}
           <div>
             <div className="mb-2 flex items-center gap-2">
@@ -3052,6 +3141,62 @@ function TreatmentPlanModal({ formData, setFormData, onSubmit, onClose }: any) {
 
           <div className="flex gap-3 pt-4">
             <Button type="submit" className="flex-1">Save Treatment Plan</Button>
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MedicalHistoryModal({ formData, setFormData, onSubmit, onClose }: any) {
+  function toggleLabel(label: string) {
+    setFormData((prev: { checked: string[]; other: string }) => ({
+      ...prev,
+      checked: prev.checked.includes(label)
+        ? prev.checked.filter((l: string) => l !== label)
+        : [...prev.checked, label],
+    }))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-xl font-bold">Medical History</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="p-6 space-y-4">
+          <div className="space-y-2">
+            {MEDICAL_HISTORY_LABELS.map((label) => (
+              <label key={label} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.checked.includes(label)}
+                  onChange={() => toggleLabel(label)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Other</label>
+            <input
+              type="text"
+              value={formData.other}
+              onChange={(e) => setFormData({ ...formData, other: e.target.value })}
+              placeholder="Any other condition not listed above..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="submit" className="flex-1">Save Medical History</Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
           </div>
         </form>

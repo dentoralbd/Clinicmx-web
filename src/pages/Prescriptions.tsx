@@ -23,6 +23,8 @@ import {
 import { format } from 'date-fns'
 import { safeFormat } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
+import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
+import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -96,6 +98,14 @@ export function Prescriptions() {
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
     investigations: [{ name: '', description: '', urgency: 'Routine' }],
   })
+
+  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
+
+  function selectPatientHistory(patientId: string) {
+    const selected = patients.find((p) => p.id === patientId)
+    const { items, other } = getMedicalHistoryChecks(selected?.medical_history)
+    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
+  }
 
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
@@ -178,6 +188,11 @@ export function Prescriptions() {
         investigations: formData.investigations.filter((i) => i.name.trim()),
       }
 
+      await supabase
+        .from('patients')
+        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
+        .eq('id', formData.patient_id)
+
       let prescriptionId = editingId
       if (editingId) {
         await supabase.from('prescriptions').update(payload).eq('id', editingId)
@@ -228,6 +243,7 @@ export function Prescriptions() {
       resetForm()
       loadPrescriptions()
       loadTemplates()
+      loadPatients()
     } catch (error) {
       console.error('Error saving prescription:', error)
       alert('Failed to save prescription')
@@ -255,6 +271,7 @@ export function Prescriptions() {
           ? prescription.investigations
           : [{ name: '', description: '' }],
     })
+    selectPatientHistory(prescription.patient_id || '')
     setShowForm(true)
   }
 
@@ -282,6 +299,7 @@ export function Prescriptions() {
       medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
       investigations: [{ name: '', description: '', urgency: 'Routine' }],
     })
+    setMedicalHistoryForm({ checked: [], other: '' })
   }
 
   function addMedication() {
@@ -584,7 +602,10 @@ export function Prescriptions() {
                     <select
                       required
                       value={formData.patient_id}
-                      onChange={(e) => setFormData({ ...formData, patient_id: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, patient_id: e.target.value })
+                        selectPatientHistory(e.target.value)
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
                     >
                       <option value="">Select patient</option>
@@ -606,6 +627,18 @@ export function Prescriptions() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Medical History ── */}
+              {formData.patient_id && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Medical History</div>
+                  <MedicalHistoryFields
+                    checked={medicalHistoryForm.checked}
+                    other={medicalHistoryForm.other}
+                    onChange={setMedicalHistoryForm}
+                  />
+                </div>
+              )}
 
               {/* ── Chief Complaint ── */}
               <div>
