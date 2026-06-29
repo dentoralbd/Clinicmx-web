@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -152,6 +152,7 @@ export function PatientProfile() {
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [showMoreSections, setShowMoreSections] = useState(false)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
@@ -1878,6 +1879,40 @@ export function PatientProfile() {
         ))}
       </div>
 
+      <div className="md:hidden">
+        <button
+          onClick={() => setShowMoreSections((prev) => !prev)}
+          className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-text-secondary"
+        >
+          {showMoreSections ? 'Hide sections' : 'More sections'}
+          <ChevronDown className={`h-4 w-4 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showMoreSections && (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {sectionOptions
+              .filter((section) => !mobileNavSections.includes(section.id))
+              .map((section) => {
+                const Icon = section.icon
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => {
+                      updateSection(section.id)
+                      setShowMoreSections(false)
+                    }}
+                    className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+                  >
+                    <Icon className="h-5 w-5 text-primary" />
+                    <div className="mt-3 font-medium">{section.label}</div>
+                    <div className="mt-1 text-sm text-text-secondary">{section.description}</div>
+                  </button>
+                )
+              })}
+          </div>
+        )}
+      </div>
+
       <div key={activeSection} className="section-fade-in">
         {renderActiveSection()}
       </div>
@@ -2131,7 +2166,7 @@ function BottomNavButton({ active, icon: Icon, label, onClick }: any) {
       }`}
     >
       <Icon className="h-5 w-5" />
-      <span className="truncate">{label}</span>
+      <span className="w-full truncate text-center">{label}</span>
     </button>
   )
 }
