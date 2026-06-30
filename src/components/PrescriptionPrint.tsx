@@ -2,15 +2,38 @@ import { useEffect, useRef } from 'react'
 import { Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
+import { type ClinicalEntry } from '@/lib/clinicalEntries'
+
+function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
+  const filled = (entries || []).filter((entry) => entry.text.trim())
+  if (filled.length > 0) {
+    return (
+      <ul className="space-y-0.5">
+        {filled.map((entry) => (
+          <li key={entry.id} className="text-gray-700">
+            {entry.text}
+            {entry.teeth.length > 0 && <span className="text-gray-500"> — Teeth: {entry.teeth.join(', ')}</span>}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (text) return <div className="text-gray-700 whitespace-pre-line">{text}</div>
+  return null
+}
 
 interface PrescriptionPrintProps {
   prescription: {
     id?: string
     prescribed_date: string
     chief_complaint?: string
+    chief_complaint_entries?: ClinicalEntry[]
     on_examination?: string
+    on_examination_entries?: ClinicalEntry[]
     diagnosis?: string
+    diagnosis_entries?: ClinicalEntry[]
     treatment_plan?: string
+    treatment_plan_entries?: ClinicalEntry[]
     medications: Array<{
       name: string
       dosage: string
@@ -174,24 +197,24 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         <div className="grid grid-cols-[1fr_auto_1fr] gap-4">
           {/* Left column — clinical sections */}
           <div className="space-y-4 text-sm">
-            {prescription.chief_complaint && (
+            {(prescription.chief_complaint_entries?.some((e) => e.text.trim()) || prescription.chief_complaint) && (
               <div>
                 <div className="font-semibold text-gray-800">Chief Complaint</div>
-                <div className="text-gray-700">{prescription.chief_complaint}</div>
+                <ClinicalEntryList entries={prescription.chief_complaint_entries} text={prescription.chief_complaint} />
               </div>
             )}
 
-            {prescription.on_examination && (
+            {(prescription.on_examination_entries?.some((e) => e.text.trim()) || prescription.on_examination) && (
               <div>
                 <div className="font-semibold text-gray-800">Clinical Findings</div>
-                <div className="text-gray-700">{prescription.on_examination}</div>
+                <ClinicalEntryList entries={prescription.on_examination_entries} text={prescription.on_examination} />
               </div>
             )}
 
-            {prescription.diagnosis && (
+            {(prescription.diagnosis_entries?.some((e) => e.text.trim()) || prescription.diagnosis) && (
               <div>
                 <div className="font-semibold text-gray-800">Diagnosis</div>
-                <div className="text-gray-700">{prescription.diagnosis}</div>
+                <ClinicalEntryList entries={prescription.diagnosis_entries} text={prescription.diagnosis} />
               </div>
             )}
 
@@ -217,10 +240,10 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               </div>
             )}
 
-            {prescription.treatment_plan && (
+            {(prescription.treatment_plan_entries?.some((e) => e.text.trim()) || prescription.treatment_plan) && (
               <div>
                 <div className="font-semibold text-gray-800">Treatment Plan</div>
-                <div className="text-gray-700">{prescription.treatment_plan}</div>
+                <ClinicalEntryList entries={prescription.treatment_plan_entries} text={prescription.treatment_plan} />
               </div>
             )}
 

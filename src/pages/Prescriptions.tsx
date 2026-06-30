@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
-import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
+import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import {
   getComplaintTemplates,
@@ -27,7 +27,9 @@ import { safeFormat } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
-import { mapTreatmentPlanToOperation } from '@/lib/treatmentPlan'
+import { mapEntryToOperation } from '@/lib/treatmentPlan'
+import { type ClinicalEntry, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
+import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
 import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
@@ -69,10 +71,10 @@ export function Prescriptions() {
 
   const [formData, setFormData] = useState({
     patient_id: '',
-    chief_complaint: '',
-    on_examination: '',
-    diagnosis: '',
-    treatment_plan: '',
+    chief_complaint_entries: [createEmptyEntry()] as ClinicalEntry[],
+    on_examination_entries: [createEmptyEntry()] as ClinicalEntry[],
+    diagnosis_entries: [createEmptyEntry()] as ClinicalEntry[],
+    treatment_plan_entries: [createEmptyEntry()] as ClinicalEntry[],
     notes: '',
     prescribed_date: format(new Date(), 'yyyy-MM-dd'),
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
@@ -204,10 +206,14 @@ export function Prescriptions() {
 
       const payload: any = {
         patient_id: patientId,
-        chief_complaint: formData.chief_complaint,
-        on_examination: formData.on_examination,
-        diagnosis: formData.diagnosis,
-        treatment_plan: formData.treatment_plan,
+        chief_complaint: entriesToText(formData.chief_complaint_entries),
+        chief_complaint_entries: formData.chief_complaint_entries,
+        on_examination: entriesToText(formData.on_examination_entries),
+        on_examination_entries: formData.on_examination_entries,
+        diagnosis: entriesToText(formData.diagnosis_entries),
+        diagnosis_entries: formData.diagnosis_entries,
+        treatment_plan: entriesToText(formData.treatment_plan_entries),
+        treatment_plan_entries: formData.treatment_plan_entries,
         notes: formData.notes,
         prescribed_date: formData.prescribed_date,
         medications: formData.medications.filter((m) => m.name.trim()),
@@ -235,8 +241,12 @@ export function Prescriptions() {
         )
 
         // Save to localStorage-based smart memory
-        if (formData.chief_complaint.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, formData.chief_complaint)
-        if (formData.on_examination.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, formData.on_examination)
+        for (const entry of formData.chief_complaint_entries) {
+          if (entry.text.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, entry.text)
+        }
+        for (const entry of formData.on_examination_entries) {
+          if (entry.text.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, entry.text)
+        }
         for (const med of formData.medications) {
           if (med.name.trim()) rememberItem(MEMORY_KEYS.MEDICATIONS, med.name)
         }
@@ -245,24 +255,57 @@ export function Prescriptions() {
         }
       }
 
-      if (formData.treatment_plan.trim() && prescriptionId) {
-        const operation = mapTreatmentPlanToOperation(formData.treatment_plan)
-        const { data: existing } = await supabase
+      if (prescriptionId) {
+        const { data: existingTreatmentRows } = await supabase
           .from('treatments')
-          .select('id')
+          .select('id, prescription_entry_id, is_invoiced')
           .eq('prescription_id', prescriptionId)
-          .maybeSingle()
 
-        if (existing) {
-          await supabase.from('treatments').update(operation).eq('id', existing.id)
-        } else {
-          await supabase.from('treatments').insert([{
-            patient_id: patientId,
-            prescription_id: prescriptionId,
-            status: 'Planned',
-            notes: 'Added from prescription treatment plan',
-            ...operation,
-          }])
+        const currentEntries = formData.treatment_plan_entries.filter((entry) => entry.text.trim())
+        const currentEntryIds = new Set(currentEntries.map((entry) => entry.id))
+
+        const rowsByEntryId = new Map<string, Array<{ id: string; prescription_entry_id: string | null; is_invoiced: boolean }>>()
+        for (const row of existingTreatmentRows || []) {
+          const key = row.prescription_entry_id || ''
+          if (!rowsByEntryId.has(key)) rowsByEntryId.set(key, [])
+          rowsByEntryId.get(key)!.push(row)
+        }
+
+        const idsToDelete: string[] = []
+
+        for (const entry of currentEntries) {
+          const rowsForEntry = rowsByEntryId.get(entry.id) || []
+          const reusableRows = rowsForEntry.filter((row) => !row.is_invoiced)
+          const teethList = entry.teeth.length > 0 ? entry.teeth : [null]
+
+          for (let i = 0; i < teethList.length; i++) {
+            const operation = mapEntryToOperation(entry, teethList[i])
+            const reuseRow = reusableRows[i]
+            if (reuseRow) {
+              await supabase.from('treatments').update(operation).eq('id', reuseRow.id)
+            } else {
+              await supabase.from('treatments').insert([{
+                patient_id: patientId,
+                prescription_id: prescriptionId,
+                prescription_entry_id: entry.id,
+                status: 'Planned',
+                notes: 'Added from prescription treatment plan',
+                ...operation,
+              }])
+            }
+          }
+          idsToDelete.push(...reusableRows.slice(teethList.length).map((row) => row.id))
+        }
+
+        // Entries removed entirely from the form: drop their non-invoiced rows too.
+        for (const [entryId, rows] of rowsByEntryId.entries()) {
+          if (entryId && !currentEntryIds.has(entryId)) {
+            idsToDelete.push(...rows.filter((row) => !row.is_invoiced).map((row) => row.id))
+          }
+        }
+
+        if (idsToDelete.length > 0) {
+          await supabase.from('treatments').delete().in('id', idsToDelete)
         }
       }
 
@@ -281,10 +324,18 @@ export function Prescriptions() {
     setEditingId(prescription.id)
     setFormData({
       patient_id: prescription.patient_id || '',
-      chief_complaint: prescription.chief_complaint || '',
-      on_examination: prescription.on_examination || '',
-      diagnosis: prescription.diagnosis || '',
-      treatment_plan: prescription.treatment_plan || '',
+      chief_complaint_entries: Array.isArray(prescription.chief_complaint_entries) && prescription.chief_complaint_entries.length > 0
+        ? prescription.chief_complaint_entries
+        : textToEntries(prescription.chief_complaint),
+      on_examination_entries: Array.isArray(prescription.on_examination_entries) && prescription.on_examination_entries.length > 0
+        ? prescription.on_examination_entries
+        : textToEntries(prescription.on_examination),
+      diagnosis_entries: Array.isArray(prescription.diagnosis_entries) && prescription.diagnosis_entries.length > 0
+        ? prescription.diagnosis_entries
+        : textToEntries(prescription.diagnosis),
+      treatment_plan_entries: Array.isArray(prescription.treatment_plan_entries) && prescription.treatment_plan_entries.length > 0
+        ? prescription.treatment_plan_entries
+        : textToEntries(prescription.treatment_plan),
       notes: prescription.notes || '',
       prescribed_date: prescription.prescribed_date
         ? format(new Date(prescription.prescribed_date), 'yyyy-MM-dd')
@@ -319,10 +370,10 @@ export function Prescriptions() {
     setEditingId(null)
     setFormData({
       patient_id: '',
-      chief_complaint: '',
-      on_examination: '',
-      diagnosis: '',
-      treatment_plan: '',
+      chief_complaint_entries: [createEmptyEntry()],
+      on_examination_entries: [createEmptyEntry()],
+      diagnosis_entries: [createEmptyEntry()],
+      treatment_plan_entries: [createEmptyEntry()],
       notes: '',
       prescribed_date: format(new Date(), 'yyyy-MM-dd'),
       medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
@@ -421,21 +472,13 @@ export function Prescriptions() {
     setShowInvTemplates(false)
   }
 
-  async function handleSaveComplaintTemplate() {
-    if (!formData.chief_complaint.trim()) {
-      alert('Enter a chief complaint before saving a template.')
-      return
-    }
-    setComplaintTemplates(await saveComplaintTemplate(formData.chief_complaint))
+  async function handleSaveComplaintTemplate(text: string) {
+    setComplaintTemplates(await saveComplaintTemplate(text))
     setShowComplaintTemplates(true)
   }
 
-  async function handleSaveExaminationTemplate() {
-    if (!formData.on_examination.trim()) {
-      alert('Enter on-examination notes before saving a template.')
-      return
-    }
-    setExaminationTemplates(await saveExaminationTemplate(formData.on_examination))
+  async function handleSaveExaminationTemplate(text: string) {
+    setExaminationTemplates(await saveExaminationTemplate(text))
     setShowExamTemplates(true)
   }
 
@@ -791,152 +834,56 @@ export function Prescriptions() {
               )}
 
               {/* ── Chief Complaint ── */}
-              <div>
-                <div className="mb-2 flex items-center gap-2">
-                  <label className="block text-sm font-semibold text-gray-700">Chief Complaint</label>
-                  <div className="ml-auto flex gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={handleSaveComplaintTemplate}>
-                      Save Template
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowComplaintTemplates(!showComplaintTemplates)}
-                    >
-                      <Lightbulb className="w-4 h-4 mr-1" />
-                      Templates ({complaintTemplates.length})
-                    </Button>
-                  </div>
-                </div>
-                <textarea
-                  rows={2}
-                  value={formData.chief_complaint}
-                  onChange={(e) => setFormData({ ...formData, chief_complaint: e.target.value })}
-                  placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
-                />
-                {showComplaintTemplates && (
-                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h4 className="font-semibold text-sm text-amber-900">Chief Complaint Templates</h4>
-                      <button type="button" onClick={() => setShowComplaintTemplates(false)} className="text-amber-500 hover:text-amber-700">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {complaintTemplates.length === 0 ? (
-                      <p className="text-sm text-amber-900/80">Save a complaint once, then reuse it from here.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {complaintTemplates.map((template) => (
-                          <button
-                            key={template.id}
-                            type="button"
-                            onClick={() => {
-                              setFormData({ ...formData, chief_complaint: template.value })
-                              setShowComplaintTemplates(false)
-                            }}
-                            className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-left text-sm text-amber-900 hover:border-primary hover:text-primary"
-                          >
-                            {template.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <PrescMemoryChips
-                  memoryKey={MEMORY_KEYS.COMPLAINTS}
-                  onSelect={(val) => setFormData({ ...formData, chief_complaint: val })}
-                />
-              </div>
+              <MultiEntryClinicalField
+                label="Chief Complaint"
+                entries={formData.chief_complaint_entries}
+                onChange={(entries) => setFormData({ ...formData, chief_complaint_entries: entries })}
+                placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
+                memoryKey={MEMORY_KEYS.COMPLAINTS}
+                templates={{
+                  list: complaintTemplates,
+                  show: showComplaintTemplates,
+                  onToggleShow: () => setShowComplaintTemplates(!showComplaintTemplates),
+                  onSaveEntry: handleSaveComplaintTemplate,
+                  accent: 'amber',
+                  emptyHint: 'Save a complaint once, then reuse it from here.',
+                }}
+              />
 
               {/* ── On Examination ── */}
-              <div>
-                <div className="mb-2 flex items-center gap-2">
-                  <label className="block text-sm font-semibold text-gray-700">On Examination</label>
-                  <div className="ml-auto flex gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={handleSaveExaminationTemplate}>
-                      Save Template
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowExamTemplates(!showExamTemplates)}
-                    >
-                      <Lightbulb className="w-4 h-4 mr-1" />
-                      Templates ({examinationTemplates.length})
-                    </Button>
-                  </div>
-                </div>
-                <textarea
-                  rows={2}
-                  value={formData.on_examination}
-                  onChange={(e) => setFormData({ ...formData, on_examination: e.target.value })}
-                  placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
-                />
-                {showExamTemplates && (
-                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h4 className="font-semibold text-sm text-sky-900">On Examination Templates</h4>
-                      <button type="button" onClick={() => setShowExamTemplates(false)} className="text-sky-500 hover:text-sky-700">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {examinationTemplates.length === 0 ? (
-                      <p className="text-sm text-sky-900/80">Save examination notes once, then reuse them from here.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {examinationTemplates.map((template) => (
-                          <button
-                            key={template.id}
-                            type="button"
-                            onClick={() => {
-                              setFormData({ ...formData, on_examination: template.value })
-                              setShowExamTemplates(false)
-                            }}
-                            className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-left text-sm text-sky-900 hover:border-primary hover:text-primary"
-                          >
-                            {template.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <PrescMemoryChips
-                  memoryKey={MEMORY_KEYS.EXAMINATIONS}
-                  onSelect={(val) => setFormData({ ...formData, on_examination: val })}
-                />
-              </div>
+              <MultiEntryClinicalField
+                label="On Examination"
+                entries={formData.on_examination_entries}
+                onChange={(entries) => setFormData({ ...formData, on_examination_entries: entries })}
+                placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
+                memoryKey={MEMORY_KEYS.EXAMINATIONS}
+                templates={{
+                  list: examinationTemplates,
+                  show: showExamTemplates,
+                  onToggleShow: () => setShowExamTemplates(!showExamTemplates),
+                  onSaveEntry: handleSaveExaminationTemplate,
+                  accent: 'sky',
+                  emptyHint: 'Save examination notes once, then reuse them from here.',
+                }}
+              />
 
               {/* ── Diagnosis ── */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Diagnosis</label>
-                <textarea
-                  rows={2}
-                  value={formData.diagnosis}
-                  onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
-                  placeholder="Enter diagnosis"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-                <p className="text-xs text-gray-400 mt-1">e.g., Dental caries (K02.1), Periapical abscess (K04.7)</p>
-              </div>
+              <MultiEntryClinicalField
+                label="Clinical Diagnosis"
+                entries={formData.diagnosis_entries}
+                onChange={(entries) => setFormData({ ...formData, diagnosis_entries: entries })}
+                placeholder="Enter diagnosis"
+                helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
+              />
 
               {/* ── Treatment Plan ── */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Treatment Plan</label>
-                <textarea
-                  rows={2}
-                  value={formData.treatment_plan}
-                  onChange={(e) => setFormData({ ...formData, treatment_plan: e.target.value })}
-                  placeholder="e.g., RCT + Cap - 47"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-                <p className="text-xs text-gray-400 mt-1">Also added to this patient's Operations tab as a treatment record.</p>
-              </div>
+              <MultiEntryClinicalField
+                label="Treatment Plan"
+                entries={formData.treatment_plan_entries}
+                onChange={(entries) => setFormData({ ...formData, treatment_plan_entries: entries })}
+                placeholder="e.g., RCT + Cap"
+                helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
+              />
 
               {/* ── Medications ── */}
               <div>
@@ -1508,9 +1455,13 @@ export function Prescriptions() {
             id: printingPrescription.id,
             prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
             chief_complaint: printingPrescription.chief_complaint || '',
+            chief_complaint_entries: printingPrescription.chief_complaint_entries,
             on_examination: printingPrescription.on_examination || '',
+            on_examination_entries: printingPrescription.on_examination_entries,
             diagnosis: printingPrescription.diagnosis || '',
+            diagnosis_entries: printingPrescription.diagnosis_entries,
             treatment_plan: printingPrescription.treatment_plan || '',
+            treatment_plan_entries: printingPrescription.treatment_plan_entries,
             medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
@@ -1528,29 +1479,6 @@ export function Prescriptions() {
           onClose={() => { setPrintingPrescription(null); setPrintingPatient(null) }}
         />
       )}
-    </div>
-  )
-}
-
-// Helper: shows recently-used chips from localStorage memory
-function PrescMemoryChips({ memoryKey, onSelect }: { memoryKey: string; onSelect: (val: string) => void }) {
-  const [items, setItems] = useState<string[]>([])
-  useEffect(() => {
-    setItems(getMemory(memoryKey).slice(0, 8))
-  }, [memoryKey])
-  if (items.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map((item, idx) => (
-        <button
-          key={idx}
-          type="button"
-          onClick={() => onSelect(item)}
-          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
-        >
-          {item.length > 40 ? item.slice(0, 40) + '…' : item}
-        </button>
-      ))}
     </div>
   )
 }

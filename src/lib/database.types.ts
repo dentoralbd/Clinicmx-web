@@ -107,6 +107,7 @@ export interface Database {
           patient_id: string
           appointment_id: string | null
           prescription_id: string | null
+          prescription_entry_id: string | null
           tooth_number: number | null
           treatment_type: string
           description: string | null
@@ -122,6 +123,7 @@ export interface Database {
           patient_id: string
           appointment_id?: string | null
           prescription_id?: string | null
+          prescription_entry_id?: string | null
           tooth_number?: number | null
           treatment_type: string
           description?: string | null
@@ -137,6 +139,7 @@ export interface Database {
           patient_id?: string
           appointment_id?: string | null
           prescription_id?: string | null
+          prescription_entry_id?: string | null
           tooth_number?: number | null
           treatment_type?: string
           description?: string | null
@@ -165,9 +168,13 @@ export interface Database {
           medications: Json
           investigations: Json
           chief_complaint: string | null
+          chief_complaint_entries: Json | null
           on_examination: string | null
+          on_examination_entries: Json | null
           diagnosis: string | null
+          diagnosis_entries: Json | null
           treatment_plan: string | null
+          treatment_plan_entries: Json | null
           notes: string | null
           weight_at_prescription: number | null
           prescribed_date: string
@@ -180,9 +187,13 @@ export interface Database {
           medications?: Json
           investigations?: Json
           chief_complaint?: string | null
+          chief_complaint_entries?: Json | null
           on_examination?: string | null
+          on_examination_entries?: Json | null
           diagnosis?: string | null
+          diagnosis_entries?: Json | null
           treatment_plan?: string | null
+          treatment_plan_entries?: Json | null
           notes?: string | null
           weight_at_prescription?: number | null
           prescribed_date?: string
@@ -195,9 +206,13 @@ export interface Database {
           medications?: Json
           investigations?: Json
           chief_complaint?: string | null
+          chief_complaint_entries?: Json | null
           on_examination?: string | null
+          on_examination_entries?: Json | null
           diagnosis?: string | null
+          diagnosis_entries?: Json | null
           treatment_plan?: string | null
+          treatment_plan_entries?: Json | null
           notes?: string | null
           weight_at_prescription?: number | null
           prescribed_date?: string
