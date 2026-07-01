@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { margin: 0; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: #DDE3EC; border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    input::placeholder { color: #B0BCC8; }
+    input:focus { border-color: #1A5FA8 !important; box-shadow: 0 0 0 3px rgba(26,95,168,0.12); }
+  </style>
+</helmet>
+
+<div style="display:flex;height:100vh;font-family:'Inter',system-ui,sans-serif;background:#F4F6F9;color:#1C2B3A;font-size:14px;line-height:1.5;min-width:1060px">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <nav style="width:220px;background:#FFFFFF;border-right:1px solid #DDE3EC;display:flex;flex-direction:column;flex-shrink:0">
+
+    <!-- Logo -->
+    <div style="height:60px;padding:0 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #DDE3EC;flex-shrink:0">
+      <div style="width:34px;height:34px;background:#1A5FA8;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+          <path d="M12 2C8.1 2 6 4.6 6 7c0 2.1.9 3.8 1.7 5.2C8.9 14.3 9 16 9 18.5c0 1.4 1 2.5 2.2 2.5.8 0 1.5-.5 1.8-1.3.3.8 1 1.3 1.8 1.3 1.2 0 2.2-1.1 2.2-2.5 0-2.5.1-4.2 1.3-6.3C19.1 10.8 18 9.1 18 7c0-2.4-2.1-5-6-5z"/>
+        </svg>
+      </div>
+      <span style="font-size:17px;font-weight:700;color:#1A5FA8;letter-spacing:-0.4px">ClinicMx</span>
+    </div>
+
+    <!-- Nav -->
+    <div style="flex:1;overflow-y:auto;padding:8px 0">
+
+      <div onClick="{{ goHome }}" style="{{ navDash }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+        <span>Dashboard</span>
+      </div>
+
+      <div onClick="{{ goPatients }}" style="{{ navPats }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span>Patients</span>
+      </div>
+
+      <div onClick="{{ goAppts }}" style="{{ navAppts }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span>Appointments</span>
+      </div>
+
+      <div onClick="{{ goMeds }}" style="{{ navMeds }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m10.5 20.5-7-7a5 5 0 1 1 7.07-7.07l7 7a5 5 0 0 1-7.07 7.07"/>
+          <line x1="8.5" y1="11.5" x2="11.5" y2="8.5"/>
+        </svg>
+        <span>Medications</span>
+      </div>
+
+      <div onClick="{{ goTemplates }}" style="{{ navTpls }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+        </svg>
+        <span>Templates</span>
+      </div>
+
+      <div style="margin:10px 16px;border-top:1px solid #F0F4FA"></div>
+
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;margin:2px 8px;border-radius:8px;font-size:14px;font-weight:500;color:#C0CDD8;cursor:default">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        <span>Billing</span>
+        <span style="margin-left:auto;font-size:10px;background:#F4F6F9;color:#B0BCC8;padding:2px 7px;border-radius:4px;font-weight:600">Soon</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;margin:2px 8px;border-radius:8px;font-size:14px;font-weight:500;color:#C0CDD8;cursor:default">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+        <span>Reports</span>
+        <span style="margin-left:auto;font-size:10px;background:#F4F6F9;color:#B0BCC8;padding:2px 7px;border-radius:4px;font-weight:600">Soon</span>
+      </div>
+
+    </div>
+
+    <!-- User footer -->
+    <div style="padding:12px 16px;border-top:1px solid #DDE3EC;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <div style="width:34px;height:34px;border-radius:50%;background:#1A5FA8;color:#FFFFFF;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ docInitials }}</div>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:13px;font-weight:600;color:#1C2B3A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ docName }}</div>
+        <div style="font-size:11px;color:#8A9BAA">{{ docRole }}</div>
+      </div>
+    </div>
+
+  </nav>
+
+  <!-- ═══ MAIN AREA ═══ -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
+
+    <!-- Top bar -->
+    <header style="height:60px;background:#FFFFFF;border-bottom:1px solid #DDE3EC;display:flex;align-items:center;padding:0 24px;gap:16px;flex-shrink:0">
+      <div style="font-size:15px;font-weight:600;color:#1C2B3A;min-width:170px;white-space:nowrap">{{ pageTitle }}</div>
+
+      <div style="flex:1;max-width:420px;position:relative">
+        <svg style="position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A9BAA" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search patients — name, ID, phone..." onClick="{{ goPatients }}"
+          style="width:100%;padding:8px 12px 8px 34px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-family:inherit;background:#F8FAFD;outline:none;cursor:pointer;color:#1C2B3A"/>
+      </div>
+
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <div style="font-size:12px;color:#5A6B7A;font-weight:500;background:#F4F6F9;padding:5px 12px;border-radius:6px;border:1px solid #DDE3EC;white-space:nowrap">{{ dateStr }}</div>
+        <div style="width:36px;height:36px;border-radius:8px;border:1px solid #DDE3EC;background:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6B7A" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <div style="position:absolute;top:7px;right:7px;width:7px;height:7px;background:#DC2626;border-radius:50%;border:1.5px solid #FFFFFF"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Scrollable content -->
+    <main style="flex:1;overflow-y:auto;padding:24px">
+
+      <!-- ════ DASHBOARD ════ -->
+      <sc-if value="{{ showDash }}" hint-placeholder-val="{{ true }}">
+
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px">
+          <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:18px 20px">
+              <div style="font-size:11px;font-weight:600;color:#8A9BAA;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px">{{ s.label }}</div>
+              <div style="font-size:28px;font-weight:700;color:#1C2B3A;letter-spacing:-1px;margin-bottom:4px">{{ s.value }}</div>
+              <div style="font-size:12px;color:#8A9BAA">{{ s.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 316px;gap:20px">
+
+          <!-- Schedule -->
+          <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;overflow:hidden">
+            <div style="padding:16px 20px;border-bottom:1px solid #DDE3EC;display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#1C2B3A">Today's Schedule</div>
+                <div style="font-size:12px;color:#8A9BAA;margin-top:1px">Monday, 30 June 2026</div>
+              </div>
+              <div onClick="{{ goAppts }}" style="font-size:12px;color:#1A5FA8;font-weight:600;cursor:pointer">View calendar →</div>
+            </div>
+            <sc-for list="{{ appointments }}" as="appt" hint-placeholder-count="5">
+              <div onClick="{{ appt.onClick }}" style="display:flex;align-items:center;gap:14px;padding:11px 20px;border-bottom:1px solid #F4F6F9;cursor:pointer">
+                <div style="width:42px;font-size:13px;font-weight:600;color:#8A9BAA;flex-shrink:0">{{ appt.time }}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:600;color:#1C2B3A">{{ appt.name }}</div>
+                  <div style="font-size:11px;color:#8A9BAA">{{ appt.type }}{{ appt.pidSuffix }}</div>
+                </div>
+                <div style="{{ appt.statusStyle }}">{{ appt.statusText }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- Right column -->
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:18px 20px">
+              <div style="font-size:13px;font-weight:600;color:#1C2B3A;margin-bottom:12px">Quick Actions</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div onClick="{{ goPatients }}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border:1.5px solid #DDE3EC;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:#1C2B3A">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A5FA8" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Patient
+                </div>
+                <div onClick="{{ goAppts }}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border:1.5px solid #DDE3EC;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:#1C2B3A">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A5FA8" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>Book Appointment
+                </div>
+                <div onClick="{{ goMeds }}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border:1.5px solid #DDE3EC;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:#1C2B3A">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A5FA8" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Drug Reference
+                </div>
+                <div onClick="{{ goTemplates }}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border:1.5px solid #DDE3EC;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:#1C2B3A">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A5FA8" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Clinical Templates
+                </div>
+              </div>
+            </div>
+
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:18px 20px;flex:1">
+              <div style="font-size:13px;font-weight:600;color:#1C2B3A;margin-bottom:14px">Recent Patients</div>
+              <div style="display:flex;flex-direction:column;gap:11px">
+                <sc-for list="{{ recentActivity }}" as="act" hint-placeholder-count="4">
+                  <div style="font-size:12px;color:#4E6175;padding-left:10px;border-left:2px solid {{ act.accentColor }}">
+                    <span style="font-weight:600;color:#1C2B3A">{{ act.name }}</span>{{ act.detail }}
+                    <div style="color:#8A9BAA;margin-top:2px">{{ act.when }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ════ PATIENTS LIST ════ -->
+      <sc-if value="{{ showPatients }}" hint-placeholder-val="{{ false }}">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-size:20px;font-weight:700;color:#1C2B3A;letter-spacing:-0.5px">Patients</div>
+            <div style="font-size:12px;color:#8A9BAA;margin-top:2px">{{ patCountSub }}</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <div style="display:flex;align-items:center;gap:7px;padding:8px 14px;border:1.5px solid #DDE3EC;border-radius:8px;background:#FFFFFF;cursor:pointer;font-size:13px;font-weight:500;color:#4E6175">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>Filter
+            </div>
+            <div style="padding:8px 16px;background:#1A5FA8;color:#FFFFFF;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">+ New Patient</div>
+          </div>
+        </div>
+
+        <div style="position:relative;margin-bottom:16px;max-width:440px">
+          <svg style="position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A9BAA" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search by name, ID, or phone number..."
+            style="width:100%;padding:8px 12px 8px 34px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-family:inherit;background:#FFFFFF;outline:none;color:#1C2B3A"/>
+        </div>
+
+        <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;overflow:hidden">
+          <div style="display:grid;grid-template-columns:96px 1fr 52px 56px 148px 124px 108px 76px;padding:10px 20px;background:#F8FAFD;border-bottom:1px solid #DDE3EC;font-size:11px;font-weight:600;color:#8A9BAA;text-transform:uppercase;letter-spacing:0.6px;align-items:center">
+            <span>ID</span><span>Patient</span><span>Age</span><span>Sex</span><span>Phone</span><span>Last Visit</span><span>Balance</span><span></span>
+          </div>
+          <sc-for list="{{ patients }}" as="pt" hint-placeholder-count="5">
+            <div onClick="{{ pt.onClick }}" style="display:grid;grid-template-columns:96px 1fr 52px 56px 148px 124px 108px 76px;padding:12px 20px;border-bottom:1px solid #F4F6F9;cursor:pointer;align-items:center;font-size:13px">
+              <span style="font-family:monospace;font-size:11px;color:#8A9BAA">{{ pt.id }}</span>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:30px;height:30px;border-radius:50%;background:#EBF2FF;color:#1A5FA8;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ pt.initials }}</div>
+                <span style="font-weight:500;color:#1C2B3A">{{ pt.name }}</span>
+              </div>
+              <span style="color:#4E6175">{{ pt.age }}</span>
+              <span style="color:#4E6175">{{ pt.sex }}</span>
+              <span style="font-family:monospace;font-size:12px;color:#4E6175">{{ pt.phone }}</span>
+              <span style="color:#4E6175">{{ pt.lastVisit }}</span>
+              <span style="{{ pt.balStyle }}">{{ pt.balance }}</span>
+              <div style="padding:4px 10px;border:1px solid #DDE3EC;border-radius:6px;font-size:11px;font-weight:600;color:#1A5FA8;cursor:pointer;background:#F8FAFD;text-align:center">View</div>
+            </div>
+          </sc-for>
+        </div>
+
+      </sc-if>
+
+      <!-- ════ PATIENT PROFILE ════ -->
+      <sc-if value="{{ showProfile }}" hint-placeholder-val="{{ false }}">
+
+        <div onClick="{{ goPatients }}" style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:#1A5FA8;font-weight:600;cursor:pointer;margin-bottom:18px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Back to Patients
+        </div>
+
+        <!-- Profile header -->
+        <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:20px 24px;margin-bottom:12px;display:flex;align-items:flex-start;gap:18px">
+          <div style="width:52px;height:52px;border-radius:50%;background:#EBF2FF;color:#1A5FA8;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ profile.initials }}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="font-size:18px;font-weight:700;color:#1C2B3A;letter-spacing:-0.3px">{{ profile.name }}</div>
+              <div style="font-size:11px;font-weight:600;padding:3px 9px;background:#E6F7F6;color:#0A7A6E;border-radius:20px">{{ profile.id }}</div>
+            </div>
+            <div style="display:flex;gap:24px;flex-wrap:wrap">
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Age / Sex</div><div style="color:#1C2B3A;font-weight:500">{{ profile.age }} y · {{ profile.sex }}</div></div>
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Date of Birth</div><div style="color:#1C2B3A;font-weight:500">{{ profile.dob }}</div></div>
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Phone</div><div style="color:#1C2B3A;font-weight:500;font-family:monospace">{{ profile.phone }}</div></div>
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Blood Group</div><div style="color:#1C2B3A;font-weight:500">{{ profile.bloodGroup }}</div></div>
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Last Visit</div><div style="color:#1C2B3A;font-weight:500">{{ profile.lastVisit }}</div></div>
+              <div style="font-size:12px"><div style="color:#8A9BAA;margin-bottom:2px">Outstanding</div><div style="color:#DC2626;font-weight:700">{{ profile.outstanding }}</div></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <div style="padding:8px 14px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-weight:500;color:#4E6175;cursor:pointer">Edit</div>
+            <div style="padding:8px 16px;background:#1A5FA8;color:#FFFFFF;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">+ Appointment</div>
+          </div>
+        </div>
+
+        <!-- Alert bar -->
+        <div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:9px 16px;display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:13px;color:#92400E">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span><strong>Allergy:</strong> {{ profile.allergies }} &nbsp;·&nbsp; <strong>Med Hx:</strong> {{ profile.medHistory }}</span>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display:flex;margin-bottom:16px;border-bottom:2px solid #DDE3EC">
+          <sc-for list="{{ profileTabs }}" as="tab" hint-placeholder-count="3">
+            <div onClick="{{ tab.onClick }}" style="{{ tab.tabStyle }}">{{ tab.label }}</div>
+          </sc-for>
+        </div>
+
+        <!-- Tooth Chart Tab -->
+        <sc-if value="{{ showChartTab }}" hint-placeholder-val="{{ true }}">
+          <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:24px">
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+              <div style="font-size:14px;font-weight:600;color:#1C2B3A">FDI Tooth Chart — Permanent Dentition</div>
+              <div style="font-size:12px;color:#8A9BAA">Click any tooth to view or update its status</div>
+            </div>
+
+            <!-- Direction labels -->
+            <div style="display:flex;justify-content:center;margin-bottom:4px">
+              <div style="display:flex;width:600px;justify-content:space-between;padding:0 2px">
+                <span style="font-size:10px;font-weight:700;color:#8A9BAA;text-transform:uppercase;letter-spacing:0.5px">Patient Right (R)</span>
+                <span style="font-size:10px;font-weight:700;color:#8A9BAA;text-transform:uppercase;letter-spacing:0.5px">Patient Left (L)</span>
+              </div>
+            </div>
+
+            <!-- Upper arch: Q1 | Q2 -->
+            <div style="display:flex;justify-content:center;margin-bottom:3px">
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ q1 }}" as="t" hint-placeholder-count="8">
+                  <div onClick="{{ t.onClick }}" style="width:34px;height:42px;background:{{ t.bg }};border:2px solid {{ t.border }};border-radius:7px 7px 3px 3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#374151;box-shadow:{{ t.shadow }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+              <div style="width:18px;display:flex;align-items:center;justify-content:center">
+                <div style="width:0;height:44px;border-left:2px dashed #DDE3EC"></div>
+              </div>
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ q2 }}" as="t" hint-placeholder-count="8">
+                  <div onClick="{{ t.onClick }}" style="width:34px;height:42px;background:{{ t.bg }};border:2px solid {{ t.border }};border-radius:7px 7px 3px 3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#374151;box-shadow:{{ t.shadow }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- Arch separator -->
+            <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin:6px 0">
+              <div style="height:1px;width:264px;background:linear-gradient(to right,transparent,#DDE3EC 25%,#DDE3EC 75%,transparent)"></div>
+              <div style="font-size:9px;font-weight:700;color:#B0BCC8;letter-spacing:1.5px;white-space:nowrap">MAXILLA / MANDIBLE</div>
+              <div style="height:1px;width:264px;background:linear-gradient(to left,transparent,#DDE3EC 25%,#DDE3EC 75%,transparent)"></div>
+            </div>
+
+            <!-- Lower arch: Q4 | Q3 -->
+            <div style="display:flex;justify-content:center;margin-bottom:16px">
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ q4 }}" as="t" hint-placeholder-count="8">
+                  <div onClick="{{ t.onClick }}" style="width:34px;height:42px;background:{{ t.bg }};border:2px solid {{ t.border }};border-radius:3px 3px 7px 7px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#374151;box-shadow:{{ t.shadow }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+              <div style="width:18px;display:flex;align-items:center;justify-content:center">
+                <div style="width:0;height:44px;border-left:2px dashed #DDE3EC"></div>
+              </div>
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ q3 }}" as="t" hint-placeholder-count="8">
+                  <div onClick="{{ t.onClick }}" style="width:34px;height:42px;background:{{ t.bg }};border:2px solid {{ t.border }};border-radius:3px 3px 7px 7px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#374151;box-shadow:{{ t.shadow }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- Legend (hardcoded — static colors) -->
+            <div style="display:flex;flex-wrap:wrap;gap:10px;padding-top:14px;border-top:1px solid #F4F6F9">
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#FFFFFF;border:1.5px solid #DDE3EC;flex-shrink:0"></div>Healthy</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#FEE2E2;border:1.5px solid #F87171;flex-shrink:0"></div>Caries</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#DBEAFE;border:1.5px solid #60A5FA;flex-shrink:0"></div>Restored</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#FEF3C7;border:1.5px solid #FBBF24;flex-shrink:0"></div>Crown</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#EDE9FE;border:1.5px solid #8B5CF6;flex-shrink:0"></div>RCT Done</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#F3F4F6;border:1.5px solid #9CA3AF;flex-shrink:0"></div>Missing</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#4E6175"><div style="width:13px;height:13px;border-radius:3px;background:#FFEDD5;border:1.5px solid #FB923C;flex-shrink:0"></div>Needs Tx</div>
+            </div>
+
+            <!-- Tooth status picker -->
+            <sc-if value="{{ showToothPanel }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:16px;padding:14px 16px;background:#F8FAFD;border-radius:10px;border:1px solid #DDE3EC">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                  <div style="font-size:13px;font-weight:700;color:#1C2B3A">Tooth #{{ selectedToothNum }} — {{ selectedToothLabel }}</div>
+                  <div style="font-size:11px;color:#8A9BAA">Set status:</div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <sc-for list="{{ statusOptions }}" as="opt" hint-placeholder-count="7">
+                    <div onClick="{{ opt.onClick }}" style="{{ opt.btnStyle }}">
+                      <div style="width:9px;height:9px;border-radius:2px;background:{{ opt.swatchBg }};border:1.5px solid {{ opt.swatchBorder }}"></div>
+                      {{ opt.label }}
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+        </sc-if>
+
+        <!-- Visit History Tab -->
+        <sc-if value="{{ showHistoryTab }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ profile.visits }}" as="visit" hint-placeholder-count="3">
+              <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:18px 20px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+                  <div>
+                    <div style="font-size:14px;font-weight:600;color:#1C2B3A">{{ visit.type }}</div>
+                    <div style="font-size:12px;color:#8A9BAA;margin-top:2px">{{ visit.date }} · {{ visit.dentist }}</div>
+                  </div>
+                  <div style="font-size:14px;font-weight:700;color:#1A5FA8">{{ visit.fee }}</div>
+                </div>
+                <div style="font-size:13px;color:#4E6175;line-height:1.7;background:#F8FAFD;padding:10px 14px;border-radius:8px;border-left:3px solid #1A5FA8">{{ visit.note }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- Patient Info Tab -->
+        <sc-if value="{{ showInfoTab }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:20px">
+              <div style="font-size:13px;font-weight:600;color:#1C2B3A;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F4F6F9">Demographics</div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Full Name</span><span style="color:#1C2B3A;font-weight:500">{{ profile.name }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Date of Birth</span><span style="color:#1C2B3A;font-weight:500">{{ profile.dob }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Sex</span><span style="color:#1C2B3A;font-weight:500">{{ profile.sex }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Blood Group</span><span style="color:#1C2B3A;font-weight:500">{{ profile.bloodGroup }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Phone</span><span style="color:#1C2B3A;font-weight:500;font-family:monospace;font-size:12px">{{ profile.phone }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#8A9BAA">Address</span><span style="color:#1C2B3A;font-weight:500">{{ profile.address }}</span></div>
+              </div>
+            </div>
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;padding:20px">
+              <div style="font-size:13px;font-weight:600;color:#1C2B3A;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F4F6F9">Medical &amp; Financial</div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div style="font-size:13px"><div style="color:#8A9BAA;margin-bottom:3px">Medical History</div><div style="color:#1C2B3A;font-weight:500;line-height:1.5">{{ profile.medHistory }}</div></div>
+                <div style="font-size:13px;padding-top:10px;border-top:1px solid #F4F6F9"><div style="color:#8A9BAA;margin-bottom:3px">Known Allergies</div><div style="color:#DC2626;font-weight:700">{{ profile.allergies }}</div></div>
+                <div style="font-size:13px;padding-top:10px;border-top:1px solid #F4F6F9"><div style="color:#8A9BAA;margin-bottom:3px">Total Paid (Lifetime)</div><div style="color:#0F9B8E;font-weight:700;font-size:16px">{{ profile.totalPaid }}</div></div>
+                <div style="font-size:13px;padding-top:10px;border-top:1px solid #F4F6F9"><div style="color:#8A9BAA;margin-bottom:3px">Outstanding Balance</div><div style="color:#DC2626;font-weight:700;font-size:16px">{{ profile.outstanding }}</div></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </sc-if>
+
+      <!-- ════ APPOINTMENTS ════ -->
+      <sc-if value="{{ showAppts }}" hint-placeholder-val="{{ false }}">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-size:20px;font-weight:700;color:#1C2B3A;letter-spacing:-0.5px">Appointments</div>
+            <div style="font-size:12px;color:#8A9BAA;margin-top:2px">Monday, 30 June 2026 · 7 slots</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="padding:7px 14px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-weight:500;color:#4E6175;cursor:pointer;background:#FFFFFF">← Prev</div>
+            <div style="padding:7px 14px;border:1.5px solid #1A5FA8;border-radius:8px;font-size:13px;font-weight:600;color:#1A5FA8;cursor:pointer;background:#EBF2FF">Today</div>
+            <div style="padding:7px 14px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-weight:500;color:#4E6175;cursor:pointer;background:#FFFFFF">Next →</div>
+            <div style="padding:7px 16px;background:#1A5FA8;color:#FFFFFF;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-left:4px">+ Book Slot</div>
+          </div>
+        </div>
+
+        <!-- Week strip -->
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:20px">
+          <div style="background:#EBF2FF;border:2px solid #1A5FA8;border-radius:10px;padding:10px 0;text-align:center;cursor:pointer">
+            <div style="font-size:10px;font-weight:700;color:#1A5FA8;text-transform:uppercase">Mon</div>
+            <div style="font-size:18px;font-weight:700;color:#1A5FA8;margin-top:2px">30</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#1A5FA8;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#FFFFFF;border:1.5px solid #DDE3EC;border-radius:10px;padding:10px 0;text-align:center;cursor:pointer">
+            <div style="font-size:10px;font-weight:600;color:#8A9BAA;text-transform:uppercase">Tue</div>
+            <div style="font-size:18px;font-weight:700;color:#1C2B3A;margin-top:2px">01</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#0F9B8E;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#FFFFFF;border:1.5px solid #DDE3EC;border-radius:10px;padding:10px 0;text-align:center;cursor:pointer">
+            <div style="font-size:10px;font-weight:600;color:#8A9BAA;text-transform:uppercase">Wed</div>
+            <div style="font-size:18px;font-weight:700;color:#1C2B3A;margin-top:2px">02</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#DDE3EC;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#FFFFFF;border:1.5px solid #DDE3EC;border-radius:10px;padding:10px 0;text-align:center;cursor:pointer">
+            <div style="font-size:10px;font-weight:600;color:#8A9BAA;text-transform:uppercase">Thu</div>
+            <div style="font-size:18px;font-weight:700;color:#1C2B3A;margin-top:2px">03</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#DDE3EC;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#FFFFFF;border:1.5px solid #DDE3EC;border-radius:10px;padding:10px 0;text-align:center;cursor:pointer">
+            <div style="font-size:10px;font-weight:600;color:#8A9BAA;text-transform:uppercase">Fri</div>
+            <div style="font-size:18px;font-weight:700;color:#1C2B3A;margin-top:2px">04</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#DDE3EC;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#F8FAFD;border:1.5px solid #F0F4FA;border-radius:10px;padding:10px 0;text-align:center;opacity:0.55;cursor:default">
+            <div style="font-size:10px;font-weight:600;color:#B0BCC8;text-transform:uppercase">Sat</div>
+            <div style="font-size:18px;font-weight:700;color:#B0BCC8;margin-top:2px">05</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#F0F4FA;margin:4px auto 0"></div>
+          </div>
+          <div style="background:#F8FAFD;border:1.5px solid #F0F4FA;border-radius:10px;padding:10px 0;text-align:center;opacity:0.55;cursor:default">
+            <div style="font-size:10px;font-weight:600;color:#B0BCC8;text-transform:uppercase">Sun</div>
+            <div style="font-size:18px;font-weight:700;color:#B0BCC8;margin-top:2px">06</div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#F0F4FA;margin:4px auto 0"></div>
+          </div>
+        </div>
+
+        <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;overflow:hidden">
+          <div style="padding:14px 20px;border-bottom:1px solid #DDE3EC;font-size:13px;font-weight:600;color:#4E6175;background:#F8FAFD">Monday 30 June — 7 appointments</div>
+          <sc-for list="{{ appointments }}" as="appt" hint-placeholder-count="6">
+            <div onClick="{{ appt.onClick }}" style="display:flex;align-items:center;gap:16px;padding:13px 20px;border-bottom:1px solid #F4F6F9;cursor:pointer">
+              <div style="width:42px;font-size:13px;font-weight:700;color:#1A5FA8;flex-shrink:0">{{ appt.time }}</div>
+              <div style="width:4px;height:36px;background:#DDE3EC;border-radius:2px;flex-shrink:0"></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:#1C2B3A">{{ appt.name }}</div>
+                <div style="font-size:12px;color:#8A9BAA;margin-top:1px">{{ appt.type }}</div>
+              </div>
+              <div style="{{ appt.statusStyle }}">{{ appt.statusText }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+      </sc-if>
+
+      <!-- ════ MEDICATIONS ════ -->
+      <sc-if value="{{ showMeds }}" hint-placeholder-val="{{ false }}">
+
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-size:20px;font-weight:700;color:#1C2B3A;letter-spacing:-0.5px">Medication Reference</div>
+            <div style="font-size:12px;color:#8A9BAA;margin-top:2px">Bangladeshi brands · prices in BDT · updated Jun 2026</div>
+          </div>
+        </div>
+
+        <div style="position:relative;margin-bottom:14px;max-width:440px">
+          <svg style="position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A9BAA" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search brand name or generic..." value="{{ medSearch }}" onInput="{{ setMedSearch }}"
+            style="width:100%;padding:8px 12px 8px 34px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-family:inherit;background:#FFFFFF;outline:none;color:#1C2B3A"/>
+        </div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+          <sc-for list="{{ medCatItems }}" as="cat" hint-placeholder-count="7">
+            <div onClick="{{ cat.onClick }}" style="{{ cat.chipStyle }}">{{ cat.label }}</div>
+          </sc-for>
+        </div>
+
+        <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;overflow:hidden">
+          <div style="display:grid;grid-template-columns:160px 1fr 138px 108px 1fr 100px;padding:10px 20px;background:#F8FAFD;border-bottom:1px solid #DDE3EC;font-size:11px;font-weight:600;color:#8A9BAA;text-transform:uppercase;letter-spacing:0.6px">
+            <span>Brand</span><span>Generic / Form</span><span>Category</span><span>BDT Price</span><span>Typical Dose</span><span></span>
+          </div>
+          <sc-for list="{{ medItems }}" as="med" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:160px 1fr 138px 108px 1fr 100px;padding:13px 20px;border-bottom:1px solid #F4F6F9;align-items:center;font-size:13px">
+              <div>
+                <div style="font-weight:600;color:#1C2B3A">{{ med.brand }}</div>
+                <div style="font-size:11px;color:#8A9BAA;margin-top:1px">{{ med.maker }}</div>
+              </div>
+              <div>
+                <div style="color:#4E6175">{{ med.generic }}</div>
+                <div style="font-size:11px;color:#B0BCC8;margin-top:1px">{{ med.form }}</div>
+              </div>
+              <div>
+                <span style="font-size:11px;padding:3px 9px;border-radius:12px;background:#EBF2FF;color:#1A5FA8;font-weight:600">{{ med.cat }}</span>
+              </div>
+              <div style="font-weight:700;color:#0F9B8E;font-size:14px">{{ med.price }}</div>
+              <div style="font-size:12px;color:#5A6B7A;line-height:1.4">{{ med.dose }}</div>
+              <div style="padding:5px 10px;border:1.5px solid #DDE3EC;border-radius:6px;font-size:11px;font-weight:600;color:#1A5FA8;cursor:pointer;text-align:center;white-space:nowrap">Copy Rx</div>
+            </div>
+          </sc-for>
+        </div>
+
+      </sc-if>
+
+      <!-- ════ TEMPLATES ════ -->
+      <sc-if value="{{ showTemplates }}" hint-placeholder-val="{{ false }}">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-size:20px;font-weight:700;color:#1C2B3A;letter-spacing:-0.5px">Clinical Note Templates</div>
+            <div style="font-size:12px;color:#8A9BAA;margin-top:2px">Click a template to expand · copy into your note</div>
+          </div>
+          <div style="padding:8px 16px;background:#1A5FA8;color:#FFFFFF;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">+ New Template</div>
+        </div>
+
+        <div style="position:relative;margin-bottom:14px;max-width:440px">
+          <svg style="position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A9BAA" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search templates..." value="{{ tplSearch }}" onInput="{{ setTplSearch }}"
+            style="width:100%;padding:8px 12px 8px 34px;border:1.5px solid #DDE3EC;border-radius:8px;font-size:13px;font-family:inherit;background:#FFFFFF;outline:none;color:#1C2B3A"/>
+        </div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+          <sc-for list="{{ tplCatItems }}" as="cat" hint-placeholder-count="6">
+            <div onClick="{{ cat.onClick }}" style="{{ cat.chipStyle }}">{{ cat.label }}</div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ tplItems }}" as="tpl" hint-placeholder-count="4">
+            <div style="background:#FFFFFF;border-radius:12px;border:1px solid #DDE3EC;overflow:hidden">
+              <div onClick="{{ tpl.onToggle }}" style="display:flex;align-items:center;gap:14px;padding:15px 20px;cursor:pointer">
+                <div style="width:36px;height:36px;border-radius:8px;background:#EBF2FF;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1A5FA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14px;font-weight:600;color:#1C2B3A">{{ tpl.title }}</div>
+                  <div style="font-size:12px;color:#8A9BAA;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ tpl.preview }}</div>
+                </div>
+                <span style="font-size:11px;padding:3px 9px;border-radius:12px;background:#EBF2FF;color:#1A5FA8;font-weight:600;white-space:nowrap;margin-right:6px;flex-shrink:0">{{ tpl.cat }}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A9BAA" stroke-width="2.5" style="flex-shrink:0">
+                  <polyline points="{{ tpl.chevron }}"></polyline>
+                </svg>
+              </div>
+              <sc-if value="{{ tpl.isExpanded }}" hint-placeholder-val="{{ false }}">
+                <div style="border-top:1px solid #F4F6F9;padding:16px 20px 20px">
+                  <pre style="font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.75;color:#374151;white-space:pre-wrap;margin:0;background:#F8FAFD;padding:14px 16px;border-radius:8px;border:1px solid #DDE3EC;max-height:380px;overflow-y:auto">{{ tpl.content }}</pre>
+                  <div style="display:flex;gap:8px;margin-top:12px">
+                    <div style="padding:7px 16px;background:#1A5FA8;color:#FFFFFF;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Copy to Clipboard</div>
+                    <div style="padding:7px 14px;border:1.5px solid #DDE3EC;color:#4E6175;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer">Edit Template</div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'dashboard',
+    tab: 'chart',
+    tooth: null,
+    toothStatus: {},
+    medSearch: '',
+    medCat: 'All',
+    tplSearch: '',
+    tplCat: 'All',
+    tplExpand: null,
+    loading: true,
+    patientsData: [],
+    appointmentsData: [],
+    dashboardStats: null,
+    selectedPatient: null,
+    doctorProfile: null,
+  };
+
+  async componentDidMount() {
+    const BASE = 'https://mgzmxnkrbdawymdviclv.supabase.co';
+    const KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1nem14bmtyYmRhd3ltZHZpY2x2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMDY1NDcsImV4cCI6MjA5NzU4MjU0N30.kGBbfoJ5veYCHkTpfb_QmEzSrRe9LfJgZUEq3cnVBnA';
+    const hdrs = { apikey: KEY, Authorization: 'Bearer ' + KEY, Accept: 'application/json' };
+    const get  = path => fetch(BASE + '/rest/v1/' + path, { headers: hdrs }).then(r => r.json());
+
+    try {
+      const now   = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const t0    = today + 'T00:00:00';
+      const t1    = today + 'T23:59:59';
+      const week0 = new Date(now - 7 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
+
+      const [patients, appts, allPats, todayPaid, pendingInv, newPats, docRows] = await Promise.all([
+        get('patients?select=id,patient_code,first_name,last_name,phone,date_of_birth,gender,address,medical_history,notes,created_at&order=created_at.desc&limit=100'),
+        get('appointments?select=id,date_time,type,status,patient_id,patients(first_name,last_name,patient_code)&date_time=gte.' + t0 + '&date_time=lte.' + t1 + '&order=date_time.asc'),
+        get('patients?select=id'),
+        get('invoices?select=total_amount&status=eq.Paid&created_at=gte.' + t0 + '&created_at=lte.' + t1),
+        get('invoices?select=total_amount&status=eq.Pending'),
+        get('patients?select=id&created_at=gte.' + week0),
+        get('doctor_profiles?select=full_name,designation&limit=1'),
+      ]);
+
+      const todayRev  = (todayPaid  || []).reduce((s, i) => s + (i.total_amount || 0), 0);
+      const outstand  = (pendingInv || []).reduce((s, i) => s + (i.total_amount || 0), 0);
+      const completed = (appts      || []).filter(a => a.status === 'Completed').length;
+      const total     = (appts      || []).length;
+
+      this.setState({
+        loading: false,
+        patientsData:     Array.isArray(patients) ? patients : [],
+        appointmentsData: Array.isArray(appts)    ? appts    : [],
+        doctorProfile:    Array.isArray(docRows) && docRows[0] ? docRows[0] : null,
+        dashboardStats: {
+          totalToday:  total,
+          completed,
+          remaining:   total - completed,
+          totalPats:   (allPats  || []).length,
+          todayRev,
+          outstand,
+          newThisWeek: (newPats  || []).length,
+        },
+      });
+    } catch (err) {
+      console.error('Supabase fetch:', err);
+      this.setState({ loading: false });
+    }
+  }
+
+  renderVals() {
+    const s = this.state;
+    const go = id => () => this.setState({ screen: id, tooth: null });
+    const isOn = id => s.screen === id || (id === 'patients' && s.screen === 'profile');
+
+    const ns = id => ({
+      display:'flex', alignItems:'center', gap:10,
+      padding:'9px 16px', cursor:'pointer', borderRadius:8,
+      margin:'2px 8px', fontSize:14,
+      fontWeight: isOn(id) ? 600 : 500,
+      color: isOn(id) ? '#1A5FA8' : '#4E6175',
+      background: isOn(id) ? '#EBF2FF' : 'transparent',
+      userSelect:'none',
+    });
+
+    const pages = {
+      dashboard:'Dashboard', patients:'Patients',
+      profile:'Patient Profile', appointments:'Appointments',
+      medications:'Medication Reference', templates:'Clinical Templates',
+    };
+
+    const dateStr = new Date().toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+
+    // ── Stats ─────────────────────────────────────────────────
+    const ds = this.state.dashboardStats;
+    const fmtMoney = n => '৳ ' + Math.round(n || 0).toLocaleString();
+    const stats = ds ? [
+      { label:"Today's Appointments", value: String(ds.totalToday),  sub: ds.completed + ' completed · ' + ds.remaining + ' remaining' },
+      { label:'Patients Checked In',  value: String(ds.completed),   sub: ds.totalPats + ' patients total'                             },
+      { label:"Today's Revenue",      value: fmtMoney(ds.todayRev),  sub: fmtMoney(ds.outstand) + ' outstanding'                      },
+      { label:'New Patients',         value: String(ds.newThisWeek), sub: 'this week'                                                  },
+    ] : [
+      { label:"Today's Appointments", value: s.loading ? '…' : '0', sub: s.loading ? 'Loading…' : 'No appointments today' },
+      { label:'Patients Checked In',  value: s.loading ? '…' : '0', sub: ''                                                },
+      { label:"Today's Revenue",      value: s.loading ? '…' : '৳ 0', sub: ''                                              },
+      { label:'New Patients',         value: s.loading ? '…' : '0', sub: ''                                                },
+    ];
+
+    // ── Appointments ──────────────────────────────────────────
+    const badge = st => ({
+      completed:    { background:'#D1FAE5', color:'#065F46', fontSize:11, padding:'3px 9px', borderRadius:10, fontWeight:600, whiteSpace:'nowrap' },
+      'in-progress':{ background:'#DBEAFE', color:'#1E40AF', fontSize:11, padding:'3px 9px', borderRadius:10, fontWeight:600, whiteSpace:'nowrap' },
+      upcoming:     { background:'#F3F4F6', color:'#6B7280', fontSize:11, padding:'3px 9px', borderRadius:10, fontWeight:600, whiteSpace:'nowrap' },
+      blocked:      { background:'#F9FAFB', color:'#9CA3AF', fontSize:11, padding:'3px 9px', borderRadius:10, fontWeight:600, whiteSpace:'nowrap' },
+    }[st] || { background:'#F3F4F6', color:'#6B7280', fontSize:11, padding:'3px 9px', borderRadius:10, fontWeight:600, whiteSpace:'nowrap' });
+
+    const stLabel = { completed:'Completed','in-progress':'In Progress', upcoming:'Upcoming', blocked:'—' };
+
+    const statusMap = { Scheduled:'upcoming', Confirmed:'in-progress', Completed:'completed', Cancelled:'blocked' };
+
+    const appointments = s.appointmentsData.map(a => {
+      const pd   = a.patients || {};
+      const name = pd.first_name ? (pd.first_name + ' ' + (pd.last_name || '')).trim() : '—';
+      const pid  = pd.patient_code || '';
+      const time = a.date_time ? new Date(a.date_time).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }) : '—';
+      const st   = statusMap[a.status] || 'upcoming';
+      return {
+        time, name, pid,
+        type: a.type || '',
+        pidSuffix: pid ? ' · ' + pid : '',
+        statusStyle: badge(st),
+        statusText:  stLabel[st] || a.status,
+        onClick: a.patient_id ? (() => {
+          const p = s.patientsData.find(pt => pt.id === a.patient_id);
+          this.setState({ screen:'profile', tab:'chart', tooth:null, selectedPatient: p || null });
+        }) : (() => {}),
+      };
+    });
+
+    // ── Patients ──────────────────────────────────────────────
+    const ini = name => ((name || '').split(' ').filter(Boolean).map(w => w[0]).slice(0,2).join('').toUpperCase()) || '?';
+
+    const patients = s.patientsData.map(p => {
+      const name  = ((p.first_name || '') + ' ' + (p.last_name || '')).trim();
+      const dobMs = p.date_of_birth ? new Date(p.date_of_birth).getTime() : 0;
+      const age   = dobMs ? Math.floor((Date.now() - dobMs) / 31557600000) : '—';
+      return {
+        id:       p.patient_code || ('#' + String(p.id).slice(0,6)),
+        name,
+        age,
+        sex:      p.gender ? p.gender[0].toUpperCase() : '—',
+        phone:    p.phone  || '—',
+        lastVisit:'—',
+        balance:  '৳ 0',
+        owing:    false,
+        initials: ini(name),
+        balStyle: { color:'#9CA3AF', fontSize:13 },
+        onClick:  () => this.setState({ screen:'profile', tab:'chart', tooth:null, selectedPatient: p }),
+      };
+    });
+
+    const patCountSub = s.loading ? 'Loading patients…' : (s.patientsData.length + ' patients');
+
+    // ── Tooth chart ───────────────────────────────────────────
+    const ST = {
+      healthy:         { bg:'#FFFFFF',  border:'#DDE3EC', label:'Healthy'   },
+      caries:          { bg:'#FEE2E2',  border:'#F87171', label:'Caries'    },
+      restored:        { bg:'#DBEAFE',  border:'#60A5FA', label:'Restored'  },
+      crown:           { bg:'#FEF3C7',  border:'#FBBF24', label:'Crown'     },
+      rct:             { bg:'#EDE9FE',  border:'#8B5CF6', label:'RCT Done'  },
+      missing:         { bg:'#F3F4F6',  border:'#9CA3AF', label:'Missing'   },
+      needs_treatment: { bg:'#FFEDD5',  border:'#FB923C', label:'Needs Tx'  },
+    };
+
+    const mkT = id => {
+      const st = s.toothStatus[id] || 'healthy';
+      const sel = s.tooth === id;
+      return {
+        id, label: String(id),
+        bg:     ST[st].bg,
+        border: sel ? '#1A5FA8' : ST[st].border,
+        shadow: sel ? '0 0 0 3px rgba(26,95,168,0.18)' : 'none',
+        onClick: () => this.setState({ tooth: s.tooth === id ? null : id }),
+      };
+    };
+
+    // FDI display order (viewer's left = patient's right)
+    const q1 = [18,17,16,15,14,13,12,11].map(mkT); // upper-right
+    const q2 = [21,22,23,24,25,26,27,28].map(mkT); // upper-left
+    const q3 = [31,32,33,34,35,36,37,38].map(mkT); // lower-left
+    const q4 = [48,47,46,45,44,43,42,41].map(mkT); // lower-right
+
+    const selSt = s.tooth ? (s.toothStatus[s.tooth] || 'healthy') : null;
+
+    const statusOptions = Object.entries(ST).map(([key, val]) => {
+      const cur = selSt === key;
+      return {
+        key, label: val.label,
+        swatchBg: val.bg, swatchBorder: val.border,
+        btnStyle: cur
+          ? { display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, border:'2px solid #1A5FA8', background:'#EBF2FF', cursor:'pointer', fontSize:12, fontWeight:600, color:'#1A5FA8' }
+          : { display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, border:'1px solid #DDE3EC', background:'#FFFFFF', cursor:'pointer', fontSize:12, fontWeight:500, color:'#4E6175' },
+        onClick: () => {
+          const next = { ...s.toothStatus };
+          if (key === 'healthy') delete next[s.tooth]; else next[s.tooth] = key;
+          this.setState({ toothStatus: next });
+        },
+      };
+    });
+
+    // ── Profile ───────────────────────────────────────────────
+    const sp = s.selectedPatient;
+    const profName  = sp ? ((sp.first_name || '') + ' ' + (sp.last_name || '')).trim() : '—';
+    const profDobMs = sp && sp.date_of_birth ? new Date(sp.date_of_birth).getTime() : 0;
+    const profAge   = profDobMs ? Math.floor((Date.now() - profDobMs) / 31557600000) : '—';
+    const profDob   = profDobMs ? new Date(sp.date_of_birth).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+
+    const profile = {
+      name:       profName,
+      initials:   ini(profName),
+      id:         sp ? (sp.patient_code || ('#' + String(sp.id).slice(0,6))) : '—',
+      age:        profAge,
+      sex:        sp ? (sp.gender || '—') : '—',
+      dob:        profDob,
+      phone:      sp ? (sp.phone   || '—') : '—',
+      address:    sp ? (sp.address || '—') : '—',
+      bloodGroup: '—',
+      allergies:  sp ? (sp.medical_history || 'None reported') : '—',
+      medHistory: sp ? (sp.notes  || 'None') : '—',
+      lastVisit:  '—',
+      totalPaid:  '৳ 0',
+      outstanding:'৳ 0',
+      visits:     [],
+    };
+
+    const profileTabs = ['Tooth Chart','Visit History','Patient Info'].map((label, i) => {
+      const id = ['chart','history','info'][i];
+      return {
+        label, id,
+        onClick: () => this.setState({ tab:id }),
+        tabStyle: s.tab === id
+          ? { padding:'10px 20px', fontSize:13, fontWeight:600, color:'#1A5FA8', borderBottom:'2px solid #1A5FA8', cursor:'pointer', marginBottom:-2, userSelect:'none', whiteSpace:'nowrap' }
+          : { padding:'10px 20px', fontSize:13, fontWeight:500, color:'#5A6B7A', borderBottom:'2px solid transparent', cursor:'pointer', marginBottom:-2, userSelect:'none', whiteSpace:'nowrap' },
+      };
+    });
+
+    // ── Medications ───────────────────────────────────────────
+    const chip = active => active
+      ? { padding:'5px 14px', borderRadius:20, background:'#1A5FA8', color:'#FFFFFF', fontSize:12, fontWeight:600, cursor:'pointer', border:'none', whiteSpace:'nowrap', userSelect:'none' }
+      : { padding:'5px 14px', borderRadius:20, background:'#FFFFFF', color:'#4E6175', fontSize:12, fontWeight:500, cursor:'pointer', border:'1px solid #DDE3EC', whiteSpace:'nowrap', userSelect:'none' };
+
+    const medCats = ['All','Antibiotic','Analgesic','NSAID','Antiseptic','Local Anesthesia','Antifungal'];
+    const allMeds = [
+      { brand:'Moxacil 500',     generic:'Amoxicillin 500mg',             maker:'Square Pharma',  form:'Capsule',         price:'৳ 8/cap',        cat:'Antibiotic',       dose:'500mg TDS × 5 days'            },
+      { brand:'Monocef-S 200',   generic:'Cefuroxime 200mg',              maker:'Beximco',        form:'Tablet',          price:'৳ 28/tab',       cat:'Antibiotic',       dose:'200mg BD × 5 days'             },
+      { brand:'Metronid 400',    generic:'Metronidazole 400mg',           maker:'Opsonin Pharma', form:'Tablet',          price:'৳ 4/tab',        cat:'Antibiotic',       dose:'400mg TDS × 5 days'            },
+      { brand:'Clindamycin 150', generic:'Clindamycin HCl 150mg',         maker:'ACI',            form:'Capsule',         price:'৳ 12/cap',       cat:'Antibiotic',       dose:'150mg TID × 5 days'            },
+      { brand:'Napa 500',        generic:'Paracetamol 500mg',             maker:'Beximco',        form:'Tablet',          price:'৳ 2/tab',        cat:'Analgesic',        dose:'Up to 1g QID PRN'              },
+      { brand:'Tramal 50',       generic:'Tramadol HCl 50mg',             maker:'Nuvista Pharma', form:'Capsule',         price:'৳ 15/cap',       cat:'Analgesic',        dose:'50mg TDS — short course'       },
+      { brand:'Brufen 400',      generic:'Ibuprofen 400mg',               maker:'Abbott',         form:'Tablet',          price:'৳ 4/tab',        cat:'NSAID',            dose:'400mg TDS with food'           },
+      { brand:'Clofenac 50',     generic:'Diclofenac Sodium 50mg',        maker:'ACI',            form:'Tablet',          price:'৳ 3/tab',        cat:'NSAID',            dose:'50mg BD–TDS'                   },
+      { brand:'Naprox 500',      generic:'Naproxen 500mg',                maker:'Square Pharma',  form:'Tablet',          price:'৳ 6/tab',        cat:'NSAID',            dose:'500mg BD'                      },
+      { brand:'Hexidine',        generic:'Chlorhexidine Gluconate 0.2%',  maker:'Square Pharma',  form:'Mouthwash 150ml', price:'৳ 120/bottle',   cat:'Antiseptic',       dose:'10ml BD × 1 week'              },
+      { brand:'Oraldine',        generic:'Hexetidine 0.1%',               maker:'GSK',            form:'Mouthwash 200ml', price:'৳ 95/bottle',    cat:'Antiseptic',       dose:'15ml BD × 1 week'              },
+      { brand:'Lignox 2%',       generic:'Lignocaine HCl + Adrenaline',   maker:'Nuvista Pharma', form:'Vial 30ml',       price:'৳ 35/vial',      cat:'Local Anesthesia', dose:'1.8–3.6ml per infiltration'    },
+      { brand:'Septanest 4%',    generic:'Articaine + Epinephrine 1:100k',maker:'Septodont',      form:'Cartridge 1.7ml', price:'৳ 120/cartridge',cat:'Local Anesthesia', dose:'1–2 cartridges per session'    },
+      { brand:'Flucan 150',      generic:'Fluconazole 150mg',             maker:'Square Pharma',  form:'Capsule',         price:'৳ 35/cap',       cat:'Antifungal',       dose:'150mg single dose'             },
+    ];
+
+    const medCatItems = medCats.map(c => ({
+      label:c, chipStyle: chip(s.medCat === c),
+      onClick: () => this.setState({ medCat:c }),
+    }));
+
+    const mq = s.medSearch.toLowerCase();
+    const medItems = allMeds.filter(m =>
+      (s.medCat === 'All' || m.cat === s.medCat) &&
+      (!mq || m.brand.toLowerCase().includes(mq) || m.generic.toLowerCase().includes(mq))
+    );
+
+    // ── Templates ─────────────────────────────────────────────
+    const tplCats = ['All','Examination','Endodontic','Surgical','Prosthodontic','Periodontic'];
+    const allTpls = [
+      { id:'t1', title:'Initial Examination', cat:'Examination',
+        preview:'Chief complaint, dental & medical history, extra/intraoral findings, diagnosis, treatment plan.',
+        content:`CHIEF COMPLAINT: [CC]
+
+DENTAL HISTORY: [DH]
+
+MEDICAL HISTORY: [MH] / No significant medical history.
+
+EXTRA-ORAL:
+• Facial symmetry: Symmetrical / [asymmetry]
+• Lymph nodes: Not palpable / [findings]
+• TMJ: No clicks or crepitus / [findings]
+
+INTRA-ORAL:
+• Soft tissues: [findings]
+• Periodontal: BOP [X]%, PPD [summary]
+• Tooth #[FDI]: [specific findings]
+
+RADIOGRAPHIC FINDINGS (PA / OPG / CBCT):
+[findings]
+
+DIAGNOSIS: [description]
+
+TREATMENT PLAN:
+1. [Step 1]
+2. [Step 2]` },
+
+      { id:'t2', title:'Periapical Periodontitis', cat:'Endodontic',
+        preview:'Symptomatic/asymptomatic periapical periodontitis — PA findings, vitality, RCT procedure notes.',
+        content:`TOOTH: #[FDI]
+DIAGNOSIS: Symptomatic / Asymptomatic Periapical Periodontitis
+
+CLINICAL:
+• Complaint: [pain / swelling / incidental]
+• Percussion: Tender / Not tender
+• Palpation: Tender over apex / Negative
+• Swelling: Present [size] / Absent
+• Vitality (cold / EPT): No response / [result]
+• Probing depth: [X] mm
+
+RADIOGRAPHIC (PA dated [date]):
+• Periapical radiolucency ~[X]mm at #[FDI]
+• Root morphology: [straight / curved]
+• Est. working length: [X] mm
+
+PROCEDURE:
+• LA: Lignox 2% [X]ml — [technique]
+• Access cavity prepared; pulp chamber debrided
+• WL: [X]mm — apex locator confirmed + PA
+• Instrumentation: [file system] to size [X]/.04
+• Irrigation: 3% NaOCl → 17% EDTA → Saline
+• Obturation: [Cold lateral / Warm vertical] GP
+• Restoration: [Temporary / Composite / IRM]
+
+NEXT APPOINTMENT: [date]` },
+
+      { id:'t3', title:'CBCT Report — Single Tooth', cat:'Endodontic',
+        preview:'Root morphology, periapical status, bone quality, canal configuration (Vertucci), recommendation.',
+        content:`CBCT REPORT
+
+PATIENT: [Name], [Age]/[Sex]  |  ID: [PT-XXXX]
+DATE OF SCAN: [DD Mon YYYY]
+REGION: [Maxillary / Mandibular] — Tooth #[FDI]
+FOV / VOXEL: [Small / Medium] — [X]mm
+REFERRED BY: Dr. [Name]
+
+FINDINGS:
+
+1. ROOT MORPHOLOGY
+   Roots: [n]  |  Length: [X]mm  |  Curvature: [none/mild/mod/severe]
+   Canal configuration (Vertucci): Type [I / II / III / IV / V]
+
+2. PERIAPICAL STATUS
+   Lesion: Absent / Present — [X]mm × [Y]mm
+   Boundary: well-defined / ill-defined
+   Cortical plate: Intact / Perforated — buccal / palatal / lingual
+
+3. BONE
+   Alveolar height: [X]mm  |  Crestal loss: none / [X]mm
+
+4. ADDITIONAL FINDINGS
+   [Sinus proximity / root proximity / resorption / anatomical variants]
+
+IMPRESSION: [summary statement]
+
+RECOMMENDATION:
+[Orthograde RCT / Surgical endodontics / Extraction / Monitor]` },
+
+      { id:'t4', title:'Post-Extraction Instructions', cat:'Surgical',
+        preview:'Standard post-op care — diet, medications, and warning signs. Patient-facing language.',
+        content:`POST-EXTRACTION INSTRUCTIONS — Tooth #[FDI] — [date]
+
+FIRST 24 HOURS:
+✓ Bite firmly on the gauze for 30–45 minutes
+✓ Do NOT rinse, spit forcefully, or use a straw
+✓ No smoking for at least 48 hours
+✓ Avoid hot food/drinks; cold or lukewarm only
+✓ Soft diet (rice, yoghurt, dal) for 48–72 hours
+
+MEDICATIONS:
+□ [Napa 500] — 1 tab every 6 h as needed for pain
+□ [Brufen 400] — 1 tab TDS × 3 days, with food
+□ [Moxacil 500] — 1 cap TDS × 5 days (if prescribed)
+
+FROM DAY 2 ONWARDS:
+• Warm salt-water rinse (½ tsp in 1 glass water) — 3× daily
+• Gentle brushing — avoid the socket for 2–3 days
+• Mild oozing, swelling, and bruising for 2–3 days is normal
+
+CONTACT US IF:
+⚠ Bleeding not controlled after 1 hr of firm gauze pressure
+⚠ Severe throbbing pain after day 3–4 (possible dry socket)
+⚠ Fever above 38°C / chills
+⚠ Worsening swelling after 48 hours
+
+ClinicMx — Tel: [Phone]` },
+
+      { id:'t5', title:'Crown Preparation Notes', cat:'Prosthodontic',
+        preview:'Prep notes — LA, reduction, impression, temporization, lab request.',
+        content:`CROWN PREPARATION — CLINICAL NOTES
+
+TOOTH: #[FDI]  |  Restoration: [PFM / Zirconia / E.Max / PFMC]
+
+LOCAL ANAESTHESIA:
+• Agent: Lignox 2% [X]ml
+• Technique: [Buccal infiltration / IAN block / Palatal]
+• Onset: Adequate
+
+PREPARATION:
+• Existing restoration removed: [Yes — type] / Not applicable
+• Caries: Excavated / Not present
+• Occlusal reduction: [X]mm  |  Axial: [X]mm
+• Finish line: [Chamfer / Shoulder] — [supra / equi / subgingival]
+• Shade: [code] — VITA Classical / 3D-Master
+
+IMPRESSION:
+• Retraction cord #[size] — [X] min
+• Material: [Putty-wash impression] / [Digital scan]
+• Opposing: Alginate  |  Bite: [material]
+
+TEMPORISATION:
+• Temp crown: [Protemp / Acrylic]
+• Cement: [Freegenol / Cavit]
+
+LAB REQUEST: [PFM / Zirconia] crown — Tooth #[FDI]
+Shade: [X]  |  Margin: [chamfer / shoulder]
+Notes: [any additional lab instructions]
+
+NEXT: Cementation in [X] weeks — [date]` },
+
+      { id:'t6', title:'Scaling & Root Planing', cat:'Periodontic',
+        preview:'SRP notes with probing depths, instrumentation, post-op Hexidine, and review interval.',
+        content:`SCALING & ROOT PLANING — CLINICAL NOTES
+
+PROCEDURE: [Full mouth] / [Quadrant: Q1 / Q2 / Q3 / Q4]
+
+BASELINE:
+• Plaque score: [X]%  |  BOP: [X]%
+• Probing depths (mm): [summary or chart]
+• Calculus: [Supragingival / Subgingival] — [light / moderate / heavy]
+
+ANAESTHESIA: [None] / [Topical gel] / [Lignox 2% [X]ml]
+
+INSTRUMENTATION:
+• Ultrasonic: [Piezon / Cavitron] — power [setting]
+• Hand instruments: Gracey curettes [sizes]
+• Duration: [X] minutes
+
+POST-OP INSTRUCTIONS:
+• Hexidine mouthwash (0.2% chlorhexidine): 10ml BD × 1 week — undiluted
+• Warm salt-water rinse: TDS × 1 week
+• Soft diet today; normal diet after 24 h
+• Analgesic if needed: Napa 500 PRN
+
+REVIEW: [4–6] weeks
+Assess: plaque control, BOP, PPD response, further SRP or surgical referral` },
+    ];
+
+    const tplCatItems = tplCats.map(c => ({
+      label:c, chipStyle: chip(s.tplCat === c),
+      onClick: () => this.setState({ tplCat:c }),
+    }));
+
+    const tq = s.tplSearch.toLowerCase();
+    const tplItems = allTpls
+      .filter(t =>
+        (s.tplCat === 'All' || t.cat === s.tplCat) &&
+        (!tq || t.title.toLowerCase().includes(tq) || t.preview.toLowerCase().includes(tq))
+      )
+      .map(t => ({
+        ...t,
+        isExpanded: s.tplExpand === t.id,
+        onToggle: () => this.setState({ tplExpand: s.tplExpand === t.id ? null : t.id }),
+        chevron: s.tplExpand === t.id ? '18 15 12 9 6 15' : '6 9 12 15 18 9',
+      }));
+
+    // ── Doctor profile ────────────────────────────────────────
+    const dp = s.doctorProfile;
+    const docName     = dp ? (dp.full_name || 'Doctor') : 'Doctor';
+    const docInitials = ini(docName);
+    const docRole     = dp ? ((dp.designation || 'Dentist') + ' · Admin') : 'Dentist · Admin';
+
+    // ── Recent activity (last 5 patients added) ───────────────
+    const actColors = ['#1A5FA8','#0F9B8E','#8B5CF6','#F59E0B','#6B7280'];
+    const recentActivity = s.patientsData.slice(0, 5).map((p, idx) => {
+      const name = ((p.first_name || '') + ' ' + (p.last_name || '')).trim();
+      const pid  = p.patient_code ? ' (' + p.patient_code + ')' : '';
+      const when = p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+      return {
+        name: name + pid,
+        detail: ' — new patient registered',
+        when,
+        accentColor: actColors[idx % actColors.length],
+      };
+    });
+
+    return {
+      // Nav
+      goHome: go('dashboard'), goPatients: go('patients'),
+      goAppts: go('appointments'), goMeds: go('medications'), goTemplates: go('templates'),
+      navDash: ns('dashboard'), navPats: ns('patients'),
+      navAppts: ns('appointments'), navMeds: ns('medications'), navTpls: ns('templates'),
+      // Meta
+      dateStr,
+      patCountSub,
+      docInitials, docName, docRole,
+      recentActivity,
+      // Screens
+      showDash:      s.screen === 'dashboard',
+      showPatients:  s.screen === 'patients',
+      showProfile:   s.screen === 'profile',
+      showAppts:     s.screen === 'appointments',
+      showMeds:      s.screen === 'medications',
+      showTemplates: s.screen === 'templates',
+      pageTitle: pages[s.screen] || 'ClinicMx',
+      // Data
+      stats, appointments, patients,
+      // Tooth chart
+      q1, q2, q3, q4,
+      showToothPanel:    !!s.tooth,
+      selectedToothNum:  s.tooth,
+      selectedToothLabel: selSt ? ST[selSt].label : '',
+      statusOptions,
+      // Profile
+      profile, profileTabs,
+      showChartTab:   s.tab === 'chart',
+      showHistoryTab: s.tab === 'history',
+      showInfoTab:    s.tab === 'info',
+      // Medications
+      medSearch: s.medSearch,
+      setMedSearch: e => this.setState({ medSearch: e.target.value }),
+      medCatItems, medItems,
+      // Templates
+      tplSearch: s.tplSearch,
+      setTplSearch: e => this.setState({ tplSearch: e.target.value }),
+      tplCatItems, tplItems,
+    };
+  }
+}
+</script>
+</body>
+</html>

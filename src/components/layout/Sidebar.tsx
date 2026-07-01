@@ -1,12 +1,15 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X, UserCircle } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X, UserCircle, Sparkles } from 'lucide-react'
 
 interface SidebarProps {
   isOpen: boolean
   onClose: () => void
+  onNavClick: () => void
+  designPreview: boolean
+  onToggleDesignPreview: () => void
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDesignPreview }: SidebarProps) {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Users, label: 'Patients', path: '/patients' },
@@ -59,7 +62,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <NavLink
                 key={item.path}
                 to={item.path}
-                onClick={onClose}
+                onClick={onNavClick}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
                     isActive
@@ -77,7 +80,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="pt-3 mt-2 border-t border-gray-200">
               <NavLink
                 to="/doctor-profile"
-                onClick={onClose}
+                onClick={onNavClick}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
                     isActive
@@ -92,7 +95,21 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
           </nav>
 
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-200 space-y-2">
+            <button
+              onClick={onToggleDesignPreview}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-150 text-sm font-medium ${
+                designPreview
+                  ? 'bg-gradient-to-r from-primary to-primary-hover text-white shadow-elevation-low'
+                  : 'text-text-secondary hover:bg-primary/5 hover:text-primary border border-dashed border-gray-300'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 flex-shrink-0" />
+              <span>Design Preview</span>
+              <span className={`ml-auto text-xs rounded px-1.5 py-0.5 font-semibold ${
+                designPreview ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-400'
+              }`}>{designPreview ? 'ON' : 'OFF'}</span>
+            </button>
             <div className="text-xs text-text-secondary">
               <p>Version 1.0.1</p>
               <p className="mt-1">© 2026 ClinicMx</p>
