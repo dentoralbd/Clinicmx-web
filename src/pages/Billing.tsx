@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import {
   buildInvoiceItemPreview,
+  extractTreatmentIdsFromInvoiceItems,
   formatInvoiceItemLabel,
   getInvoiceItemLineTotal,
   getInvoiceItemSubtotal,
@@ -15,12 +16,13 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Mail,
+  MoreVertical,
+  Printer,
   Settings,
   BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
-import { AdvancedInvoiceModal } from '@/components/AdvancedInvoiceModal'
 import { InvoiceTemplateSelector } from '@/components/InvoiceTemplateSelector'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
@@ -59,18 +61,35 @@ export function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [showBasicModal, setShowBasicModal] = useState(false)
-  const [showAdvancedModal, setShowAdvancedModal] = useState(false)
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
   const [showReports, setShowReports] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [showPendingPatients, setShowPendingPatients] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<InvoiceTemplateData | null>(null)
-  const [selectedInvoiceType, setSelectedInvoiceType] = useState<'basic' | 'advanced'>('basic')
   const [filter, setFilter] = useState<string>('all')
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
+  const [pendingPatients, setPendingPatients] = useState<Array<{ patient_id: string; name: string; count: number }>>([])
+  const [preselectedPatientId, setPreselectedPatientId] = useState('')
 
   useEffect(() => {
     loadInvoices()
+    loadPendingPatients()
   }, [])
+
+  useEffect(() => {
+    if (!showMoreMenu) return
+    const handler = () => setShowMoreMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showMoreMenu])
+
+  useEffect(() => {
+    if (!showPendingPatients) return
+    const handler = () => setShowPendingPatients(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showPendingPatients])
 
   async function loadInvoices() {
     try {
@@ -86,6 +105,65 @@ export function Billing() {
       console.error('Error loading invoices:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadPendingPatients() {
+    interface PendingTreatmentRow {
+      id: string
+      patient_id: string | null
+      invoice_id?: string | null
+      patients: { first_name: string; last_name: string } | null
+    }
+
+    function groupByPatient(rows: PendingTreatmentRow[]) {
+      const map = new Map<string, { name: string; count: number }>()
+      for (const row of rows) {
+        if (!row.patient_id) continue
+        const name = row.patients
+          ? `${row.patients.first_name} ${row.patients.last_name}`.trim()
+          : 'Unknown patient'
+        const existing = map.get(row.patient_id)
+        if (existing) {
+          existing.count += 1
+        } else {
+          map.set(row.patient_id, { name, count: 1 })
+        }
+      }
+      return Array.from(map.entries()).map(([patient_id, { name, count }]) => ({ patient_id, name, count }))
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('treatments')
+        .select('id, patient_id, invoice_id, patients (first_name, last_name)')
+        .eq('is_invoiced', false)
+
+      if (error) throw error
+
+      setPendingPatients(groupByPatient(((data || []) as PendingTreatmentRow[]).filter((row) => !row.invoice_id)))
+    } catch {
+      // treatments.is_invoiced / invoice_id are added by a later migration —
+      // fall back to cross-referencing treatment ids stored in invoice items
+      try {
+        const [{ data: treatmentsData, error: treatmentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+          supabase.from('treatments').select('id, patient_id, patients (first_name, last_name)'),
+          supabase.from('invoices').select('items'),
+        ])
+
+        if (treatmentsError) throw treatmentsError
+        if (invoicesError) throw invoicesError
+
+        const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+          (invoicesData || []).flatMap((invoice: { items?: unknown }) => (Array.isArray(invoice.items) ? invoice.items : []))
+        )
+
+        setPendingPatients(
+          groupByPatient(((treatmentsData || []) as PendingTreatmentRow[]).filter((row) => !linkedTreatmentIds.has(row.id)))
+        )
+      } catch {
+        setPendingPatients([])
+      }
     }
   }
 
@@ -204,16 +282,46 @@ export function Billing() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={selectedInvoiceType}
-            onChange={(e) => setSelectedInvoiceType(e.target.value as 'basic' | 'advanced')}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="basic">Basic Invoice</option>
-            <option value="advanced">Advanced Invoice</option>
-          </select>
-
-          <Button variant="outline" onClick={() => setShowTemplateSelector(true)}>Quick Invoice</Button>
+          <Button onClick={() => setShowBasicModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Invoice
+          </Button>
+          <Button variant="outline" onClick={() => setShowTemplateSelector(true)}>From Template</Button>
+          {pendingPatients.length > 0 && (
+            <div className="relative">
+              <Button
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowPendingPatients((v) => !v)
+                }}
+                className="border-amber-300 text-amber-900 hover:bg-amber-50"
+              >
+                <Clock className="w-4 h-4 mr-1" />
+                Unbilled Treatments ({pendingPatients.length})
+              </Button>
+              {showPendingPatients && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-amber-200 rounded-lg shadow-lg z-20 min-w-64 p-3">
+                  <div className="flex flex-wrap gap-2">
+                    {pendingPatients.map(({ patient_id, name, count }) => (
+                      <button
+                        key={patient_id}
+                        type="button"
+                        onClick={() => {
+                          setPreselectedPatientId(patient_id)
+                          setShowBasicModal(true)
+                          setShowPendingPatients(false)
+                        }}
+                        className="px-2.5 py-1 bg-amber-50 border border-amber-300 rounded-full text-xs font-medium text-amber-900 hover:bg-amber-100 transition-colors"
+                      >
+                        {name} ({count})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <Button variant="outline" onClick={() => setShowReports((prev) => !prev)}>
             <BarChart3 className="w-4 h-4 mr-1" />
             Reports
@@ -222,15 +330,42 @@ export function Billing() {
             <Settings className="w-4 h-4 mr-1" />
             Settings
           </Button>
-          <Button variant="outline" onClick={exportInvoices}>
-            <FileSpreadsheet className="w-4 h-4 mr-1" />
-            Export
-          </Button>
-          <Button variant="outline" onClick={() => window.print()}>Print</Button>
-          <Button onClick={() => (selectedInvoiceType === 'advanced' ? setShowAdvancedModal(true) : setShowBasicModal(true))}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Invoice
-          </Button>
+          <div className="relative">
+            <Button
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowMoreMenu((v) => !v)
+              }}
+              aria-label="More actions"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-36">
+                <button
+                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    exportInvoices()
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export CSV
+                </button>
+                <button
+                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    window.print()
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -306,13 +441,12 @@ export function Billing() {
 
       {showTemplateSelector && (
         <InvoiceTemplateSelector
-          invoiceType={selectedInvoiceType}
+          invoiceType="basic"
           onClose={() => setShowTemplateSelector(false)}
           onSelectTemplate={(template) => {
             setSelectedTemplate(template)
             setShowTemplateSelector(false)
-            if (selectedInvoiceType === 'advanced') setShowAdvancedModal(true)
-            else setShowBasicModal(true)
+            setShowBasicModal(true)
           }}
         />
       )}
@@ -321,29 +455,18 @@ export function Billing() {
         <InvoiceModal
           invoiceType="basic"
           template={selectedTemplate}
+          defaultPatientId={preselectedPatientId}
           onClose={() => {
             setShowBasicModal(false)
             setSelectedTemplate(null)
+            setPreselectedPatientId('')
           }}
           onSave={() => {
             loadInvoices()
+            loadPendingPatients()
             setShowBasicModal(false)
             setSelectedTemplate(null)
-          }}
-        />
-      )}
-
-      {showAdvancedModal && (
-        <AdvancedInvoiceModal
-          template={selectedTemplate}
-          onClose={() => {
-            setShowAdvancedModal(false)
-            setSelectedTemplate(null)
-          }}
-          onSave={() => {
-            loadInvoices()
-            setShowAdvancedModal(false)
-            setSelectedTemplate(null)
+            setPreselectedPatientId('')
           }}
         />
       )}
