@@ -2058,6 +2058,7 @@ export function PatientProfile() {
         <PrescriptionPrint
           prescription={{
             id: printingPrescription.id,
+            patient_id: printingPrescription.patient_id || patient.id,
             prescribed_date: printingPrescription.prescribed_date || new Date().toISOString(),
             chief_complaint: printingPrescription.chief_complaint || '',
             chief_complaint_entries: printingPrescription.chief_complaint_entries,

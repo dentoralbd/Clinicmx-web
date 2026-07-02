@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, X, UserCircle, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, Sparkles } from 'lucide-react'
 
 interface SidebarProps {
   isOpen: boolean
@@ -17,6 +17,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
     { icon: FileText, label: 'Prescriptions', path: '/prescriptions' },
     { icon: DollarSign, label: 'Billing', path: '/billing' },
     { icon: Package, label: 'Inventory', path: '/inventory' },
+    { icon: QrCode, label: 'QR Search', path: '/qr-search' },
   ]
 
   return (

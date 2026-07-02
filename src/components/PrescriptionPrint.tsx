@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
+import { QRCodeSVG } from 'qrcode.react'
+import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 import { type ClinicalEntry } from '@/lib/clinicalEntries'
 
@@ -25,6 +27,7 @@ function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?
 interface PrescriptionPrintProps {
   prescription: {
     id?: string
+    patient_id?: string
     prescribed_date: string
     chief_complaint?: string
     chief_complaint_entries?: ClinicalEntry[]
@@ -81,6 +84,17 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   const filteredInvs = prescription.investigations.filter((i) => i.name?.trim())
   const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
   const checkedHistoryLabels = historyChecks.filter((item) => item.checked).map((item) => item.label)
+
+  const qrPayload =
+    prescription.id && prescription.patient_id
+      ? buildPrescriptionQrPayload({
+          patientId: prescription.patient_id,
+          patientCode: patient.patient_code,
+          patientName: `${patient.first_name} ${patient.last_name}`.trim(),
+          prescriptionId: prescription.id,
+          prescribedDate: prescription.prescribed_date,
+        })
+      : null
 
   const originalTitleRef = useRef('')
 
@@ -310,7 +324,17 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         <div className="prescription-print-footer mt-8 print:mt-0">
           <div className="flex justify-between items-end border-t border-gray-300 pt-4">
             <div className="text-sm text-gray-500">
-              Follow-up: ___________________
+              <div>Follow-up: ___________________</div>
+              {qrPayload && (
+                <div className="mt-3">
+                  <QRCodeSVG value={qrPayload} size={72} />
+                  {prescription.id && (
+                    <div className="text-[9px] text-gray-400 mt-1">
+                      Prescription ID: {prescription.id.slice(0, 8).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="text-right">
               <div className="border-t border-gray-800 w-40 mb-1" />
@@ -324,12 +348,6 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               )}
             </div>
           </div>
-
-          {prescription.id && (
-            <div className="mt-3 pt-2 border-t border-gray-200 text-center text-xs text-gray-400">
-              Prescription ID: {prescription.id.slice(0, 8).toUpperCase()}
-            </div>
-          )}
         </div>
       </div>
     </div>
