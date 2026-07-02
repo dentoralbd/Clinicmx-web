@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
 import { QRCodeSVG } from 'qrcode.react'
 import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
+import { cleanLogoSource } from '@/lib/logoImage'
 import { type ClinicalEntry } from '@/lib/clinicalEntries'
 
 function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
@@ -66,6 +67,7 @@ interface PrescriptionPrintProps {
     phone?: string
     email?: string
     bmdc_reg?: string
+    logo_data?: string
   }
   onClose: () => void
 }
@@ -95,6 +97,24 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
           prescribedDate: prescription.prescribed_date,
         })
       : null
+
+  // Uploaded logos are cleaned at upload time; the bundled default needs its
+  // light background stripped here so it blends into the printed page.
+  const [logoSrc, setLogoSrc] = useState(doctor.logo_data || '/logo.png')
+
+  useEffect(() => {
+    if (doctor.logo_data) {
+      setLogoSrc(doctor.logo_data)
+      return
+    }
+    let cancelled = false
+    cleanLogoSource('/logo.png').then((src) => {
+      if (!cancelled) setLogoSrc(src)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doctor.logo_data])
 
   const originalTitleRef = useRef('')
 
@@ -145,36 +165,53 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         className="prescription-print-container bg-white w-full max-w-3xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
-        {/* ── Letterhead (doctor + chamber info) ── */}
+        {/* ── Letterhead: doctor (left) · logo (center) · practice (right) ── */}
         <div className="border-b-2 border-gray-800 pb-4 mb-4">
-          <div className="flex justify-between items-start">
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-4 items-start">
+            {/* Left — doctor information */}
             <div>
               <div className="text-xl font-bold text-gray-900 leading-tight">
                 {doctor.full_name
                   ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
                   : 'Doctor Name'}
               </div>
-              {doctor.degrees && (
-                <div className="text-sm text-gray-600 mt-0.5">{doctor.degrees}</div>
-              )}
+              {doctor.degrees &&
+                doctor.degrees
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line, idx) => (
+                    <div key={idx} className="text-sm text-gray-600 mt-0.5">{line}</div>
+                  ))}
               {doctor.designation && (
                 <div className="text-sm font-semibold text-gray-700 mt-0.5">{doctor.designation}</div>
               )}
+              {doctor.bmdc_reg && (
+                <div className="text-xs text-gray-500 mt-1">BMDC Reg: {doctor.bmdc_reg}</div>
+              )}
+            </div>
+            {/* Center — clinic logo */}
+            <div className="self-center px-2">
+              <img
+                src={logoSrc}
+                alt="Clinic logo"
+                style={{ height: 96, width: 'auto', maxWidth: 180, objectFit: 'contain', mixBlendMode: 'multiply' }}
+              />
+            </div>
+            {/* Right — practice information */}
+            <div className="text-right">
               {doctor.workplace && (
-                <div className="text-sm text-gray-600 mt-0.5">{doctor.workplace}</div>
+                <div className="text-base font-bold text-gray-800 leading-tight">{doctor.workplace}</div>
               )}
               {doctor.clinic_address && (
-                <div className="text-xs text-gray-500 mt-0.5">{doctor.clinic_address}</div>
+                <div className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{doctor.clinic_address}</div>
               )}
-              <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
-                {doctor.bmdc_reg && <span>BMDC Reg: {doctor.bmdc_reg}</span>}
-                {doctor.phone && <span className="font-semibold text-gray-700">Ph: {doctor.phone}</span>}
-                {doctor.email && <span>Email: {doctor.email}</span>}
-              </div>
-            </div>
-            <div className="text-right text-sm text-gray-600">
-              <div className="font-medium">Date:</div>
-              <div>{format(new Date(prescription.prescribed_date), 'dd MMM yyyy')}</div>
+              {doctor.phone && (
+                <div className="text-xs font-semibold text-gray-700 mt-1">Ph: {doctor.phone}</div>
+              )}
+              {doctor.email && (
+                <div className="text-xs text-gray-500 mt-0.5">Email: {doctor.email}</div>
+              )}
             </div>
           </div>
         </div>
@@ -204,6 +241,10 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                 <span className="font-semibold">ID:</span> {patient.patient_code}
               </div>
             )}
+            <div className="ml-auto">
+              <span className="font-semibold">Date:</span>{' '}
+              {format(new Date(prescription.prescribed_date), 'dd MMM yyyy')}
+            </div>
           </div>
         </div>
 
