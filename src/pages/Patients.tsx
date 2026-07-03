@@ -374,7 +374,15 @@ export function Patients() {
                     min={0}
                     max={130}
                     value={formData.age}
-                    onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      const parsed = Number.parseInt(value, 10)
+                      const derivedDob =
+                        value.trim() && !Number.isNaN(parsed) && parsed >= 0
+                          ? deriveDateOfBirthFromAge(parsed)
+                          : formData.date_of_birth
+                      setFormData({ ...formData, age: value, date_of_birth: derivedDob })
+                    }}
                     required={!formData.date_of_birth}
                     placeholder="Enter age if DOB is unknown"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
