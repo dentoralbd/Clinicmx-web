@@ -376,6 +376,17 @@ export function PatientProfile() {
     }
   }
 
+  async function updateTreatmentStatus(treatmentId: string, newStatus: string) {
+    try {
+      const { error } = await supabase.from('treatments').update({ status: newStatus }).eq('id', treatmentId)
+      if (error) throw error
+      setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, status: newStatus } : t)))
+    } catch (error) {
+      console.error('Error updating treatment status:', error)
+      alert('Failed to update treatment status')
+    }
+  }
+
   function seedMedicalHistoryForm() {
     const { items, other } = getMedicalHistoryChecks(patient?.medical_history)
     setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
@@ -1518,13 +1529,21 @@ export function PatientProfile() {
                   </td>
                   <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                      treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {treatment.status}
-                    </span>
+                    <select
+                      value={treatment.status}
+                      onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
+                      className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
+                        treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                        treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                        treatment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      <option value="Planned">Planned</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
                   </td>
                   <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
                   <td className="px-4 py-3 text-sm">
