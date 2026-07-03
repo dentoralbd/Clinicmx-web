@@ -65,6 +65,7 @@ const CATEGORY_META: Record<
   Anxiolytic: { bg: '#FBEAF0', text: '#993556' },
   Steroid: { bg: '#E6F1FB', text: '#185FA5' },
   Antifibrinolytic: { bg: '#FDECEC', text: '#A12B2B' },
+  'Anti-ulcerant': { bg: '#E9F7F1', text: '#1F7A5C' },
 }
 
 const CATEGORY_ORDER: BDDrug['category'][] = [
@@ -78,6 +79,7 @@ const CATEGORY_ORDER: BDDrug['category'][] = [
   'Anxiolytic',
   'Steroid',
   'Antifibrinolytic',
+  'Anti-ulcerant',
 ]
 
 interface IndexedDrug {
@@ -90,11 +92,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
 
-  const visibleDrugs = useMemo(() => {
-    if (value.trim()) {
-      return searchDrugs(value)
-    }
-
+  const defaultDrugList = useMemo(() => {
     return [...DENTAL_DRUGS].sort((a, b) => {
       const categoryCompare = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
       if (categoryCompare !== 0) return categoryCompare
@@ -104,7 +102,26 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
 
       return a.brand.localeCompare(b.brand)
     })
-  }, [value])
+  }, [])
+
+  const visibleDrugs = useMemo(() => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return defaultDrugList
+    }
+
+    const results = searchDrugs(trimmed)
+    if (results.length > 0) {
+      return results
+    }
+
+    // The field's value can be an already-selected drug's formatted display name
+    // (e.g. "Tab. Rofuclav 250mg/125mg"), which won't substring-match the raw
+    // brand/generic data. Fall back to the full directory instead of showing
+    // a false "no drugs found" when that's the case.
+    const isFormattedSelection = defaultDrugList.some((drug) => formatDrugName(drug) === trimmed)
+    return isFormattedSelection ? defaultDrugList : results
+  }, [value, defaultDrugList])
 
   const groupedDrugs = useMemo(() => {
     const indexed: IndexedDrug[] = visibleDrugs.map((drug, index) => ({ drug, index }))
