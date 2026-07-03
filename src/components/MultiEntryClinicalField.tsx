@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Lightbulb, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ToothSelector } from '@/components/ToothSelector'
+import { QuadrantSelector } from '@/components/QuadrantSelector'
 import { type ClinicalEntry, createEmptyEntry } from '@/lib/clinicalEntries'
 import { getMemory } from '@/lib/prescriptionMemory'
 import type { SectionTemplate } from '@/lib/prescriptionSectionTemplates'
@@ -23,6 +24,12 @@ interface MultiEntryClinicalFieldProps {
   helperText?: string
   templates?: TemplatesConfig
   memoryKey?: string
+  // Teeth already mentioned in earlier sections (e.g. On Examination), offered
+  // as one-tap chips on each entry so the same tooth needn't be re-picked.
+  suggestedTeeth?: number[]
+  // 'quadrant' picks a dental quadrant instead of an individual tooth — used for
+  // Chief Complaint, which is usually described by area rather than an exact tooth.
+  pickerMode?: 'tooth' | 'quadrant'
 }
 
 export function MultiEntryClinicalField({
@@ -33,6 +40,8 @@ export function MultiEntryClinicalField({
   helperText,
   templates,
   memoryKey,
+  suggestedTeeth,
+  pickerMode = 'tooth',
 }: MultiEntryClinicalFieldProps) {
   function updateEntry(id: string, patch: Partial<ClinicalEntry>) {
     onChange(entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)))
@@ -113,7 +122,30 @@ export function MultiEntryClinicalField({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
             />
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <ToothSelector selectedTeeth={entry.teeth} onChange={(teeth) => updateEntry(entry.id, { teeth })} />
+              {pickerMode === 'quadrant' ? (
+                <QuadrantSelector
+                  selectedQuadrants={entry.quadrants ?? []}
+                  onChange={(quadrants) => updateEntry(entry.id, { quadrants })}
+                />
+              ) : (
+                <ToothSelector selectedTeeth={entry.teeth} onChange={(teeth) => updateEntry(entry.id, { teeth })} />
+              )}
+              {suggestedTeeth &&
+                suggestedTeeth
+                  .filter((num) => !entry.teeth.includes(num))
+                  .map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      title="Suggested from earlier in this prescription — click to add"
+                      onClick={() =>
+                        updateEntry(entry.id, { teeth: [...entry.teeth, num].sort((a, b) => a - b) })
+                      }
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] rounded-full border border-dashed border-primary/40 text-primary/70 hover:bg-primary/10 hover:text-primary transition-colors"
+                    >
+                      + {num}
+                    </button>
+                  ))}
               {templates && (
                 <button
                   type="button"

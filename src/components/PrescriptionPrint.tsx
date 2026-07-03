@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 import { cleanLogoSource } from '@/lib/logoImage'
-import { type ClinicalEntry } from '@/lib/clinicalEntries'
+import { type ClinicalEntry, quadrantAbbr } from '@/lib/clinicalEntries'
 
 function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
   const filled = (entries || []).filter((entry) => entry.text.trim())
@@ -16,6 +16,9 @@ function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?
           <li key={entry.id} className="text-gray-700">
             {entry.text}
             {entry.teeth.length > 0 && <span className="text-gray-500"> — Teeth: {entry.teeth.join(', ')}</span>}
+            {entry.quadrants && entry.quadrants.length > 0 && (
+              <span className="text-gray-500"> — Quadrant: {entry.quadrants.map(quadrantAbbr).join(', ')}</span>
+            )}
           </li>
         ))}
       </ul>

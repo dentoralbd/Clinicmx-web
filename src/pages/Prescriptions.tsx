@@ -28,7 +28,7 @@ import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
-import { type ClinicalEntry, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
+import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
 import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
@@ -448,6 +448,7 @@ export function Prescriptions() {
         frequency: template.frequency || '',
         duration: template.duration || '',
         instructions: template.instructions || '',
+        route: template.route || '',
       }
     } else {
       newMeds.push({
@@ -456,6 +457,7 @@ export function Prescriptions() {
         frequency: template.frequency || '',
         duration: template.duration || '',
         instructions: template.instructions || '',
+        route: template.route || '',
       })
     }
     setFormData({ ...formData, medications: newMeds })
@@ -469,11 +471,13 @@ export function Prescriptions() {
       newInvs[emptyIndex] = {
         name: template.name,
         description: template.description || '',
+        urgency: template.urgency || 'Routine',
       }
     } else {
       newInvs.push({
         name: template.name,
         description: template.description || '',
+        urgency: template.urgency || 'Routine',
       })
     }
     setFormData({ ...formData, investigations: newInvs })
@@ -484,7 +488,7 @@ export function Prescriptions() {
     setFormData({
       ...formData,
       medications: template.value.length > 0
-        ? template.value.map((item) => ({ ...item }))
+        ? template.value.map((item) => ({ ...item, route: item.route ?? '' }))
         : [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
     })
     setShowMedTemplates(false)
@@ -494,7 +498,7 @@ export function Prescriptions() {
     setFormData({
       ...formData,
       investigations: template.value.length > 0
-        ? template.value.map((item) => ({ ...item }))
+        ? template.value.map((item) => ({ ...item, urgency: item.urgency ?? 'Routine' }))
         : [{ name: '', description: '', urgency: 'Routine' }],
     })
     setShowInvTemplates(false)
@@ -537,6 +541,7 @@ export function Prescriptions() {
       frequency: med.frequency || '',
       duration: med.duration || '',
       instructions: med.instructions || '',
+      route: med.route || '',
     }
     if (emptyIndex >= 0) {
       newMeds[emptyIndex] = item
@@ -552,6 +557,7 @@ export function Prescriptions() {
     const item = {
       name: inv.name || '',
       description: inv.description || '',
+      urgency: inv.urgency || 'Routine',
     }
     if (emptyIndex >= 0) {
       newInvs[emptyIndex] = item
@@ -909,6 +915,7 @@ export function Prescriptions() {
                 onChange={(entries) => setFormData({ ...formData, chief_complaint_entries: entries })}
                 placeholder="e.g., Toothache, Bleeding gums, Sensitivity to cold..."
                 memoryKey={MEMORY_KEYS.COMPLAINTS}
+                pickerMode="quadrant"
                 templates={{
                   list: complaintTemplates,
                   show: showComplaintTemplates,
@@ -943,6 +950,7 @@ export function Prescriptions() {
                 onChange={(entries) => setFormData({ ...formData, diagnosis_entries: entries })}
                 placeholder="Enter diagnosis"
                 helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
+                suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries])}
               />
 
               {/* ── Treatment Plan ── */}
@@ -952,6 +960,7 @@ export function Prescriptions() {
                 onChange={(entries) => setFormData({ ...formData, treatment_plan_entries: entries })}
                 placeholder="e.g., RCT + Cap"
                 helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
+                suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
               />
 
               {/* ── Medications ── */}
