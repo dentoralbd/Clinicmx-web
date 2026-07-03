@@ -21,10 +21,8 @@ function MiniTooth({ number, selected, onClick }: MiniToothProps) {
       title={`Tooth ${number}`}
     >
       <svg
-        width={20}
-        height={30}
         viewBox="0 0 32 48"
-        className={`transition-colors ${
+        className={`w-4 h-6 sm:w-5 sm:h-[30px] transition-colors ${
           selected
             ? 'fill-primary/20 stroke-primary'
             : 'fill-gray-50 stroke-gray-300 group-hover:stroke-primary/50'
@@ -59,14 +57,14 @@ export function ToothSelector({ selectedTeeth, onChange }: ToothSelectorProps) {
   }
 
   const renderQuadrantRow = (left: number[], right: number[]) => (
-    <div className="flex justify-center items-center gap-0.5">
-      <div className="flex gap-0.5">
+    <div className="flex justify-center items-center gap-px sm:gap-0.5">
+      <div className="flex gap-px sm:gap-0.5">
         {left.map((num) => (
           <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
         ))}
       </div>
-      <div className="w-px h-8 bg-gray-300 mx-1" />
-      <div className="flex gap-0.5">
+      <div className="w-px h-8 bg-gray-300 mx-0.5 sm:mx-1" />
+      <div className="flex gap-px sm:gap-0.5">
         {right.map((num) => (
           <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
         ))}
@@ -106,7 +104,7 @@ export function ToothSelector({ selectedTeeth, onChange }: ToothSelectorProps) {
       )}
 
       {open && (
-        <div className="absolute z-20 mt-2 p-3 bg-white rounded-xl border border-gray-200 shadow-lg w-max">
+        <div className="absolute left-0 z-20 mt-2 p-2 sm:p-3 bg-white rounded-xl border border-gray-200 shadow-lg w-max max-w-[calc(100vw-2.5rem)] overflow-x-auto">
           <div className="flex justify-between mb-2">
             <button type="button" onClick={() => setOpen(false)} className="ml-auto text-xs text-gray-400 hover:text-gray-600">
               Close

@@ -1223,8 +1223,8 @@ export function PatientProfile() {
     ) => (
       <div className="mb-1">
         <p className="text-xs text-text-secondary text-center mb-1">{label}</p>
-        <div className="flex justify-center items-center gap-0.5">
-          <div className="flex gap-0.5">
+        <div className="flex justify-center items-center gap-px sm:gap-0.5">
+          <div className="flex gap-px sm:gap-0.5">
             {leftQuadrant.map((num) => {
               const condition = getToothCondition(num)
               return (
@@ -1239,8 +1239,8 @@ export function PatientProfile() {
               )
             })}
           </div>
-          <div className="w-px h-10 bg-gray-300 mx-1" />
-          <div className="flex gap-0.5">
+          <div className="w-px h-10 bg-gray-300 mx-0.5 sm:mx-1" />
+          <div className="flex gap-px sm:gap-0.5">
             {rightQuadrant.map((num) => {
               const condition = getToothCondition(num)
               return (
@@ -1289,14 +1289,14 @@ export function PatientProfile() {
           )}
         </div>
 
-        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6">
           <h3 className="font-semibold mb-1 text-center">Dental Chart</h3>
           <p className="text-xs text-text-secondary text-center mb-5">
             {patientAge !== null ? `Age ${patientAge} · ` : ''}{dentitionLabel[dentitionType]}
           </p>
 
           <div className="overflow-x-auto">
-            <div className="min-w-[360px]">
+            <div className="min-w-max">
               {/* Labels row */}
               <div className="flex justify-between text-xs text-text-secondary mb-1 px-4">
                 <span>Patient's Right</span>
@@ -2441,11 +2441,10 @@ function EmptyState({ message }: any) {
 }
 
 function Tooth({ number, condition, color, onClick, small }: any) {
-  const w = small ? 24 : 32
-  const h = small ? 36 : 48
+  const sizeClasses = small ? 'w-4 h-6 sm:w-6 sm:h-9' : 'w-[18px] h-[27px] sm:w-8 sm:h-12'
   return (
     <div className="flex flex-col items-center cursor-pointer group" onClick={onClick} title={condition}>
-      <svg width={w} height={h} viewBox="0 0 32 48" className={`${color} group-hover:opacity-75 transition-opacity`}>
+      <svg viewBox="0 0 32 48" className={`${sizeClasses} ${color} group-hover:opacity-75 transition-opacity`}>
         <path
           d="M16 2 C10 2, 6 6, 6 12 C6 18, 8 24, 10 32 C11 36, 12 42, 16 46 C20 42, 21 36, 22 32 C24 24, 26 18, 26 12 C26 6, 22 2, 16 2 Z"
           strokeWidth="2"
