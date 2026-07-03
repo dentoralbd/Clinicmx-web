@@ -197,20 +197,15 @@ export function buildLegacySafeInvoicePayload({
   status: string
   dueDate?: string | null
 }) {
-  const payload: Record<string, unknown> = {
+  return {
     patient_id: patientId,
     items: items as unknown as Json,
     total_amount: roundCurrency(totalAmount),
     paid_amount: roundCurrency(paidAmount),
     status,
     due_date: dueDate || null,
+    ...(appointmentId ? { appointment_id: appointmentId } : {}),
   }
-
-  if (appointmentId) {
-    payload.appointment_id = appointmentId
-  }
-
-  return payload
 }
 
 export function getFriendlySupabaseErrorMessage(error: unknown) {

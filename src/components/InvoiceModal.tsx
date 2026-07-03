@@ -406,7 +406,13 @@ export function InvoiceModal({
     const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
     let paymentStored = false
     let paymentSchemaError: unknown = null
-    const paymentPayloads = [
+    const paymentPayloads: Array<{
+      invoice_id: string
+      amount: number
+      payment_method?: string
+      payment_date?: string
+      notes?: string | null
+    }> = [
       {
         invoice_id: invoiceId,
         amount,

@@ -10,7 +10,13 @@ export interface InvoiceTemplateData {
   name: string
   description: string | null
   invoice_type: string
-  items: Array<{ description: string; amount: number | string }>
+  items: Array<{
+    description: string
+    amount: number | string
+    quantity?: number | string
+    unit_price?: number | string
+    line_total?: number | string
+  }>
   discount_amount: number
   tax_rate: number
   payment_terms: string | null
@@ -44,7 +50,7 @@ export function InvoiceTemplateSelector({
       .order('is_system', { ascending: false })
       .order('name', { ascending: true })
 
-    setTemplates((data as InvoiceTemplateData[]) || [])
+    setTemplates((data as unknown as InvoiceTemplateData[]) || [])
     setLoading(false)
   }
 
