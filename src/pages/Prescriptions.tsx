@@ -105,6 +105,32 @@ export function Prescriptions() {
     setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
   }
 
+  const [patientSearch, setPatientSearch] = useState('')
+  const [patientSearchResults, setPatientSearchResults] = useState<any[] | null>(null)
+
+  function handlePatientSearch() {
+    const query = patientSearch.trim().toLowerCase()
+    if (!query) {
+      setPatientSearchResults(null)
+      return
+    }
+    const queryDigits = query.replace(/\D/g, '')
+    const matches = patients.filter((patient) => {
+      const name = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase()
+      if (name.includes(query)) return true
+      const phoneDigits = (patient.phone || '').replace(/\D/g, '')
+      return queryDigits.length > 0 && phoneDigits.includes(queryDigits)
+    })
+    setPatientSearchResults(matches)
+  }
+
+  function handlePatientSearchSelect(patient: any) {
+    setFormData((prev: any) => ({ ...prev, patient_id: patient.id }))
+    selectPatientHistory(patient.id)
+    setPatientSearchResults(null)
+    setPatientSearch('')
+  }
+
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
   const [printingPatient, setPrintingPatient] = useState<any | null>(null)
@@ -384,6 +410,8 @@ export function Prescriptions() {
     setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male' })
     setPrescriptionWeight('')
     setAiPanelOpenIndex(null)
+    setPatientSearch('')
+    setPatientSearchResults(null)
   }
 
   function addMedication() {
@@ -706,6 +734,47 @@ export function Prescriptions() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {patientMode === 'existing' ? (
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Search by name / phone</label>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={patientSearch}
+                          onChange={(e) => setPatientSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handlePatientSearch()
+                            }
+                          }}
+                          placeholder="Patient name or phone number"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                        />
+                        <Button type="button" variant="outline" onClick={handlePatientSearch}>
+                          <Search className="w-4 h-4 mr-1" />
+                          Search
+                        </Button>
+                      </div>
+                      {patientSearchResults && (
+                        patientSearchResults.length === 0 ? (
+                          <p className="mb-2 text-sm text-gray-600">No matching patient found.</p>
+                        ) : (
+                          <div className="mb-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto bg-white">
+                            {patientSearchResults.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => handlePatientSearchSelect(p)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+                              >
+                                <span className="font-medium text-sm">{p.first_name} {p.last_name}</span>
+                                <span className="text-xs text-gray-500 ml-2">
+                                  {p.patient_code ? `${p.patient_code} • ` : ''}{p.phone || 'No phone'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )
+                      )}
                       <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
                       <select
                         required

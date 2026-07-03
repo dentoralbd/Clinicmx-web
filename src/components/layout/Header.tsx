@@ -1,4 +1,4 @@
-import { Bell, Search, User, Menu, LogOut } from 'lucide-react'
+import { Bell, User, Menu, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 
@@ -29,14 +29,6 @@ export function Header({ onMenuClick }: HeaderProps) {
             <Menu className="w-5 h-5" />
           </button>
           
-          <div className="relative flex-1 max-w-md hidden sm:block">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
-            <input
-              type="text"
-              placeholder="Search patients, appointments..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
-          </div>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">

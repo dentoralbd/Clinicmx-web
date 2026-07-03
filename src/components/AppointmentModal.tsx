@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
 import { deriveDateOfBirthFromAge } from '@/lib/ageTier'
-import { UserPlus, Users } from 'lucide-react'
+import { UserPlus, Users, Search } from 'lucide-react'
 
 export function AppointmentModal({ 
   selectedDate, 
@@ -40,6 +40,7 @@ export function AppointmentModal({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [patientLookup, setPatientLookup] = useState('')
   const [patientLookupMessage, setPatientLookupMessage] = useState<string | null>(null)
+  const [patientSearchResults, setPatientSearchResults] = useState<any[] | null>(null)
 
   useEffect(() => {
     loadPatients()
@@ -61,7 +62,7 @@ export function AppointmentModal({
       setLoadError(null)
       const { data, error } = await supabase
         .from('patients')
-        .select('id, first_name, last_name, patient_code')
+        .select('id, first_name, last_name, patient_code, phone')
         .order('last_name')
 
       if (error) throw error
@@ -77,27 +78,51 @@ export function AppointmentModal({
     const lookup = patientLookup.trim()
 
     if (!lookup) {
-      setPatientLookupMessage('Enter a patient UID or patient code to use an existing patient.')
+      setPatientLookupMessage('Enter a patient UID, code, name, or phone number to find a patient.')
+      setPatientSearchResults(null)
       setFormData((prev) => ({ ...prev, patient_id: '' }))
       return
     }
 
-    const matchedPatient = patients.find((patient) => {
-      const normalizedLookup = lookup.toLowerCase()
+    const normalizedLookup = lookup.toLowerCase()
+    const exactMatch = patients.find((patient) => {
       const normalizedId = (patient.id || '').toLowerCase()
       const normalizedCode = (patient.patient_code || '').toLowerCase()
       return normalizedId === normalizedLookup || normalizedCode === normalizedLookup
     })
 
-    if (matchedPatient) {
-      setFormData((prev) => ({ ...prev, patient_id: matchedPatient.id }))
+    if (exactMatch) {
+      setFormData((prev) => ({ ...prev, patient_id: exactMatch.id }))
       setPatientMode('existing')
-      setPatientLookupMessage(`Using existing patient ${matchedPatient.first_name} ${matchedPatient.last_name}`)
+      setPatientLookupMessage(`Using existing patient ${exactMatch.first_name} ${exactMatch.last_name}`)
+      setPatientSearchResults(null)
+      return
+    }
+
+    const queryDigits = normalizedLookup.replace(/\D/g, '')
+    const matches = patients.filter((patient) => {
+      const name = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase()
+      if (name.includes(normalizedLookup)) return true
+      const phoneDigits = (patient.phone || '').replace(/\D/g, '')
+      return queryDigits.length > 0 && phoneDigits.includes(queryDigits)
+    })
+
+    if (matches.length > 0) {
+      setPatientSearchResults(matches)
+      setPatientLookupMessage(null)
       return
     }
 
     setFormData((prev) => ({ ...prev, patient_id: '' }))
+    setPatientSearchResults(null)
     setPatientLookupMessage('No matching patient found. Switch to New Patient to create one.')
+  }
+
+  function handleSearchResultSelect(patient: any) {
+    setFormData((prev) => ({ ...prev, patient_id: patient.id }))
+    setPatientLookup(patient.patient_code || patient.id)
+    setPatientLookupMessage(`Using existing patient ${patient.first_name} ${patient.last_name}`)
+    setPatientSearchResults(null)
   }
 
   function handleExistingPatientSelect(patientId: string) {
@@ -250,7 +275,7 @@ export function AppointmentModal({
           {/* Existing Patient Selection */}
           {patientMode === 'existing' && (
             <div>
-              <label className="block text-sm font-medium mb-1">Patient UID / Patient Code *</label>
+              <label className="block text-sm font-medium mb-1">Search Patient (UID, Code, Name, or Phone) *</label>
               {loadError && (
                 <p className="text-sm text-red-600 mb-2">{loadError}</p>
               )}
@@ -259,11 +284,18 @@ export function AppointmentModal({
                   type="text"
                   value={patientLookup}
                   onChange={(e) => setPatientLookup(e.target.value)}
-                  placeholder="Enter patient UID or code"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handlePatientLookup()
+                    }
+                  }}
+                  placeholder="Enter patient UID, code, name, or phone number"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <Button type="button" variant="outline" onClick={handlePatientLookup}>
-                  Use Existing
+                  <Search className="w-4 h-4 mr-1" />
+                  Search
                 </Button>
               </div>
 
@@ -271,6 +303,28 @@ export function AppointmentModal({
                 <p className={`mt-2 text-sm ${patientLookupMessage.includes('Using existing patient') ? 'text-green-600' : patientLookupMessage.includes('Created new patient') ? 'text-blue-600' : 'text-gray-600'}`}>
                   {patientLookupMessage}
                 </p>
+              )}
+
+              {patientSearchResults && (
+                patientSearchResults.length === 0 ? (
+                  <p className="mt-2 text-sm text-gray-600">No matching patient found.</p>
+                ) : (
+                  <div className="mt-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                    {patientSearchResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSearchResultSelect(p)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+                      >
+                        <span className="font-medium text-sm">{p.first_name} {p.last_name}</span>
+                        <span className="text-xs text-text-secondary ml-2">
+                          {p.patient_code ? `${p.patient_code} • ` : ''}{p.phone || 'No phone'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )
               )}
 
               <div className="mt-3">
