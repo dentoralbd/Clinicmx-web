@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { PatientHeader } from '@/components/PatientHeader'
+import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
@@ -48,6 +50,7 @@ type SectionId =
   | 'forms'
   | 'bookings'
   | 'treatment'
+  | 'operations'
   | 'visits'
   | 'investigations'
   | 'files'
@@ -56,7 +59,20 @@ type SectionId =
   | 'consultations'
   | 'billing'
 
-const mobileNavSections: SectionId[] = ['profile', 'appointments', 'prescriptions', 'files', 'billing']
+type TabId = 'overview' | 'clinical' | 'prescriptions' | 'appointments' | 'files' | 'billing'
+
+const tabOptions: Array<{ id: TabId; label: string; shortLabel: string; icon: any; sections: SectionId[] }> = [
+  { id: 'overview', label: 'Overview', shortLabel: 'Home', icon: User, sections: ['profile', 'communications', 'referrals'] },
+  { id: 'clinical', label: 'Clinical', shortLabel: 'Clinical', icon: Stethoscope, sections: ['clinical', 'medical', 'visits', 'consultations', 'investigations'] },
+  { id: 'prescriptions', label: 'Prescriptions', shortLabel: 'Rx', icon: Pill, sections: ['prescriptions'] },
+  { id: 'appointments', label: 'Appointments', shortLabel: 'Appts', icon: CalendarIcon, sections: ['appointments', 'bookings'] },
+  { id: 'files', label: 'Files & Forms', shortLabel: 'Files', icon: FolderOpen, sections: ['files', 'forms'] },
+  { id: 'billing', label: 'Billing', shortLabel: 'Billing', icon: DollarSign, sections: ['billing', 'operations'] },
+]
+
+const sectionToTab = Object.fromEntries(
+  tabOptions.flatMap((tab) => tab.sections.map((sectionId) => [sectionId, tab.id]))
+) as Record<SectionId, TabId>
 
 const sectionOptions: Array<{
   id: SectionId
@@ -154,7 +170,7 @@ export function PatientProfile() {
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
-  const [showMoreSections, setShowMoreSections] = useState(false)
+  const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
@@ -562,6 +578,23 @@ export function PatientProfile() {
     }
   }
 
+  function startNewPrescription() {
+    setEditingPrescriptionId(null)
+    setPrescriptionForm({
+      chief_complaint_entries: [createEmptyEntry()],
+      on_examination_entries: [createEmptyEntry()],
+      diagnosis_entries: [createEmptyEntry()],
+      treatment_plan_entries: [createEmptyEntry()],
+      medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any],
+      investigations: [{ name: '', description: '', urgency: 'Routine' } as any],
+      notes: '',
+      weight: patient?.weight != null ? String(patient.weight) : '',
+    } as any)
+    setAiPanelOpenIndex(null)
+    seedMedicalHistoryForm()
+    setShowPrescriptionForm(true)
+  }
+
   function startEditPrescription(prescription: any) {
     setEditingPrescriptionId(prescription.id)
     setPrescriptionForm({
@@ -751,7 +784,8 @@ export function PatientProfile() {
   const activeSection = sectionOptions.some((section) => section.id === requestedSection)
     ? requestedSection as SectionId
     : (legacySectionMap[requestedSection] || 'profile')
-  const activeSectionMeta = sectionOptions.find((section) => section.id === activeSection) || sectionOptions[0]
+  const activeTab = sectionToTab[activeSection] ?? 'overview'
+  const activeTabMeta = tabOptions.find((tab) => tab.id === activeTab) || tabOptions[0]
   const totalBilled = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
   const totalPaid = invoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
   const totalDue = totalBilled - totalPaid
@@ -804,6 +838,107 @@ export function PatientProfile() {
       label: 'X-Ray Images',
       files: files.filter((file) => file.file_category === 'xray_image'),
     },
+  ]
+
+  const profilePhoto = files.find((file) => file.file_category === 'profile_photo' && file.mime_type?.startsWith('image/'))
+  const avatarUrl = profilePhoto ? getFilePublicUrl(profilePhoto.storage_path) : null
+  const patientAge = getPatientAge(patient.date_of_birth)
+
+  const { items: alertChecks, other: alertOther } = getMedicalHistoryChecks(patient.medical_history)
+  const CRITICAL_ALERTS = ['Allergy', 'Bleeding disorder', 'Pregnant/Lactating mother']
+  const medicalAlerts = [
+    ...alertChecks
+      .filter((item) => item.checked)
+      .map((item) => ({
+        label: item.label,
+        severity: (CRITICAL_ALERTS.includes(item.label) ? 'critical' : 'warning') as 'critical' | 'warning',
+      })),
+    ...(alertOther ? [{ label: alertOther.slice(0, 40), severity: 'warning' as const }] : []),
+  ]
+
+  const completenessChecks: Array<[string, boolean]> = [
+    ['Phone', !!patient.phone],
+    ['Email', !!patient.email],
+    ['Date of birth', !!patient.date_of_birth],
+    ['Gender', !!patient.gender],
+    ['Address', !!patient.address],
+    ['Medical history', !!patient.medical_history],
+    ['Weight', patient.weight != null],
+    ['Profile photo', !!profilePhoto],
+  ]
+  const completeness = {
+    percent: Math.round((completenessChecks.filter(([, done]) => done).length / completenessChecks.length) * 100),
+    missing: completenessChecks.filter(([, done]) => !done).map(([label]) => label),
+  }
+
+  const treatmentCounts = {
+    planned: treatments.filter((treatment) => treatment.status === 'Planned').length,
+    inProgress: treatments.filter((treatment) => treatment.status === 'In Progress').length,
+    completed: treatments.filter((treatment) => treatment.status === 'Completed').length,
+  }
+  const dentalConditionCounts = Object.entries(
+    dentalRecords.reduce((acc: Record<string, number>, record) => {
+      if (record.condition && record.condition !== 'Healthy') acc[record.condition] = (acc[record.condition] || 0) + 1
+      return acc
+    }, {})
+  )
+
+  const timelineItems: TimelineItem[] = [
+    ...visits.map((visit) => ({
+      id: `visit-${visit.id}`,
+      type: 'visit' as const,
+      date: visit.visit_date,
+      title: 'Clinical visit',
+      subtitle: visit.chief_complaint || visit.diagnosis || undefined,
+      sectionId: 'visits',
+    })),
+    ...treatments.map((treatment) => ({
+      id: `treatment-${treatment.id}`,
+      type: 'treatment' as const,
+      date: treatment.created_at,
+      title: `Treatment — ${treatment.treatment_type}`,
+      subtitle: treatment.tooth_number ? `Tooth #${treatment.tooth_number}` : undefined,
+      badge: treatment.status,
+      amountLabel: treatment.cost > 0 ? formatCurrency(treatment.cost) : undefined,
+      sectionId: 'operations',
+    })),
+    ...prescriptions.map((prescription) => ({
+      id: `rx-${prescription.id}`,
+      type: 'prescription' as const,
+      date: prescription.prescribed_date,
+      title: 'Prescription',
+      subtitle:
+        prescription.diagnosis ||
+        (Array.isArray(prescription.medications) ? `${prescription.medications.length} medication(s)` : undefined),
+      sectionId: 'prescriptions',
+    })),
+    ...invoices.map((invoice) => ({
+      id: `inv-${invoice.id}`,
+      type: 'invoice' as const,
+      date: invoice.created_at,
+      title: 'Invoice',
+      subtitle: getInvoiceDue(invoice) > 0 ? `Due ${formatCurrency(getInvoiceDue(invoice))}` : 'Paid in full',
+      badge: invoice.status,
+      amountLabel: formatCurrency(invoice.total_amount || 0),
+      sectionId: 'billing',
+    })),
+    ...appointments.map((appointment) => ({
+      id: `appt-${appointment.id}`,
+      type: 'appointment' as const,
+      date: appointment.date_time,
+      title: 'Appointment',
+      subtitle: appointment.treatment_type || appointment.notes || undefined,
+      badge: appointment.status,
+      sectionId: 'appointments',
+    })),
+    ...files.map((file) => ({
+      id: `file-${file.id}`,
+      type: 'file' as const,
+      date: file.created_at,
+      title: `File uploaded — ${file.file_name}`,
+      subtitle: file.file_category === 'profile_photo' ? 'Profile photo' : file.file_category === 'xray_image' ? 'X-ray' : 'Clinical image',
+      sectionId: 'files',
+    })),
   ]
 
   function updateSection(section: SectionId) {
@@ -879,7 +1014,7 @@ export function PatientProfile() {
           </InfoCard>
         </div>
 
-        <div className="rounded-3xl bg-gradient-to-br from-primary via-[#1b4e70] to-slate-900 p-4 sm:p-6 text-white shadow-sm">
+        <div className="rounded-3xl bg-gradient-to-br from-primary via-primary/80 to-slate-900 p-4 sm:p-6 text-white shadow-sm">
           <p className="text-sm text-white/70">Financial dashboard</p>
           <div className="mt-2 text-3xl font-bold">{formatCurrency(totalDue)}</div>
           <p className="mt-1 text-sm text-white/80">Current balance due</p>
@@ -893,6 +1028,20 @@ export function PatientProfile() {
               <div className="mt-1 text-lg font-semibold">{pendingInvoices.length}</div>
             </div>
           </div>
+          {totalBilled > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-xs text-white/70">
+                <span>Paid</span>
+                <span>{Math.round((totalPaid / totalBilled) * 100)}% of {formatCurrency(totalBilled)}</span>
+              </div>
+              <div className="mt-1.5 h-2 rounded-full bg-white/20">
+                <div
+                  className="h-2 rounded-full bg-emerald-300"
+                  style={{ width: `${Math.min(100, Math.round((totalPaid / totalBilled) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <InfoCard title="Quick Stats">
@@ -977,6 +1126,12 @@ export function PatientProfile() {
             ))}
             {visits.length === 0 && <EmptyState message="No visits recorded for this patient." />}
           </div>
+        </InfoCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        <InfoCard title="Activity Timeline">
+          <ActivityTimeline items={timelineItems} onNavigate={(sectionId) => updateSection(sectionId as SectionId)} />
         </InfoCard>
       </div>
     </div>
@@ -1093,8 +1248,36 @@ export function PatientProfile() {
       </div>
     )
 
+    const conditionDotColors: Record<string, string> = {
+      Cavity: 'bg-red-500',
+      Filled: 'bg-blue-500',
+      'Root Canal': 'bg-purple-500',
+      Crown: 'bg-yellow-500',
+      Missing: 'bg-gray-500',
+      Implant: 'bg-green-500',
+    }
+
     return (
       <div className="space-y-6">
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <h3 className="font-semibold mb-3">Dental Summary</h3>
+          {dentalRecords.length === 0 ? (
+            <EmptyState message="No tooth conditions recorded yet. Tap a tooth on the chart below to add one." />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                {dentalRecords.length} recorded teeth
+              </span>
+              {dentalConditionCounts.map(([condition, count]) => (
+                <span key={condition} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm font-medium">
+                  <span className={`h-2 w-2 rounded-full ${conditionDotColors[condition] || 'bg-gray-400'}`} />
+                  {condition}: {count}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-6">
           <h3 className="font-semibold mb-1 text-center">Dental Chart</h3>
           <p className="text-xs text-text-secondary text-center mb-5">
@@ -1287,6 +1470,26 @@ export function PatientProfile() {
           </Button>
         </div>
       </div>
+      {treatments.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-200">
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100">
+            {treatmentCounts.planned > 0 && (
+              <div className="bg-amber-400" style={{ width: `${(treatmentCounts.planned / treatments.length) * 100}%` }} />
+            )}
+            {treatmentCounts.inProgress > 0 && (
+              <div className="bg-blue-500" style={{ width: `${(treatmentCounts.inProgress / treatments.length) * 100}%` }} />
+            )}
+            {treatmentCounts.completed > 0 && (
+              <div className="bg-emerald-500" style={{ width: `${(treatmentCounts.completed / treatments.length) * 100}%` }} />
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />{treatmentCounts.planned} planned</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" />{treatmentCounts.inProgress} in progress</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />{treatmentCounts.completed} completed</span>
+          </div>
+        </div>
+      )}
       {treatments.length === 0 ? (
         <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
       ) : (
@@ -1344,7 +1547,7 @@ export function PatientProfile() {
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold">Prescription History</h3>
-        <Button size="sm" onClick={() => { setEditingPrescriptionId(null); setPrescriptionForm({ chief_complaint_entries: [createEmptyEntry()], on_examination_entries: [createEmptyEntry()], diagnosis_entries: [createEmptyEntry()], treatment_plan_entries: [createEmptyEntry()], medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' } as any], investigations: [{ name: '', description: '', urgency: 'Routine' } as any], notes: '', weight: patient?.weight != null ? String(patient.weight) : '' } as any); setAiPanelOpenIndex(null); seedMedicalHistoryForm(); setShowPrescriptionForm(true) }}>
+        <Button size="sm" onClick={startNewPrescription}>
           <Plus className="w-4 h-4 mr-1" />
           Add Prescription
         </Button>
@@ -1633,13 +1836,6 @@ export function PatientProfile() {
             </select>
           </div>
           <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
             <Button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingFile}
@@ -1818,6 +2014,23 @@ export function PatientProfile() {
         </div>
       </div>
 
+      {totalBilled > 0 && (
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">Payment progress</span>
+            <span className="text-text-secondary">{Math.round((totalPaid / totalBilled) * 100)}% collected</span>
+          </div>
+          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-gray-100">
+            {totalPaid > 0 && <div className="bg-green-500" style={{ width: `${(totalPaid / totalBilled) * 100}%` }} />}
+            {totalDue > 0 && <div className="bg-red-400" style={{ width: `${(totalDue / totalBilled) * 100}%` }} />}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500" />Paid {formatCurrency(totalPaid)}</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" />Due {formatCurrency(totalDue)}</span>
+          </div>
+        </div>
+      )}
+
       <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
           <h3 className="font-semibold">Invoice History</h3>
@@ -1884,112 +2097,130 @@ export function PatientProfile() {
 
   return (
     <div className="space-y-6 pb-24 md:pb-6 page-fade-in">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <Button variant="outline" size="sm" onClick={() => navigate('/patients')} className="w-full sm:w-auto">
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="sm" onClick={() => navigate('/patients')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <div className="flex-1">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <h1 className="text-2xl font-bold leading-tight">
-              {patient.first_name} {patient.last_name}
-            </h1>
-            {patient.patient_code && (
-              <span className="w-fit inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-full border border-primary/20">
-                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                {patient.patient_code}
-              </span>
-            )}
-          </div>
-          <p className="text-text-secondary">{patient.phone || 'No phone provided'}{patient.email ? ` • ${patient.email}` : ''}</p>
-        </div>
       </div>
 
-      <div className="rounded-3xl bg-gradient-to-br from-primary via-[#1b4e70] to-slate-900 p-3 sm:p-6 text-white shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-white/70">Patient dashboard</p>
-            <h2 className="mt-2 text-xl sm:text-3xl font-semibold">{activeSectionMeta.label}</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/80">{activeSectionMeta.description}</p>
-          </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <HeroStat label="Balance" value={formatCurrency(totalDue)} />
-            <HeroStat label="Next visit" value={upcomingAppointments[0] ? formatDateValue(upcomingAppointments[0].date_time, 'MMM d') : 'Not set'} />
-            <HeroStat label="Files" value={files.length.toString()} />
-          </div>
-        </div>
-      </div>
+      <PatientHeader
+        patient={patient}
+        avatarUrl={avatarUrl}
+        age={patientAge}
+        alerts={medicalAlerts}
+        completeness={completeness}
+        stats={[
+          { label: 'Balance', value: formatCurrency(totalDue) },
+          { label: 'Next visit', value: upcomingAppointments[0] ? formatDateValue(upcomingAppointments[0].date_time, 'MMM d') : 'Not set' },
+          { label: 'Files', value: files.length.toString() },
+        ]}
+      />
 
-      <div className="hidden md:grid grid-cols-2 xl:grid-cols-3 gap-4">
-        {sectionOptions.map((section) => (
-          <SectionMenuButton
-            key={section.id}
-            active={activeSection === section.id}
-            icon={section.icon}
-            label={section.label}
-            description={section.description}
-            badge={getSectionBadge(section.id)}
-            onClick={() => updateSection(section.id)}
-          />
-        ))}
-      </div>
-
-      <div className="md:hidden">
-        <button
-          onClick={() => setShowMoreSections((prev) => !prev)}
-          className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-text-secondary"
-        >
-          {showMoreSections ? 'Hide sections' : 'More sections'}
-          <ChevronDown className={`h-4 w-4 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
-        </button>
-
-        {showMoreSections && (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {sectionOptions
-              .filter((section) => !mobileNavSections.includes(section.id))
-              .map((section) => {
-                const Icon = section.icon
-                return (
-                  <button
-                    key={section.id}
-                    onClick={() => {
-                      updateSection(section.id)
-                      setShowMoreSections(false)
-                    }}
-                    className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
-                  >
-                    <Icon className="h-5 w-5 text-primary" />
-                    <div className="mt-3 font-medium">{section.label}</div>
-                    <div className="mt-1 text-sm text-text-secondary">{section.description}</div>
-                  </button>
-                )
-              })}
-          </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <QuickActionButton icon={Plus} label="New Prescription" onClick={startNewPrescription} />
+        <QuickActionButton icon={CalendarIcon} label="New Appointment" onClick={() => setShowAppointmentForm(true)} />
+        <QuickActionButton
+          icon={DollarSign}
+          label="Record Payment"
+          disabled={pendingInvoices.length === 0}
+          onClick={() => {
+            if (pendingInvoices.length === 1) {
+              setPayingInvoice(pendingInvoices[0])
+            } else {
+              updateSection('billing')
+            }
+          }}
+        />
+        <QuickActionButton icon={Upload} label="Upload File" onClick={() => fileInputRef.current?.click()} />
+        {patient.phone && (
+          <a
+            href={`tel:${patient.phone}`}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-text-primary whitespace-nowrap transition-all duration-200 hover:border-primary/40 hover:text-primary hover:shadow-sm"
+          >
+            <Phone className="h-4 w-4 text-primary" />
+            Call Patient
+          </a>
         )}
       </div>
+
+      <div className="hidden md:flex gap-1.5 rounded-3xl border border-gray-200 bg-card p-2">
+        {tabOptions.map((tab) => {
+          const Icon = tab.icon
+          const badge = getSectionBadge(tab.sections[0])
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => updateSection(tab.sections[0])}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                isActive ? 'bg-primary text-white shadow-sm' : 'text-text-secondary hover:bg-gray-100 hover:text-text-primary'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+              {badge !== undefined && badge > 0 && (
+                <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${isActive ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>
+                  {badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTabMeta.sections.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {activeTabMeta.sections.map((sectionId) => {
+            const section = sectionOptions.find((item) => item.id === sectionId)
+            if (!section) return null
+            const badge = getSectionBadge(section.id)
+            const isActive = activeSection === section.id
+            return (
+              <button
+                key={section.id}
+                onClick={() => updateSection(section.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+                  isActive ? 'bg-primary text-white shadow-sm' : 'border border-gray-200 bg-white text-text-secondary hover:border-primary/40 hover:text-primary'
+                }`}
+              >
+                {section.label}
+                {badge !== undefined && badge > 0 && (
+                  <span className={`rounded-full px-1.5 py-px text-xs font-semibold ${isActive ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div key={activeSection} className="section-fade-in">
         {renderActiveSection()}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur md:hidden">
-        <div className="mx-auto flex max-w-xl gap-2">
-          {mobileNavSections.map((sectionId) => {
-            const section = sectionOptions.find((item) => item.id === sectionId)
-            if (!section) return null
-
-            return (
-              <BottomNavButton
-                key={section.id}
-                active={activeSection === section.id}
-                icon={section.icon}
-                label={section.label}
-                onClick={() => updateSection(section.id)}
-              />
-            )
-          })}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-1 py-3 backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-xl gap-0.5">
+          {tabOptions.map((tab) => (
+            <BottomNavButton
+              key={tab.id}
+              active={activeTab === tab.id}
+              icon={tab.icon}
+              label={tab.shortLabel}
+              onClick={() => updateSection(tab.sections[0])}
+            />
+          ))}
         </div>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
 
       {/* Full-screen image preview */}
       {previewUrl && (
@@ -2127,32 +2358,32 @@ export function PatientProfile() {
           }}
         />
       )}
+
+      {payingInvoice && (
+        <PaymentEntryModal
+          invoiceId={payingInvoice.id}
+          invoiceTotal={payingInvoice.total_amount || 0}
+          invoicePaid={payingInvoice.paid_amount || 0}
+          onClose={() => setPayingInvoice(null)}
+          onSaved={() => {
+            setPayingInvoice(null)
+            loadPatientData()
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function SectionMenuButton({ active, icon: Icon, label, description, badge, onClick }: any) {
+function QuickActionButton({ icon: Icon, label, onClick, disabled }: any) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-3xl border p-5 text-left transition-all duration-200 ${
-        active
-          ? 'border-primary bg-primary/5 shadow-sm ring-2 ring-primary/10'
-          : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-primary/30 hover:shadow-md'
-      }`}
+      disabled={disabled}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-text-primary whitespace-nowrap transition-all duration-200 hover:border-primary/40 hover:text-primary hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-200 disabled:hover:text-text-primary disabled:hover:shadow-none"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${active ? 'bg-primary text-white' : 'bg-gray-100 text-primary'}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        {badge !== undefined && (
-          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}>
-            {badge}
-          </span>
-        )}
-      </div>
-      <div className="mt-4 font-semibold">{label}</div>
-      <p className="mt-1 text-sm text-text-secondary">{description}</p>
+      <Icon className="h-4 w-4 text-primary" />
+      {label}
     </button>
   )
 }
@@ -2173,15 +2404,6 @@ function InfoRow({ label, value, className = '' }: any) {
     <div className="text-sm">
       <span className="text-text-secondary">{label}: </span>
       <span className={className}>{value}</span>
-    </div>
-  )
-}
-
-function HeroStat({ label, value, className = '' }: any) {
-  return (
-    <div className={`rounded-2xl bg-white/10 p-3 backdrop-blur-sm ${className}`}>
-      <div className="text-xs uppercase tracking-wide text-white/70">{label}</div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   )
 }
@@ -2219,7 +2441,7 @@ function BottomNavButton({ active, icon: Icon, label, onClick }: any) {
   return (
     <button
       onClick={onClick}
-      className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-xs font-medium transition-all duration-200 ${
+      className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-0.5 py-2.5 text-xs font-medium transition-all duration-200 ${
         active
           ? 'bg-primary text-white shadow-sm'
           : 'text-text-secondary hover:bg-gray-100 hover:text-text-primary'
