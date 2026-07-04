@@ -72,10 +72,7 @@ export function Login() {
               className="w-full flex items-center gap-4 px-5 py-4 border-2 border-primary/30 rounded-xl hover:border-primary hover:bg-primary/5 transition-colors text-left"
             >
               <Stethoscope className="w-8 h-8 text-primary shrink-0" />
-              <span>
-                <span className="block font-semibold text-gray-900">Login as Doctor</span>
-                <span className="block text-sm text-text-secondary">Full access — can change or delete any data</span>
-              </span>
+              <span className="font-semibold text-gray-900">Doctor Login</span>
             </button>
 
             <button
@@ -84,10 +81,7 @@ export function Login() {
               className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors text-left"
             >
               <UserCog className="w-8 h-8 text-gray-500 shrink-0" />
-              <span>
-                <span className="block font-semibold text-gray-900">Login as Operator</span>
-                <span className="block text-sm text-text-secondary">Can add and edit data, but cannot delete</span>
-              </span>
+              <span className="font-semibold text-gray-900">Operator Login</span>
             </button>
           </div>
         ) : (
