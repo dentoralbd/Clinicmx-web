@@ -118,8 +118,9 @@ export function Dashboard() {
     <div className="space-y-6 page-fade-in">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-text-secondary mt-1">Welcome back! Here's your clinic overview.</p>
+          <p className="text-xs font-medium text-primary/70 mt-1">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <button
           onClick={() => loadDashboardData(true)}
@@ -165,8 +166,13 @@ export function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Today's Appointments</h3>
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
+            <div className="flex items-center gap-2.5">
+              <span className="bg-primary/10 text-primary rounded-lg p-1.5">
+                <Calendar className="w-4 h-4" />
+              </span>
+              <h3 className="text-lg font-semibold">Today's Appointments</h3>
+            </div>
             <button
               onClick={() => navigate('/appointments')}
               className="flex items-center gap-1 text-sm text-primary hover:text-primary-hover transition-colors"
@@ -202,8 +208,13 @@ export function Dashboard() {
         </div>
 
         <div className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Recent Patients</h3>
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
+            <div className="flex items-center gap-2.5">
+              <span className="bg-primary/10 text-primary rounded-lg p-1.5">
+                <Users className="w-4 h-4" />
+              </span>
+              <h3 className="text-lg font-semibold">Recent Patients</h3>
+            </div>
             <button
               onClick={() => navigate('/patients')}
               className="flex items-center gap-1 text-sm text-primary hover:text-primary-hover transition-colors"
@@ -243,25 +254,42 @@ export function Dashboard() {
 
 function StatCard({ title, value, icon, color, onClick }: any) {
   const colors: any = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    orange: 'bg-orange-50 text-orange-600',
-    purple: 'bg-purple-50 text-purple-600',
+    blue: {
+      chip: 'bg-gradient-to-br from-blue-500/10 to-blue-500/20 text-blue-600',
+      bar: 'bg-blue-500',
+    },
+    green: {
+      chip: 'bg-gradient-to-br from-green-500/10 to-green-500/20 text-green-600',
+      bar: 'bg-green-500',
+    },
+    orange: {
+      chip: 'bg-gradient-to-br from-orange-500/10 to-orange-500/20 text-orange-600',
+      bar: 'bg-orange-500',
+    },
+    purple: {
+      chip: 'bg-gradient-to-br from-purple-500/10 to-purple-500/20 text-purple-600',
+      bar: 'bg-purple-500',
+    },
   }
   return (
     <button
       onClick={onClick}
-      className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6 text-left w-full hover:shadow-elevation-high hover:-translate-y-1 active:translate-y-0 active:shadow-elevation-md transition-all duration-200 group"
+      className="relative overflow-hidden bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6 text-left w-full hover:shadow-elevation-high hover:-translate-y-1 active:translate-y-0 active:shadow-elevation-md transition-all duration-200 group"
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-text-secondary text-sm">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">{title}</p>
+          <p className="text-3xl font-bold tracking-tight mt-1.5">{value}</p>
         </div>
-        <div className={`w-12 h-12 rounded-xl ${colors[color]} flex items-center justify-center shadow-elevation-low group-hover:scale-110 transition-transform duration-150`}>
+        <div className={`w-12 h-12 rounded-xl ${colors[color].chip} flex items-center justify-center shadow-elevation-low group-hover:scale-110 transition-transform duration-150`}>
           {icon}
         </div>
       </div>
+      <div className="flex items-center gap-1 mt-3 text-xs text-text-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <span>View</span>
+        <ArrowRight className="w-3 h-3" />
+      </div>
+      <div className={`absolute bottom-0 left-0 right-0 h-1 ${colors[color].bar} opacity-0 group-hover:opacity-60 transition-opacity duration-200`} />
     </button>
   )
 }
@@ -275,14 +303,14 @@ const statusColors: Record<string, string> = {
 
 function AppointmentItem({ time, patient, patientMeta, type, status }: any) {
   return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low transition-all duration-150">
+    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low transition-all duration-150">
       <div>
         <p className="font-medium">{patient}</p>
         {patientMeta && <p className="text-xs text-text-secondary">{patientMeta}</p>}
         <p className="text-sm text-text-secondary">{type}</p>
       </div>
       <div className="flex flex-col items-end gap-1">
-        <span className="text-sm font-medium text-primary">{time}</span>
+        <span className="text-sm font-medium bg-primary/10 text-primary rounded-md px-2 py-0.5">{time}</span>
         {status && (
           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusColors[status] || 'bg-gray-100'}`}>
             {status}
@@ -303,7 +331,7 @@ function PatientItem({ id, name, lastVisit, onClick }: any) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100 w-full text-left hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low hover:-translate-y-0.5 transition-all duration-150 group"
+      className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 w-full text-left hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low hover:-translate-y-0.5 transition-all duration-150 group"
     >
       <div className={`w-10 h-10 ${avatarColors[colorIndex]} rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0`}>
         {name[0]}
