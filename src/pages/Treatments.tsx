@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Plus, Search, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { canDelete } from '@/lib/appSession'
+import { logDeletion } from '@/lib/deleteHistory'
 
 interface Treatment {
   id: string
@@ -49,13 +51,23 @@ export function Treatments() {
     }
   }
 
-  async function deleteTreatment(id: string) {
+  async function deleteTreatment(treatment: Treatment) {
+    if (!canDelete()) return
     if (!confirm('Delete this treatment?')) return
 
     try {
-      const { error } = await supabase.from('treatments').delete().eq('id', id)
+      const patientName = `${treatment.patients?.first_name ?? ''} ${treatment.patients?.last_name ?? ''}`.trim()
+      await logDeletion({
+        entityType: 'treatment',
+        entityId: treatment.id,
+        entityLabel: treatment.treatment_type,
+        patientId: treatment.patient_id,
+        patientName: patientName || null,
+        payload: treatment,
+      })
+      const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
       if (error) throw error
-      setTreatments(treatments.filter((t) => t.id !== id))
+      setTreatments(treatments.filter((t) => t.id !== treatment.id))
     } catch (error) {
       console.error('Error deleting treatment:', error)
       alert('Failed to delete treatment')
@@ -127,7 +139,7 @@ export function Treatments() {
               <TreatmentRow
                 key={treatment.id}
                 treatment={treatment}
-                onDelete={() => deleteTreatment(treatment.id)}
+                onDelete={() => deleteTreatment(treatment)}
                 onStatusChange={(status) => updateTreatmentStatus(treatment.id, status)}
               />
             ))}
@@ -195,9 +207,11 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
               → {nextStatus}
             </button>
           )}
-          <Button variant="outline" size="sm" onClick={onDelete}>
-            Delete
-          </Button>
+          {canDelete() && (
+            <Button variant="outline" size="sm" onClick={onDelete}>
+              Delete
+            </Button>
+          )}
         </div>
       </div>
     </div>

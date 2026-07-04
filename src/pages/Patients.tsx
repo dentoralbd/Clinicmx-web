@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient } from '@/lib/patients'
+import { canDelete } from '@/lib/appSession'
+import { logDeletion } from '@/lib/deleteHistory'
 import { format } from 'date-fns'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
@@ -118,10 +120,19 @@ export function Patients() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(patient: any) {
+    if (!canDelete()) return
     if (confirm('Are you sure you want to delete this patient?')) {
       try {
-        await supabase.from('patients').delete().eq('id', id)
+        await logDeletion({
+          entityType: 'patient',
+          entityId: patient.id,
+          entityLabel: `${patient.first_name} ${patient.last_name}`.trim(),
+          patientId: patient.id,
+          patientName: `${patient.first_name} ${patient.last_name}`.trim(),
+          payload: patient,
+        })
+        await supabase.from('patients').delete().eq('id', patient.id)
         loadPatients()
       } catch (error) {
         console.error('Error deleting patient:', error)
@@ -279,13 +290,15 @@ export function Patients() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleDelete(patient.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canDelete() && (
+                          <button
+                            onClick={() => handleDelete(patient)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

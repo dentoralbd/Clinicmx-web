@@ -20,6 +20,9 @@ import {
   Printer,
   Settings,
   BarChart3,
+  Search,
+  X,
+  History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -54,6 +57,8 @@ interface Invoice {
     first_name: string
     last_name: string
     email: string | null
+    phone: string | null
+    patient_code: string | null
   } | null
 }
 
@@ -71,6 +76,9 @@ export function Billing() {
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
   const [pendingPatients, setPendingPatients] = useState<Array<{ patient_id: string; name: string; count: number }>>([])
   const [preselectedPatientId, setPreselectedPatientId] = useState('')
+  const [patientFilter, setPatientFilter] = useState<{ id: string; name: string } | null>(null)
+  const [patientSearch, setPatientSearch] = useState('')
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false)
 
   useEffect(() => {
     loadInvoices()
@@ -91,12 +99,19 @@ export function Billing() {
     return () => document.removeEventListener('click', handler)
   }, [showPendingPatients])
 
+  useEffect(() => {
+    if (!showPatientSuggestions) return
+    const handler = () => setShowPatientSuggestions(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showPatientSuggestions])
+
   async function loadInvoices() {
     try {
       setLoading(true)
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, patients (first_name, last_name, email)')
+        .select('*, patients (first_name, last_name, email, phone, patient_code)')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -258,10 +273,42 @@ export function Billing() {
     URL.revokeObjectURL(url)
   }
 
+  const billedPatients = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; phone: string | null; patient_code: string | null }>()
+    for (const invoice of invoices) {
+      if (!invoice.patients || seen.has(invoice.patient_id)) continue
+      seen.set(invoice.patient_id, {
+        id: invoice.patient_id,
+        name: `${invoice.patients.first_name} ${invoice.patients.last_name}`.trim(),
+        phone: invoice.patients.phone,
+        patient_code: invoice.patients.patient_code,
+      })
+    }
+    return Array.from(seen.values())
+  }, [invoices])
+
+  const recentPatients = useMemo(() => billedPatients.slice(0, 8), [billedPatients])
+
+  const patientSuggestions = useMemo(() => {
+    const query = patientSearch.trim()
+    if (!query) return []
+    const queryLower = query.toLowerCase()
+    return billedPatients
+      .filter(
+        (patient) =>
+          patient.name.toLowerCase().includes(queryLower) ||
+          (patient.patient_code ?? '').toLowerCase().includes(queryLower) ||
+          (patient.phone ?? '').includes(query)
+      )
+      .slice(0, 8)
+  }, [billedPatients, patientSearch])
+
   const filteredInvoices = useMemo(() => {
-    if (filter === 'all') return invoices
-    return invoices.filter((invoice) => invoice.status === filter)
-  }, [filter, invoices])
+    let result = invoices
+    if (patientFilter) result = result.filter((invoice) => invoice.patient_id === patientFilter.id)
+    if (filter !== 'all') result = result.filter((invoice) => invoice.status === filter)
+    return result
+  }, [filter, invoices, patientFilter])
 
   const stats = {
     total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
@@ -378,6 +425,77 @@ export function Billing() {
       </div>
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <Search className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={patientSearch}
+                placeholder="Search patient by name, phone, or ID..."
+                className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm w-72 max-w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                onChange={(e) => {
+                  setPatientSearch(e.target.value)
+                  setShowPatientSuggestions(true)
+                }}
+                onFocus={() => setShowPatientSuggestions(true)}
+              />
+              {showPatientSuggestions && patientSearch.trim() !== '' && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-72 max-h-64 overflow-y-auto">
+                  {patientSuggestions.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-text-secondary">No matching patients</div>
+                  ) : (
+                    patientSuggestions.map((patient) => (
+                      <button
+                        key={patient.id}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                        onClick={() => {
+                          setPatientFilter({ id: patient.id, name: patient.name })
+                          setPatientSearch('')
+                          setShowPatientSuggestions(false)
+                        }}
+                      >
+                        <div className="text-sm font-medium text-text-primary">{patient.name}</div>
+                        <div className="text-xs text-text-secondary">
+                          {[patient.patient_code, patient.phone].filter(Boolean).join(' • ') || 'No code / phone'}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {patientFilter && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                {patientFilter.name}
+                <button onClick={() => setPatientFilter(null)} aria-label="Clear patient filter" className="hover:opacity-70">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
+            )}
+          </div>
+          {recentPatients.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
+                <History className="w-3.5 h-3.5" /> Recent:
+              </span>
+              {recentPatients.map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => setPatientFilter({ id: patient.id, name: patient.name })}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    patientFilter?.id === patient.id
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-gray-100 text-text-primary border-gray-200 hover:bg-gray-200'
+                  }`}
+                >
+                  {patient.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-2 justify-between">
           <div className="flex gap-2">
             {['all', 'Pending', 'Partial', 'Paid'].map((status) => (
@@ -415,7 +533,9 @@ export function Billing() {
           </div>
         ) : filteredInvoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
-            {filter === 'all' ? 'No invoices yet. Click "New Invoice" to get started.' : `No ${filter.toLowerCase()} invoices.`}
+            {patientFilter
+              ? `No ${filter === 'all' ? '' : `${filter.toLowerCase()} `}invoices for ${patientFilter.name}.`
+              : filter === 'all' ? 'No invoices yet. Click "New Invoice" to get started.' : `No ${filter.toLowerCase()} invoices.`}
           </div>
         ) : (
           <div className="divide-y divide-gray-200">

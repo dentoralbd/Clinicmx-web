@@ -807,6 +807,42 @@ export interface Database {
           }
         ]
       }
+      delete_history: {
+        Row: {
+          id: string
+          deleted_at: string
+          entity_type: string
+          entity_id: string
+          entity_label: string | null
+          patient_id: string | null
+          patient_name: string | null
+          payload: Json
+          deleted_by: string
+        }
+        Insert: {
+          id?: string
+          deleted_at?: string
+          entity_type: string
+          entity_id: string
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          payload: Json
+          deleted_by?: string
+        }
+        Update: {
+          id?: string
+          deleted_at?: string
+          entity_type?: string
+          entity_id?: string
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          payload?: Json
+          deleted_by?: string
+        }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
