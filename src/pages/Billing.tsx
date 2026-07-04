@@ -35,6 +35,7 @@ import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { matchesPatientSearch } from '@/lib/patients'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface Invoice {
@@ -304,14 +305,8 @@ export function Billing() {
   const patientSuggestions = useMemo(() => {
     const query = patientSearch.trim()
     if (!query) return []
-    const queryLower = query.toLowerCase()
     return billedPatients
-      .filter(
-        (patient) =>
-          patient.name.toLowerCase().includes(queryLower) ||
-          (patient.patient_code ?? '').toLowerCase().includes(queryLower) ||
-          (patient.phone ?? '').includes(query)
-      )
+      .filter((patient) => matchesPatientSearch({ name: patient.name, code: patient.patient_code, phone: patient.phone }, query))
       .slice(0, 8)
   }, [billedPatients, patientSearch])
 

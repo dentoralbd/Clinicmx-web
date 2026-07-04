@@ -63,3 +63,17 @@ export async function createPatient(payload: CreatePatientPayload) {
       }
     : createdPatient
 }
+
+export function matchesPatientSearch(
+  candidate: { name: string; code?: string | null; phone?: string | null },
+  query: string
+): boolean {
+  const trimmed = query.trim()
+  if (!trimmed) return false
+  const lower = trimmed.toLowerCase()
+  return (
+    candidate.name.toLowerCase().includes(lower) ||
+    (candidate.code || '').toLowerCase().includes(lower) ||
+    (candidate.phone || '').includes(trimmed)
+  )
+}

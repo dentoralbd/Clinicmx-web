@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { createPatient } from '@/lib/patients'
+import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { deriveDateOfBirthFromAge } from '@/lib/ageTier'
 import { UserPlus, Users, Search } from 'lucide-react'
 
@@ -99,13 +99,12 @@ export function AppointmentModal({
       return
     }
 
-    const queryDigits = normalizedLookup.replace(/\D/g, '')
-    const matches = patients.filter((patient) => {
-      const name = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase()
-      if (name.includes(normalizedLookup)) return true
-      const phoneDigits = (patient.phone || '').replace(/\D/g, '')
-      return queryDigits.length > 0 && phoneDigits.includes(queryDigits)
-    })
+    const matches = patients.filter((patient) =>
+      matchesPatientSearch(
+        { name: `${patient.first_name || ''} ${patient.last_name || ''}`, code: patient.patient_code, phone: patient.phone },
+        lookup
+      )
+    )
 
     if (matches.length > 0) {
       setPatientSearchResults(matches)

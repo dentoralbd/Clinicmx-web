@@ -3,7 +3,7 @@ import { Plus, Search, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { createPatient } from '@/lib/patients'
+import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { format } from 'date-fns'
@@ -180,11 +180,10 @@ export function Patients() {
   const filteredPatients = patients.filter((patient) => {
     const searchLower = searchTerm.toLowerCase()
     return (
-      patient.first_name.toLowerCase().includes(searchLower) ||
-      patient.last_name.toLowerCase().includes(searchLower) ||
-      (patient.phone ?? '').includes(searchTerm) ||
-      (patient.email ?? '').toLowerCase().includes(searchLower) ||
-      (patient.patient_code && patient.patient_code.toLowerCase().includes(searchLower))
+      matchesPatientSearch(
+        { name: `${patient.first_name} ${patient.last_name}`, code: patient.patient_code, phone: patient.phone },
+        searchTerm
+      ) || (patient.email ?? '').toLowerCase().includes(searchLower)
     )
   })
 

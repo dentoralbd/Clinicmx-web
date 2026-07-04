@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { createPatient } from '@/lib/patients'
+import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -111,18 +111,17 @@ export function Prescriptions() {
   const [patientSearchResults, setPatientSearchResults] = useState<any[] | null>(null)
 
   function handlePatientSearch() {
-    const query = patientSearch.trim().toLowerCase()
+    const query = patientSearch.trim()
     if (!query) {
       setPatientSearchResults(null)
       return
     }
-    const queryDigits = query.replace(/\D/g, '')
-    const matches = patients.filter((patient) => {
-      const name = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase()
-      if (name.includes(query)) return true
-      const phoneDigits = (patient.phone || '').replace(/\D/g, '')
-      return queryDigits.length > 0 && phoneDigits.includes(queryDigits)
-    })
+    const matches = patients.filter((patient) =>
+      matchesPatientSearch(
+        { name: `${patient.first_name || ''} ${patient.last_name || ''}`, code: patient.patient_code, phone: patient.phone },
+        query
+      )
+    )
     setPatientSearchResults(matches)
   }
 
