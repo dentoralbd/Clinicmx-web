@@ -34,6 +34,8 @@ import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeT
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
+import { canDelete } from '@/lib/appSession'
+import { logDeletion } from '@/lib/deleteHistory'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -330,7 +332,21 @@ export function Prescriptions() {
           }
         }
 
-        if (idsToDelete.length > 0) {
+        if (idsToDelete.length > 0 && canDelete()) {
+          const { data: treatmentsToDelete } = await supabase
+            .from('treatments')
+            .select('*')
+            .in('id', idsToDelete)
+          for (const treatment of treatmentsToDelete || []) {
+            await logDeletion({
+              entityType: 'treatment',
+              entityId: treatment.id,
+              entityLabel: treatment.treatment_type,
+              patientId: treatment.patient_id,
+              patientName: null,
+              payload: treatment,
+            })
+          }
           await supabase.from('treatments').delete().in('id', idsToDelete)
         }
       }
@@ -381,10 +397,20 @@ export function Prescriptions() {
     setShowForm(true)
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(prescription: any) {
+    if (!canDelete()) return
     if (!confirm('Are you sure you want to delete this prescription?')) return
     try {
-      await supabase.from('prescriptions').delete().eq('id', id)
+      const patientName = `${prescription.patients?.first_name ?? ''} ${prescription.patients?.last_name ?? ''}`.trim()
+      await logDeletion({
+        entityType: 'prescription',
+        entityId: prescription.id,
+        entityLabel: prescription.diagnosis || 'Prescription',
+        patientId: prescription.patient_id,
+        patientName: patientName || null,
+        payload: prescription,
+      })
+      await supabase.from('prescriptions').delete().eq('id', prescription.id)
       loadPrescriptions()
     } catch (error) {
       console.error('Error deleting prescription:', error)
@@ -662,14 +688,16 @@ export function Prescriptions() {
                        >
                          <Pencil className="w-4 h-4" />
                        </button>
-                       <button
-                         type="button"
-                         onClick={() => handleDelete(prescription.id)}
-                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                         title="Delete"
-                       >
-                         <Trash2 className="w-4 h-4" />
-                       </button>
+                       {canDelete() && (
+                         <button
+                           type="button"
+                           onClick={() => handleDelete(prescription)}
+                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                           title="Delete"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       )}
                      </div>
                     </td>
                   </tr>

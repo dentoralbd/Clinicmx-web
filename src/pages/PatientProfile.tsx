@@ -38,6 +38,8 @@ import { formatBDT } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
+import { canDelete } from '@/lib/appSession'
+import { logDeletion } from '@/lib/deleteHistory'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
 
@@ -561,7 +563,21 @@ export function PatientProfile() {
           }
         }
 
-        if (idsToDelete.length > 0) {
+        if (idsToDelete.length > 0 && canDelete()) {
+          const { data: treatmentsToDelete } = await supabase
+            .from('treatments')
+            .select('*')
+            .in('id', idsToDelete)
+          for (const treatment of treatmentsToDelete || []) {
+            await logDeletion({
+              entityType: 'treatment',
+              entityId: treatment.id,
+              entityLabel: treatment.treatment_type,
+              patientId: treatment.patient_id,
+              patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+              payload: treatment,
+            })
+          }
           await supabase.from('treatments').delete().in('id', idsToDelete)
         }
       }
@@ -640,8 +656,18 @@ export function PatientProfile() {
   }
 
   async function handleDeletePrescription(prescriptionId: string) {
+    if (!canDelete()) return
     if (!confirm('Are you sure you want to delete this prescription?')) return
     try {
+      const prescription = prescriptions.find((p: any) => p.id === prescriptionId)
+      await logDeletion({
+        entityType: 'prescription',
+        entityId: prescriptionId,
+        entityLabel: prescription?.diagnosis || 'Prescription',
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        payload: prescription || { id: prescriptionId },
+      })
       await supabase.from('prescriptions').delete().eq('id', prescriptionId)
       loadPatientData()
     } catch (error) {
@@ -669,9 +695,19 @@ export function PatientProfile() {
   }
 
   async function handleDeleteInvoice(invoiceId: string) {
+    if (!canDelete()) return
     if (!confirm('Delete this invoice?')) return
 
     try {
+      const invoice = invoices.find((inv: any) => inv.id === invoiceId)
+      await logDeletion({
+        entityType: 'invoice',
+        entityId: invoiceId,
+        entityLabel: invoice?.invoice_number || 'Invoice',
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        payload: invoice || { id: invoiceId },
+      })
       const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
       if (error) throw error
       loadPatientData()
@@ -718,9 +754,18 @@ export function PatientProfile() {
   }
 
   async function handleDeleteFile(file: any) {
+    if (!canDelete()) return
     if (!confirm(`Delete "${file.file_name}"?`)) return
 
     try {
+      await logDeletion({
+        entityType: 'patient_file',
+        entityId: file.id,
+        entityLabel: file.file_name,
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        payload: file,
+      })
       await supabase.storage.from('patient-files').remove([file.storage_path])
       await supabase.from('patient_files').delete().eq('id', file.id)
       loadPatientData()
@@ -1606,14 +1651,16 @@ export function PatientProfile() {
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePrescription(prescription.id)}
-                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {canDelete() && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePrescription(prescription.id)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               {/* CC / O&E chips */}
@@ -1900,13 +1947,15 @@ export function PatientProfile() {
                       <p className="text-xs text-text-secondary truncate">{file.file_name}</p>
                       <p className="text-xs text-text-secondary">{formatDateValue(file.created_at)}</p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteFile(file)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Delete"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    {canDelete() && (
+                      <button
+                        onClick={() => handleDeleteFile(file)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -3648,7 +3697,9 @@ function PatientInvoiceRow({
               <Button size="sm" variant="outline" onClick={onMarkPaid}>Mark Paid</Button>
             )}
             <Button size="sm" variant="outline" onClick={() => setShowPaymentModal(true)} disabled={due <= 0}>Record Payment</Button>
-            <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+            {canDelete() && (
+              <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+            )}
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, Sparkles } from 'lucide-react'
+import { canDelete } from '@/lib/appSession'
 
 interface SidebarProps {
   isOpen: boolean
@@ -77,23 +78,25 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
               </NavLink>
             ))}
 
-            {/* Settings section */}
-            <div className="pt-3 mt-2 border-t border-gray-200">
-              <NavLink
-                to="/doctor-profile"
-                onClick={onNavClick}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
-                    isActive
-                      ? 'bg-gradient-to-r from-primary to-primary-hover text-white shadow-elevation-low'
-                      : 'text-text-secondary hover:bg-primary/5 hover:text-primary'
-                  }`
-                }
-              >
-                <UserCircle className="w-5 h-5" />
-                <span className="font-medium">Doctor Profile</span>
-              </NavLink>
-            </div>
+            {/* Settings section — doctor only */}
+            {canDelete() && (
+              <div className="pt-3 mt-2 border-t border-gray-200">
+                <NavLink
+                  to="/doctor-profile"
+                  onClick={onNavClick}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
+                      isActive
+                        ? 'bg-gradient-to-r from-primary to-primary-hover text-white shadow-elevation-low'
+                        : 'text-text-secondary hover:bg-primary/5 hover:text-primary'
+                    }`
+                  }
+                >
+                  <UserCircle className="w-5 h-5" />
+                  <span className="font-medium">Doctor Profile</span>
+                </NavLink>
+              </div>
+            )}
           </nav>
 
           <div className="p-4 border-t border-gray-200 space-y-2">

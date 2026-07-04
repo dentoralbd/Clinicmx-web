@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Navigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import {
   Stethoscope,
@@ -16,10 +17,17 @@ import {
   X,
   Upload,
   RotateCcw,
+  Pencil,
+  History,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
+import { getAppRole } from '@/lib/appSession'
+import { supabase } from '@/lib/supabase'
 
 const DEFAULT_LOGO = '/logo.png'
 
@@ -63,6 +71,132 @@ export function splitDegrees(degrees: string): string[] {
   return degrees.split('\n').map((line) => line.trim()).filter(Boolean)
 }
 
+const HISTORY_PAGE_SIZE = 50
+
+interface DeleteHistoryRow {
+  id: string
+  deleted_at: string
+  entity_type: string
+  entity_id: string
+  entity_label: string | null
+  patient_id: string | null
+  patient_name: string | null
+  payload: unknown
+  deleted_by: string
+}
+
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  patient: 'Patient',
+  treatment: 'Treatment',
+  prescription: 'Prescription',
+  invoice: 'Invoice',
+  patient_file: 'Patient File',
+  inventory_item: 'Inventory Item',
+}
+
+type HistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'patient_file' | 'inventory_item'
+
+const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'patient', label: 'Pt. Profile' },
+  { value: 'prescription', label: 'Prescriptions' },
+  { value: 'treatment', label: 'Treatments' },
+  { value: 'invoice', label: 'Invoices' },
+  { value: 'patient_file', label: 'Pt. Files' },
+  { value: 'inventory_item', label: 'Inventory' },
+]
+
+function humanizeKey(key: string) {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/
+
+function isIdKey(key: string) {
+  return key === 'id' || key.endsWith('_id')
+}
+
+function formatSnapshotScalar(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') {
+    if (ISO_DATE_RE.test(value)) {
+      const date = new Date(value)
+      if (!Number.isNaN(date.getTime())) {
+        return value.includes('T') ? format(date, 'MMM d, yyyy h:mm a') : format(date, 'MMM d, yyyy')
+      }
+    }
+    return value
+  }
+  return null
+}
+
+function summarizeSnapshotItem(item: unknown): string {
+  if (item === null || item === undefined) return ''
+  if (typeof item !== 'object') return formatSnapshotScalar(item) ?? ''
+  const parts: string[] = []
+  for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
+    if (isIdKey(key)) continue
+    if (Array.isArray(value)) {
+      const joined = value.map((v) => formatSnapshotScalar(v)).filter(Boolean).join(', ')
+      if (joined) parts.push(joined)
+      continue
+    }
+    const formatted = formatSnapshotScalar(value)
+    if (formatted) parts.push(formatted)
+  }
+  return parts.join(' — ')
+}
+
+function SnapshotDetails({ payload }: { payload: unknown }) {
+  if (!payload || typeof payload !== 'object') {
+    return <p className="text-xs text-gray-400">No details recorded.</p>
+  }
+
+  const entries = Object.entries(payload as Record<string, unknown>)
+  const idEntries = entries.filter(([key]) => isIdKey(key))
+  const detailEntries = entries.filter(([key]) => !isIdKey(key))
+
+  return (
+    <div className="space-y-1.5">
+      {detailEntries.map(([key, value]) => {
+        let rendered: React.ReactNode = null
+        if (Array.isArray(value)) {
+          const lines = value.map(summarizeSnapshotItem).filter(Boolean)
+          if (lines.length === 0) return null
+          rendered = (
+            <span className="space-y-0.5">
+              {lines.map((line, idx) => (
+                <span key={idx} className="block">{lines.length > 1 ? `${idx + 1}. ` : ''}{line}</span>
+              ))}
+            </span>
+          )
+        } else if (value !== null && typeof value === 'object') {
+          const summary = summarizeSnapshotItem(value)
+          if (!summary) return null
+          rendered = summary
+        } else {
+          const formatted = formatSnapshotScalar(value)
+          if (formatted === null) return null
+          rendered = <span className="whitespace-pre-line">{formatted}</span>
+        }
+        return (
+          <div key={key} className="flex gap-3 text-xs">
+            <span className="w-36 flex-shrink-0 font-medium text-gray-500">{humanizeKey(key)}</span>
+            <span className="text-gray-800 min-w-0 flex-1">{rendered}</span>
+          </div>
+        )
+      })}
+      {idEntries.length > 0 && (
+        <p className="pt-2 mt-2 border-t border-gray-200 text-[10px] text-gray-400 break-all">
+          {idEntries.map(([key, value]) => `${humanizeKey(key)}: ${String(value)}`).join(' · ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function DoctorProfile() {
   const [form, setForm] = useState<DoctorProfileData>(empty)
   const [loading, setLoading] = useState(true)
@@ -70,6 +204,14 @@ export function DoctorProfile() {
   const [saved, setSaved] = useState(false)
   const [defaultLogo, setDefaultLogo] = useState(DEFAULT_LOGO)
   const logoInputRef = useRef<HTMLInputElement>(null)
+
+  const [activeTab, setActiveTab] = useState<'profile' | 'history'>('profile')
+  const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [historyHasMore, setHistoryHasMore] = useState(true)
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
 
   useEffect(() => {
     loadProfile()
@@ -81,6 +223,39 @@ export function DoctorProfile() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      setExpandedHistoryId(null)
+      loadDeleteHistory(0, historyFilter)
+    }
+  }, [activeTab, historyFilter])
+
+  async function loadDeleteHistory(page: number, filter: HistoryFilter) {
+    setHistoryLoading(true)
+    try {
+      const from = page * HISTORY_PAGE_SIZE
+      const to = from + HISTORY_PAGE_SIZE - 1
+      let query = supabase
+        .from('delete_history')
+        .select('*')
+        .order('deleted_at', { ascending: false })
+        .range(from, to)
+      if (filter !== 'all') {
+        query = query.eq('entity_type', filter)
+      }
+      const { data, error } = await query
+      if (error) throw error
+      const rows = (data || []) as DeleteHistoryRow[]
+      setDeleteHistory((prev) => (page === 0 ? rows : [...prev, ...rows]))
+      setHistoryHasMore(rows.length === HISTORY_PAGE_SIZE)
+      setHistoryPage(page)
+    } catch (err) {
+      console.error('Error loading delete history:', err)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
 
   async function loadProfile() {
     try {
@@ -187,6 +362,10 @@ export function DoctorProfile() {
     )
   }
 
+  if (getAppRole() !== 'doctor') {
+    return <Navigate to="/dashboard" replace />
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 p-6">
@@ -198,7 +377,7 @@ export function DoctorProfile() {
   }
 
   return (
-    <form onSubmit={handleSave} className="max-w-6xl mx-auto space-y-6 page-fade-in">
+    <div className="max-w-6xl mx-auto space-y-6 page-fade-in">
       {/* Hero banner — live identity card */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary via-[#1b4e70] to-slate-900 rounded-3xl p-6 text-white">
         <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/5" />
@@ -242,6 +421,36 @@ export function DoctorProfile() {
         </div>
       </div>
 
+      {/* Main action tabs */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
+            activeTab === 'profile'
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
+          }`}
+        >
+          <Pencil className="w-5 h-5" />
+          Edit Profile
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
+            activeTab === 'history'
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
+          }`}
+        >
+          <History className="w-5 h-5" />
+          Delete History
+        </button>
+      </div>
+
+      {activeTab === 'profile' && (
+      <form onSubmit={handleSave} className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 items-start">
         {/* Left column — form sections */}
         <div className="space-y-5">
@@ -422,7 +631,97 @@ export function DoctorProfile() {
           </Button>
         </div>
       </div>
-    </form>
+      </form>
+      )}
+
+      {activeTab === 'history' && (
+        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+              <History className="w-5 h-5 text-red-500" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-800">Delete History</h2>
+              <p className="text-xs text-gray-400">Every record ever deleted, with full details — for audit purposes</p>
+            </div>
+          </div>
+
+          {/* Category filters */}
+          <div className="flex flex-wrap gap-2">
+            {HISTORY_FILTERS.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => setHistoryFilter(filter.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  historyFilter === filter.value
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-text-secondary border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
+          {deleteHistory.length === 0 && !historyLoading ? (
+            <p className="text-sm text-gray-400 py-4 text-center">
+              {historyFilter === 'all' ? 'No deletions recorded yet.' : 'No deletions in this category yet.'}
+            </p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {deleteHistory.map((entry) => {
+                const isExpanded = expandedHistoryId === entry.id
+                return (
+                  <div key={entry.id} className="py-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedHistoryId(isExpanded ? null : entry.id)}
+                      className="w-full flex items-center justify-between gap-3 text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Trash2 className="w-4 h-4 text-red-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {ENTITY_TYPE_LABELS[entry.entity_type] || entry.entity_type}
+                            {entry.entity_label ? `: ${entry.entity_label}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {format(new Date(entry.deleted_at), 'MMM d, yyyy h:mm a')}
+                            {entry.patient_name ? ` · ${entry.patient_name}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <SnapshotDetails payload={entry.payload} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {historyHasMore && (
+            <button
+              type="button"
+              onClick={() => loadDeleteHistory(historyPage + 1, historyFilter)}
+              disabled={historyLoading}
+              className="w-full text-sm font-medium text-primary hover:underline py-2 text-center disabled:opacity-50"
+            >
+              {historyLoading ? 'Loading…' : 'Load more'}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

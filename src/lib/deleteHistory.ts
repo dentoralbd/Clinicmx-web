@@ -16,7 +16,7 @@ export interface DeletionLogInput {
   entityLabel?: string | null
   patientId?: string | null
   patientName?: string | null
-  payload: Record<string, unknown>
+  payload: object
 }
 
 /**

@@ -7,6 +7,8 @@ import {
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { safeFormat } from '@/lib/utils'
+import { canDelete } from '@/lib/appSession'
+import { logDeletion } from '@/lib/deleteHistory'
 import { differenceInDays } from 'date-fns'
 
 type Category = 'Materials' | 'Instruments' | 'Others'
@@ -154,8 +156,18 @@ export function Inventory() {
   }
 
   async function handleDelete(id: string) {
+    if (!canDelete()) return
     if (!confirm('Delete this inventory item? This will also remove its movement history.')) return
     try {
+      const item = items.find((i) => i.id === id)
+      await logDeletion({
+        entityType: 'inventory_item',
+        entityId: id,
+        entityLabel: item?.name || 'Inventory item',
+        patientId: null,
+        patientName: null,
+        payload: item || { id },
+      })
       const { error } = await supabase.from('inventory_items').delete().eq('id', id)
       if (error) throw error
       setItems((prev) => prev.filter((i) => i.id !== id))
@@ -550,13 +562,15 @@ export function Inventory() {
                                 >
                                   <Edit className="w-4 h-4" />
                                 </button>
-                                <button
-                                  onClick={() => handleDelete(item.id)}
-                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                {canDelete() && (
+                                  <button
+                                    onClick={() => handleDelete(item.id)}
+                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

@@ -80,16 +80,18 @@ export function Header({ onMenuClick }: HeaderProps) {
                   <p className="text-sm text-text-secondary">Logged in as</p>
                   <p className="text-sm font-semibold text-gray-900">{roleLabel}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setProfileOpen(false)
-                    navigate('/doctor-profile')
-                  }}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <User className="w-4 h-4 text-text-secondary" />
-                  Doctor Profile
-                </button>
+                {role === 'doctor' && (
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false)
+                      navigate('/doctor-profile')
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <User className="w-4 h-4 text-text-secondary" />
+                    Doctor Profile
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
