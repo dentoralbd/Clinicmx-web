@@ -88,6 +88,8 @@ type GenericKey =
   | 'oseltamivir'
   | 'aceclofenac'
   | 'paracetamolTramadol'
+  | 'naproxenSodium'
+  | 'naproxenEsomeprazole'
 
 interface GenericDefaults {
   generic: string
@@ -685,6 +687,28 @@ const GENERIC_DEFAULTS: Record<GenericKey, GenericDefaults> = {
     defaultRoute: 'Oral',
     ageDosing: { infant: 'Not recommended', child: 'Not recommended <12 years', adult: '1-2 tablets every 6h as needed (max 8/day)' },
   },
+  naproxenSodium: {
+    generic: 'Naproxen Sodium',
+    category: 'Anti-inflammatory',
+    dosageForm: '500mg Tab',
+    defaultDosage: '500mg',
+    defaultFrequency: '2x daily',
+    defaultDuration: '5 days',
+    defaultInstructions: 'After meals; take with a full glass of water; longer half-life allows twice-daily dosing',
+    defaultRoute: 'Oral',
+    ageDosing: { infant: 'Not recommended <2 years', child: '10mg/kg/day in 2 divided doses (>2 years); oral suspension preferred', adult: '500mg twice daily (acute pain: initial 500mg then 250mg every 6-8h; max 1000mg/day)' },
+  },
+  naproxenEsomeprazole: {
+    generic: 'Naproxen Sodium + Esomeprazole Magnesium',
+    category: 'Anti-inflammatory',
+    dosageForm: '500mg/20mg Delayed Release Tab',
+    defaultDosage: '500mg/20mg (1 tablet)',
+    defaultFrequency: '2x daily',
+    defaultDuration: '5-7 days',
+    defaultInstructions: 'Take ≥30 min before meals; swallow whole — do not split, crush or chew; built-in GI protection',
+    defaultRoute: 'Oral',
+    ageDosing: { infant: 'Not recommended', child: 'Not recommended <12 years; >38kg adolescents: 375mg/20mg twice daily before meals', adult: '375mg/20mg or 500mg/20mg twice daily before meals' },
+  },
 }
 
 interface DrugSeed {
@@ -727,7 +751,7 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'amoxiclav', brand: 'Clavoxil 625', company: 'Renata PLC', pack: '3×6', priceLabel: '৳25.00', priceNum: 25, dentalUse: 'Dental infections requiring augmented cover' },
   { genericKey: 'amoxiclav', brand: 'Co-Clav 625', company: 'Ad-din Pharmaceuticals Ltd', pack: "20's", priceLabel: '৳32.00', priceNum: 32, dentalUse: 'Dental infections with resistant bacteria' },
   { genericKey: 'amoxiclav', brand: 'Demoxiclave 625', company: 'Drug International Ltd', pack: '3×7', priceLabel: '৳32.00', priceNum: 32, dentalUse: 'Pericoronitis, post-extraction infection' },
-  { genericKey: 'amoxiclav', brand: 'Bioclavid 625', company: 'Novartis (Bangladesh) Ltd', pack: "20's", priceLabel: '৳~32', priceNum: 32, dentalUse: 'Severe odontogenic infections' },
+  { genericKey: 'amoxiclav', brand: 'Bioclavid 625', company: 'SANDOZ (A Novartis Division)', pack: "20's", priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Severe odontogenic infections' },
   { genericKey: 'amoxiclav', brand: 'Moxaclav Suspension', company: 'Square Pharmaceuticals PLC', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Beta-lactamase resistant dental infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
   { genericKey: 'amoxiclav', brand: 'Tyclav Suspension', company: 'Beximco Pharmaceuticals Ltd', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Refractory dental infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
   { genericKey: 'amoxiclav', brand: 'Augment Suspension', company: 'Eskayef Pharmaceuticals Ltd', pack: '(125mg+31.25mg)/5ml, 100ml bottle', priceLabel: '৳220.00', priceNum: 220, dentalUse: 'Post-surgical oral infections in children', dosageForm: '125mg/31.25mg/5ml Suspension' },
@@ -796,6 +820,15 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'diclofenac', brand: 'Ultrafen SR 100', company: 'Beximco Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Once-daily sustained dental pain relief', dosageForm: '100mg SR Tab' },
   { genericKey: 'diclofenac', brand: 'Voltagel', company: 'Eskayef Pharmaceuticals Ltd', pack: '1% w/w, 50g tube', priceLabel: '৳90.00', priceNum: 90, dentalUse: 'Topical TMJ/facial muscle pain (adjunct)', dosageForm: '1% Gel' },
   { genericKey: 'diclofenac', brand: 'Nopain Suppository 50', company: 'Drug International Ltd', pack: '2×5', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Post-surgical pain when oral route unavailable', dosageForm: '50mg Suppository' },
+  { genericKey: 'diclofenac', brand: 'Voltalin Suppository 12.5', company: 'Nevian Lifescience PLC', pack: 'Suppository', priceLabel: '৳31.00', priceNum: 31, dentalUse: 'Post-surgical pain in children when oral route unavailable', dosageForm: '12.5mg Suppository' },
+  { genericKey: 'diclofenac', brand: 'Voltalin Suppository 25', company: 'Nevian Lifescience PLC', pack: 'Suppository', priceLabel: '৳35.00', priceNum: 35, dentalUse: 'Post-surgical pain when oral route unavailable', dosageForm: '25mg Suppository' },
+  { genericKey: 'diclofenac', brand: 'Voltalin Suppository 50', company: 'Nevian Lifescience PLC', pack: 'Suppository', priceLabel: '৳60.00', priceNum: 60, dentalUse: 'Post-surgical pain when oral route unavailable', dosageForm: '50mg Suppository' },
+  { genericKey: 'diclofenac', brand: 'Voltalin D 46.5', company: 'Nevian Lifescience PLC', pack: 'Tab', priceLabel: '৳8.02', priceNum: 8.02, dentalUse: 'Post-surgical dental pain & swelling, TMJ, alveolar osteitis', dosageForm: '46.5mg Tab' },
+  { genericKey: 'diclofenac', brand: 'Voltalin Forte 50', company: 'Nevian Lifescience PLC', pack: 'Tab', priceLabel: '৳8.50', priceNum: 8.5, dentalUse: 'Post-surgical dental pain & swelling, TMJ, alveolar osteitis' },
+  { genericKey: 'diclofenac', brand: 'Voltalin SR 75', company: 'Nevian Lifescience PLC', pack: 'Tab', priceLabel: '৳11.03', priceNum: 11.03, dentalUse: 'Once-daily sustained dental pain relief', dosageForm: '75mg SR Tab' },
+  { genericKey: 'diclofenac', brand: 'Voltalin SR 100', company: 'Nevian Lifescience PLC', pack: 'Tab', priceLabel: '৳18.00', priceNum: 18, dentalUse: 'Once-daily sustained dental pain relief', dosageForm: '100mg SR Tab' },
+  { genericKey: 'diclofenac', brand: 'Voltaren Injection 75', company: 'Nevian Lifescience PLC', pack: '3ml ampoule', priceLabel: '৳150.00', priceNum: 150, dentalUse: 'Severe post-surgical dental pain (parenteral)', dosageForm: '75mg/3ml IM/IV Injection' },
+  { genericKey: 'diclofenac', brand: 'Anuva 50', company: 'Nevian Lifescience PLC', pack: 'Tab', priceLabel: '৳8.02', priceNum: 8.02, dentalUse: 'Post-surgical dental pain & swelling (potassium salt — faster onset than sodium salt)' },
 
   { genericKey: 'paracetamol', brand: 'Napa 500', company: 'Beximco Pharmaceuticals Ltd', pack: '51×10', priceLabel: '৳1.20', priceNum: 1.2, dentalUse: 'Mild-moderate dental pain, fever, post-extraction analgesia' },
   { genericKey: 'paracetamol', brand: 'Napa Extend 665', company: 'Beximco Pharmaceuticals Ltd', pack: '12×12', priceLabel: '৳2.00', priceNum: 2, dentalUse: 'Extended-release analgesia for dental pain', dosageForm: '665mg ER Tab' },
@@ -920,7 +953,14 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'mefenamic', brand: 'Flamic 250', company: 'Globe Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Dental pain, lower strength', dosageForm: '250mg Tab' },
   { genericKey: 'mefenamic', brand: 'Flamic Suspension', company: 'Globe Pharmaceuticals Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Dental pain & inflammation in children', dosageForm: '50mg/5ml Suspension' },
   { genericKey: 'mefenamic', brand: 'Myfocin 500', company: 'Incepta Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Moderate orofacial pain relief' },
+  { genericKey: 'mefenamic', brand: 'Mefalgin 500', company: 'Cosmic Pharma Ltd', pack: '5×10', priceLabel: '৳4.00', priceNum: 4, dentalUse: 'Moderate dental pain & inflammation' },
+  { genericKey: 'mefenamic', brand: 'Mefalgin 250', company: 'Cosmic Pharma Ltd', pack: '10×10', priceLabel: '৳1.80', priceNum: 1.8, dentalUse: 'Dental pain, lower strength', dosageForm: '250mg Tab' },
   { genericKey: 'mefenamic', brand: 'Mefalgin Suspension', company: 'Cosmic Pharma Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳30.00', priceNum: 30, dentalUse: 'Dental pain & inflammation in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'mefenamic', brand: 'Fenaton 500', company: 'Drug International Ltd', pack: '5×10', priceLabel: '৳3.00', priceNum: 3, dentalUse: 'Moderate dental pain & inflammation' },
+  { genericKey: 'mefenamic', brand: 'HPR-DS 500', company: 'Pacific Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳7.00', priceNum: 7, dentalUse: 'Moderate-to-severe dental pain' },
+  { genericKey: 'mefenamic', brand: 'HPR 250', company: 'Pacific Pharmaceuticals Ltd', pack: '10×10', priceLabel: '৳4.00', priceNum: 4, dentalUse: 'Dental pain, lower strength', dosageForm: '250mg Tab' },
+  { genericKey: 'mefenamic', brand: 'HPR Suspension', company: 'Pacific Pharmaceuticals Ltd', pack: '50mg/5ml, 60ml bottle', priceLabel: '৳56.00', priceNum: 56, dentalUse: 'Dental pain in children', dosageForm: '50mg/5ml Suspension' },
+  { genericKey: 'mefenamic', brand: 'Mefotrix DS', company: 'The White Horse Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳5.00', priceNum: 5, dentalUse: 'Moderate dental pain management' },
 
   { genericKey: 'tranexamic', brand: 'Frabex 500', company: 'Square Pharmaceuticals PLC', pack: '2×10', priceLabel: '৳23.00', priceNum: 23, dentalUse: 'Post-extraction bleeding control, anticoagulated patients' },
   { genericKey: 'tranexamic', brand: 'Tracid 500', company: 'ACME Laboratories Ltd', pack: '2×10', priceLabel: '৳23.40', priceNum: 23.4, dentalUse: 'Hemostasis after oral surgery' },
@@ -942,7 +982,7 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'amoxiclav875', brand: 'Augment 1g', company: 'Eskayef Pharmaceuticals Ltd', pack: '2×6', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Post-surgical oral infections requiring higher dose' },
   { genericKey: 'amoxiclav875', brand: 'Clamox 1g', company: 'Opsonin Pharma Ltd', pack: '2×6', priceLabel: '৳40.00', priceNum: 40, dentalUse: 'Resistant odontogenic infections' },
   { genericKey: 'amoxiclav875', brand: 'Avloclav 1g', company: 'ACI Limited', pack: '2×6', priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Severe dental abscess, beta-lactamase producers' },
-  { genericKey: 'amoxiclav875', brand: 'Bioclavid DS', company: 'Novartis (Bangladesh) Ltd', pack: "14's", priceLabel: '৳48.00', priceNum: 48, dentalUse: 'Severe maxillofacial space infections' },
+  { genericKey: 'amoxiclav875', brand: 'Bioclavid DS', company: 'SANDOZ (A Novartis Division)', pack: "14's", priceLabel: '৳50.00', priceNum: 50, dentalUse: 'Severe maxillofacial space infections' },
   { genericKey: 'amoxiclav875', brand: 'Co-Clav DS', company: 'Ad-din Pharmaceuticals Ltd', pack: "14's", priceLabel: '৳46.00', priceNum: 46, dentalUse: 'Resistant dental infections, higher-dose option' },
   { genericKey: 'amoxiclav875', brand: 'Clacido 1g', company: 'Healthcare Pharmaceuticals Ltd', pack: '2×6', priceLabel: '৳45.00', priceNum: 45, dentalUse: 'Oral/maxillofacial infections, severe presentation' },
   { genericKey: 'amoxiclav875', brand: 'Fimoxyclav 1g', company: 'Synovia Pharma PLC', pack: '4×6', priceLabel: '৳45.13', priceNum: 45.13, dentalUse: 'Perimandibular space infections, higher dosing' },
@@ -1381,6 +1421,48 @@ const DRUG_SEEDS: DrugSeed[] = [
   { genericKey: 'paracetamolTramadol', brand: 'Fevedol', company: 'Drug International Ltd', pack: '3×10', priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Moderate-severe dental pain' },
   { genericKey: 'paracetamolTramadol', brand: 'Peratrum', company: 'Ibn Sina Pharmaceuticals Ltd', pack: '3×10', priceLabel: '৳8.00', priceNum: 8, dentalUse: 'Moderate-severe dental pain' },
   { genericKey: 'paracetamolTramadol', brand: 'Syndol Plus', company: 'Healthcare Pharmaceuticals Ltd', pack: '3×10', priceLabel: '৳8.00', priceNum: 8, dentalUse: 'Moderate-severe dental pain' },
+
+  { genericKey: 'naproxenSodium', brand: 'Sonap 500', company: 'Square Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳10.00', priceNum: 10, dentalUse: 'Post-extraction & post-surgical dental pain, pericoronitis' },
+  { genericKey: 'naproxenSodium', brand: 'Sonap 250', company: 'Square Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳6.00', priceNum: 6, dentalUse: 'Mild-moderate dental pain, lower strength', dosageForm: '250mg Tab' },
+  { genericKey: 'naproxenSodium', brand: 'Anaflex 500', company: 'ACI Limited', pack: '5×10', priceLabel: '৳16.00', priceNum: 16, dentalUse: 'Dental pain & inflammation, post-surgical care' },
+  { genericKey: 'naproxenSodium', brand: 'Anaflex SR 500', company: 'ACI Limited', pack: '5×10', priceLabel: '৳14.09', priceNum: 14.09, dentalUse: 'Once-daily sustained dental pain relief', dosageForm: '500mg SR Tab' },
+  { genericKey: 'naproxenSodium', brand: 'Naxin 500', company: 'Opsonin Pharma Ltd', pack: '5×10', priceLabel: '৳9.03', priceNum: 9.03, dentalUse: 'Dental pain, pericoronitis, alveolar osteitis' },
+  { genericKey: 'naproxenSodium', brand: 'Naxin SR 500', company: 'Opsonin Pharma Ltd', pack: '5×10', priceLabel: '৳14.05', priceNum: 14.05, dentalUse: 'Once-daily sustained dental pain relief', dosageForm: '500mg SR Tab' },
+  { genericKey: 'naproxenSodium', brand: 'Naxin Gel 10%', company: 'Opsonin Pharma Ltd', pack: '30g tube', priceLabel: '৳116.00', priceNum: 116, dentalUse: 'Topical application for soft tissue dental pain & TMJ', dosageForm: '10% w/w Gel' },
+  { genericKey: 'naproxenSodium', brand: 'Naprox 500', company: 'Eskayef Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳11.00', priceNum: 11, dentalUse: 'Post-extraction pain & dental inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Naprox Suspension', company: 'Eskayef Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳90.00', priceNum: 90, dentalUse: 'Dental pain in children — pediatric suspension', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'naproxenSodium', brand: 'Napdas CR 500', company: 'Eskayef Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳14.00', priceNum: 14, dentalUse: 'Controlled-release once-daily dental pain relief', dosageForm: '500mg CR Tab' },
+  { genericKey: 'naproxenSodium', brand: 'Napro-A 500', company: 'ACME Laboratories Ltd', pack: '5×10', priceLabel: '৳10.00', priceNum: 10, dentalUse: 'Dental pain & swelling management' },
+  { genericKey: 'naproxenSodium', brand: 'Naprosyn 500', company: 'Radiant Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳16.00', priceNum: 16, dentalUse: 'Dental pain, post-surgical inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Naprosyn Suspension', company: 'Radiant Pharmaceuticals Ltd', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳130.00', priceNum: 130, dentalUse: 'Dental pain relief in children', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'naproxenSodium', brand: 'Nuprafen 500', company: 'Beximco Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳7.85', priceNum: 7.85, dentalUse: 'Post-extraction pain & dental inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Diproxen 500', company: 'Drug International Ltd', pack: '5×10', priceLabel: '৳8.00', priceNum: 8, dentalUse: 'Dental pain & inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Diproxen Gel 10%', company: 'Drug International Ltd', pack: '30g tube', priceLabel: '৳60.20', priceNum: 60.2, dentalUse: 'Topical NSAID for soft tissue dental pain & TMJ', dosageForm: '10% w/w Gel' },
+  { genericKey: 'naproxenSodium', brand: 'Servinaprox 500', company: 'SANDOZ (A Novartis Division)', pack: '5×10', priceLabel: '৳12.10', priceNum: 12.1, dentalUse: 'Dental pain & post-surgical inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Annova 500', company: 'Beacon Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳16.00', priceNum: 16, dentalUse: 'Post-surgical dental pain management' },
+  { genericKey: 'naproxenSodium', brand: 'Annova Suspension', company: 'Beacon Pharmaceuticals PLC', pack: '125mg/5ml, 100ml bottle', priceLabel: '৳90.00', priceNum: 90, dentalUse: 'Pediatric dental pain relief', dosageForm: '125mg/5ml Suspension' },
+  { genericKey: 'naproxenSodium', brand: 'Xenapro 500', company: 'Renata PLC', pack: '5×10', priceLabel: '৳8.03', priceNum: 8.03, dentalUse: 'Dental pain & inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Ecless 500', company: 'Incepta Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳9.00', priceNum: 9, dentalUse: 'Dental pain & post-surgical inflammation' },
+  { genericKey: 'naproxenSodium', brand: 'Napro 500', company: 'Aristopharma Ltd', pack: '5×10', priceLabel: '৳11.00', priceNum: 11, dentalUse: 'Dental pain & pericoronitis' },
+  { genericKey: 'naproxenSodium', brand: 'Napsod 550', company: 'UniMed UniHealth Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳10.00', priceNum: 10, dentalUse: 'Dental pain — 550mg naproxen sodium (equiv. to 500mg naproxen base)', dosageForm: '550mg Tab' },
+
+  { genericKey: 'naproxenEsomeprazole', brand: 'Xenole 500/20', company: 'Square Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental pain with built-in GI protection — ideal for GI-sensitive patients' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Xenole 375/20', company: 'Square Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳13.00', priceNum: 13, dentalUse: 'Dental pain with GI protection — lower-strength twice-daily option', dosageForm: '375mg/20mg Delayed Release Tab' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Anaflex Max 500/20', company: 'ACI Limited', pack: '3×10', priceLabel: '৳21.00', priceNum: 21, dentalUse: 'Post-surgical dental pain with gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Anaflex Max 375/20', company: 'ACI Limited', pack: '3×10', priceLabel: '৳17.00', priceNum: 17, dentalUse: 'Dental pain with GI protection — lower-strength option', dosageForm: '375mg/20mg Delayed Release Tab' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Naxin Plus 500/20', company: 'Opsonin Pharma Ltd', pack: '5×10', priceLabel: '৳12.50', priceNum: 12.5, dentalUse: 'Post-surgical dental pain with built-in gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Naxin Plus 375/20', company: 'Opsonin Pharma Ltd', pack: '5×10', priceLabel: '৳10.00', priceNum: 10, dentalUse: 'Dental pain with GI protection — lower dose option', dosageForm: '375mg/20mg Delayed Release Tab' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Naprox Plus 500/20', company: 'Eskayef Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Post-extraction dental pain with gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Napro-A Plus 500/20', company: 'ACME Laboratories Ltd', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental pain & inflammation with GI protection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Naprosyn Plus 500/20', company: 'Radiant Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳21.00', priceNum: 21, dentalUse: 'Dental pain with built-in GI protection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Dinovo 500/20', company: 'Beximco Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Post-surgical dental pain in GI-sensitive patients' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Progesic 500/20', company: 'Incepta Pharmaceuticals Ltd', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental pain with gastroprotection — for GI-at-risk patients' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Neso 500/20', company: 'Aristopharma Ltd', pack: '5×10', priceLabel: '৳15.00', priceNum: 15, dentalUse: 'Dental pain relief with built-in esomeprazole cover' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Novoxen 500/20', company: 'Orion Pharma Ltd', pack: '5×10', priceLabel: '৳13.00', priceNum: 13, dentalUse: 'Post-surgical dental pain with gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Xenapro Plus 500/20', company: 'Renata PLC', pack: '5×10', priceLabel: '৳10.00', priceNum: 10, dentalUse: 'Dental pain with built-in esomeprazole gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Annova Plus 500/20', company: 'Beacon Pharmaceuticals PLC', pack: '5×10', priceLabel: '৳21.00', priceNum: 21, dentalUse: 'Post-surgical dental pain with GI protection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Napsec 500/20', company: 'Drug International Ltd', pack: '5×10', priceLabel: '৳11.00', priceNum: 11, dentalUse: 'Dental pain with gastroprotection' },
+  { genericKey: 'naproxenEsomeprazole', brand: 'Naxipraz 500/20', company: 'Sun Pharmaceutical (Bangladesh) Ltd', pack: '5×10', priceLabel: '৳12.00', priceNum: 12, dentalUse: 'Dental pain & inflammation with esomeprazole GI cover' },
 ]
 
 export const DENTAL_DRUGS: BDDrug[] = DRUG_SEEDS.map((seed) => {
