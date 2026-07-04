@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
+  FileText,
   Mail,
   MoreVertical,
   Printer,
@@ -26,6 +27,8 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
+import { InvoicePrint } from '@/components/InvoicePrint'
+import { InvoiceListPrint } from '@/components/InvoiceListPrint'
 import { InvoiceTemplateSelector } from '@/components/InvoiceTemplateSelector'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
@@ -33,6 +36,7 @@ import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { FinancialReportsPanel } from '@/components/FinancialReportsPanel'
 import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
+import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { matchesPatientSearch } from '@/lib/patients'
@@ -82,6 +86,9 @@ export function Billing() {
   const [patientFilter, setPatientFilter] = useState<{ id: string; name: string } | null>(null)
   const [patientSearch, setPatientSearch] = useState('')
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false)
+  const [printJob, setPrintJob] = useState<{ invoices: Invoice[]; patient: NonNullable<Invoice['patients']> } | null>(null)
+  const [showListPrint, setShowListPrint] = useState(false)
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
 
   useEffect(() => {
     loadInvoices()
@@ -286,6 +293,40 @@ export function Billing() {
     URL.revokeObjectURL(url)
   }
 
+  async function ensureDoctorProfile() {
+    if (doctorProfile) return doctorProfile
+    try {
+      const profile = await loadDoctorProfile()
+      if (profile) setDoctorProfile(profile)
+      return profile
+    } catch (error) {
+      console.error('Error loading doctor profile for print:', error)
+      return null
+    }
+  }
+
+  async function startListPrint() {
+    await ensureDoctorProfile()
+    setShowListPrint(true)
+  }
+
+  async function startPrint(invoice: Invoice, mode: 'single' | 'all') {
+    await ensureDoctorProfile()
+
+    const patient = invoice.patients || {
+      first_name: 'Unknown',
+      last_name: 'Patient',
+      email: null,
+      phone: null,
+      patient_code: null,
+    }
+    const jobInvoices =
+      mode === 'all'
+        ? invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
+        : [invoice]
+    setPrintJob({ invoices: jobInvoices, patient })
+  }
+
   const billedPatients = useMemo(() => {
     const seen = new Map<string, { id: string; name: string; phone: string | null; patient_code: string | null }>()
     for (const invoice of invoices) {
@@ -313,9 +354,25 @@ export function Billing() {
   const filteredInvoices = useMemo(() => {
     let result = invoices
     if (patientFilter) result = result.filter((invoice) => invoice.patient_id === patientFilter.id)
+    const searchQuery = patientSearch.trim()
+    if (!patientFilter && searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase()
+      result = result.filter((invoice) => {
+        if ((invoice.invoice_number || '').toLowerCase().includes(lowerQuery)) return true
+        if (!invoice.patients) return false
+        return matchesPatientSearch(
+          {
+            name: `${invoice.patients.first_name} ${invoice.patients.last_name}`.trim(),
+            code: invoice.patients.patient_code,
+            phone: invoice.patients.phone,
+          },
+          searchQuery
+        )
+      })
+    }
     if (filter !== 'all') result = result.filter((invoice) => invoice.status === filter)
     return result
-  }, [filter, invoices, patientFilter])
+  }, [filter, invoices, patientFilter, patientSearch])
 
   const stats = {
     total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
@@ -340,7 +397,6 @@ export function Billing() {
             <Plus className="w-4 h-4 mr-2" />
             New Invoice
           </Button>
-          <Button variant="outline" onClick={() => setShowTemplateSelector(true)}>From Template</Button>
           {pendingPatients.length > 0 && (
             <div className="relative">
               <Button
@@ -376,14 +432,6 @@ export function Billing() {
               )}
             </div>
           )}
-          <Button variant="outline" onClick={() => setShowReports((prev) => !prev)}>
-            <BarChart3 className="w-4 h-4 mr-1" />
-            Reports
-          </Button>
-          <Button variant="outline" onClick={() => setShowSettings(true)}>
-            <Settings className="w-4 h-4 mr-1" />
-            Settings
-          </Button>
           <div className="relative">
             <Button
               variant="outline"
@@ -393,10 +441,43 @@ export function Billing() {
               }}
               aria-label="More actions"
             >
-              <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4 mr-1" />
+              More
+              <ChevronDown className="w-4 h-4 ml-1" />
             </Button>
             {showMoreMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-36">
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44">
+                <button
+                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setShowTemplateSelector(true)
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  From Template
+                </button>
+                <button
+                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setShowReports((prev) => !prev)
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Reports
+                </button>
+                <button
+                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setShowSettings(true)
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  Settings
+                </button>
+                <div className="border-t border-gray-100" />
                 <button
                   className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
                   onClick={() => {
@@ -410,12 +491,12 @@ export function Billing() {
                 <button
                   className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
                   onClick={() => {
-                    window.print()
+                    startListPrint()
                     setShowMoreMenu(false)
                   }}
                 >
                   <Printer className="w-4 h-4 mr-2" />
-                  Print
+                  Print List
                 </button>
               </div>
             )}
@@ -542,7 +623,9 @@ export function Billing() {
           <div className="p-8 text-center text-text-secondary">
             {patientFilter
               ? `No ${filter === 'all' ? '' : `${filter.toLowerCase()} `}invoices for ${patientFilter.name}.`
-              : filter === 'all' ? 'No invoices yet. Click "New Invoice" to get started.' : `No ${filter.toLowerCase()} invoices.`}
+              : patientSearch.trim()
+                ? `No invoices match "${patientSearch.trim()}".`
+                : filter === 'all' ? 'No invoices yet. Click "New Invoice" to get started.' : `No ${filter.toLowerCase()} invoices.`}
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
@@ -560,6 +643,8 @@ export function Billing() {
                 onMarkPaid={() => markAsPaid(invoice.id, invoice.total_amount)}
                 onDelete={() => deleteInvoice(invoice.id)}
                 onPaymentRecorded={loadInvoices}
+                onPrint={(mode) => startPrint(invoice, mode)}
+                patientInvoiceCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id).length}
               />
             ))}
           </div>
@@ -599,6 +684,30 @@ export function Billing() {
       )}
 
       {showSettings && <InvoiceSettingsModal onClose={() => setShowSettings(false)} />}
+
+      {printJob && (
+        <InvoicePrint
+          invoices={printJob.invoices}
+          patient={printJob.patient}
+          doctor={doctorProfile}
+          onClose={() => setPrintJob(null)}
+        />
+      )}
+
+      {showListPrint && (
+        <InvoiceListPrint
+          invoices={filteredInvoices}
+          doctor={doctorProfile}
+          label={
+            patientFilter
+              ? `${filter === 'all' ? 'All' : filter} invoices for ${patientFilter.name}`
+              : filter === 'all'
+              ? 'All invoices'
+              : `${filter} invoices`
+          }
+          onClose={() => setShowListPrint(false)}
+        />
+      )}
     </div>
   )
 }
@@ -632,6 +741,8 @@ function InvoiceRow({
   onMarkPaid,
   onDelete,
   onPaymentRecorded,
+  onPrint,
+  patientInvoiceCount,
 }: {
   invoice: Invoice
   checked: boolean
@@ -639,9 +750,19 @@ function InvoiceRow({
   onMarkPaid: () => void
   onDelete: () => void
   onPaymentRecorded: () => void
+  onPrint: (mode: 'single' | 'all') => void
+  patientInvoiceCount: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [showPrintMenu, setShowPrintMenu] = useState(false)
+
+  useEffect(() => {
+    if (!showPrintMenu) return
+    const handler = () => setShowPrintMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showPrintMenu])
 
   const items = Array.isArray(invoice.items) ? invoice.items : []
   const subtotal = getInvoiceItemSubtotal(items)
@@ -712,6 +833,42 @@ function InvoiceRow({
             <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)} disabled={remainingBalance <= 0}>
               Record Payment
             </Button>
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowPrintMenu((v) => !v)
+                }}
+              >
+                <Printer className="w-4 h-4 mr-1" />Print
+              </Button>
+              {showPrintMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-52">
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      onPrint('single')
+                      setShowPrintMenu(false)
+                    }}
+                  >
+                    This invoice
+                  </button>
+                  {invoice.patients && patientInvoiceCount > 1 && (
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => {
+                        onPrint('all')
+                        setShowPrintMenu(false)
+                      }}
+                    >
+                      All invoices for patient ({patientInvoiceCount})
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <Button
               variant="outline"
               size="sm"

@@ -167,3 +167,59 @@
     bottom: 20px;
   }
 }
+
+/* ── Print styles for invoices ── */
+@media print {
+  .invoice-print-overlay,
+  .invoice-print-overlay * {
+    visibility: visible !important;
+  }
+  .invoice-print-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  #invoice-print-root {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .invoice-print-container {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Times New Roman', Times, serif;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}
+
+/* ── Print styles for invoice list ── */
+@media print {
+  .invoice-list-print-overlay,
+  .invoice-list-print-overlay * {
+    visibility: visible !important;
+  }
+  .invoice-list-print-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  #invoice-list-print-root {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .invoice-list-print-container {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Times New Roman', Times, serif;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}
