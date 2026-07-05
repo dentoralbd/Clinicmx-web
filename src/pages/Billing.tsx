@@ -94,10 +94,12 @@ export function Billing() {
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
   const [showListPrint, setShowListPrint] = useState(false)
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
+  const [allPatients, setAllPatients] = useState<Array<{ id: string; name: string; phone: string | null; patient_code: string | null }>>([])
 
   useEffect(() => {
     loadInvoices()
     loadPendingPatients()
+    loadAllPatients()
   }, [])
 
   useEffect(() => {
@@ -135,6 +137,28 @@ export function Billing() {
       console.error('Error loading invoices:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadAllPatients() {
+    try {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, first_name, last_name, phone, patient_code')
+
+      if (error) throw error
+      setAllPatients(
+        ((data || []) as Array<{ id: string; first_name: string; last_name: string; phone: string | null; patient_code: string | null }>).map(
+          (patient) => ({
+            id: patient.id,
+            name: `${patient.first_name} ${patient.last_name}`.trim(),
+            phone: patient.phone,
+            patient_code: patient.patient_code,
+          })
+        )
+      )
+    } catch (error) {
+      console.error('Error loading patients:', error)
     }
   }
 
@@ -376,10 +400,10 @@ export function Billing() {
   const patientSuggestions = useMemo(() => {
     const query = patientSearch.trim()
     if (!query) return []
-    return billedPatients
+    return allPatients
       .filter((patient) => matchesPatientSearch({ name: patient.name, code: patient.patient_code, phone: patient.phone }, query))
       .slice(0, 8)
-  }, [billedPatients, patientSearch])
+  }, [allPatients, patientSearch])
 
   const filteredInvoices = useMemo(() => {
     let result = invoices
