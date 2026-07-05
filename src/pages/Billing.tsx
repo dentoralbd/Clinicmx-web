@@ -801,9 +801,6 @@ function InvoiceRow({
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
                   {invoice.status}
                 </span>
-                <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-text-secondary uppercase">
-                  {invoice.invoice_type || 'basic'}
-                </span>
                 {invoice.invoice_number && (
                   <span className="text-xs text-text-secondary">#{invoice.invoice_number}</span>
                 )}
