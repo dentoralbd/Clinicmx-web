@@ -1,6 +1,8 @@
 // Strips light-gray/white backgrounds from logo images so they blend
 // into the prescription paper instead of printing as a solid box.
 
+import type { DoctorProfileData } from '@/lib/doctorProfile'
+
 const LIGHTNESS_MIN = 190
 const GRAY_TOLERANCE = 24
 
@@ -44,4 +46,10 @@ export function cleanLogoSource(src: string): Promise<string> {
     img.onerror = () => resolve(src)
     img.src = src
   })
+}
+
+/** Resolves the logo data URL to embed in generated documents (PDFs, etc.) — the doctor's uploaded logo if set, otherwise the bundled default. */
+export async function resolveLogoSrc(doctor: DoctorProfileData | null, defaultLogoPath: string): Promise<string> {
+  if (doctor?.logo_data) return doctor.logo_data
+  return cleanLogoSource(defaultLogoPath)
 }

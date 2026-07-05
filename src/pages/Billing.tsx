@@ -39,6 +39,7 @@ import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 import { buildInvoicePdf, invoicePdfFileName } from '@/lib/invoicePdf'
+import { resolveLogoSrc } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
@@ -346,8 +347,9 @@ export function Billing() {
     }
 
     const doctor = await ensureDoctorProfile()
+    const logoSrc = await resolveLogoSrc(doctor, '/logo.png')
     const patientInfo = patient || { first_name: 'Unknown', last_name: 'Patient', patient_code: null, phone: null }
-    const doc = buildInvoicePdf([invoice], patientInfo, doctor)
+    const doc = buildInvoicePdf([invoice], patientInfo, doctor, { logoSrc })
     const fileName = invoicePdfFileName([invoice], patientInfo)
     const subject = `Invoice ${invoice.invoice_number || invoice.id}`
     const text = `Dear ${patientInfo.first_name || 'Patient'},\n\nPlease find attached your invoice. Total: ${formatBDT(invoice.total_amount)}.`

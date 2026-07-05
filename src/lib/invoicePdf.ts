@@ -48,6 +48,8 @@ export interface BuildInvoicePdfOptions {
   showItems?: boolean
   /** Combined statement only: payment history table */
   payments?: PdfPayment[]
+  /** Clinic/doctor logo as a data URL — same source used by the on-screen letterhead */
+  logoSrc?: string
 }
 
 function invoiceLabel(invoice: PdfInvoice) {
@@ -62,9 +64,40 @@ function lastAutoTableY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
 }
 
-function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null): number {
+function drawLogo(doc: jsPDF, logoSrc?: string): void {
+  // Only data URLs are usable here — jsPDF cannot fetch a relative/external URL synchronously.
+  if (!logoSrc || !logoSrc.startsWith('data:')) return
+  try {
+    const props = doc.getImageProperties(logoSrc)
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const maxHeight = 55
+    const maxWidth = 130
+    let height = maxHeight
+    let width = (props.width / props.height) * height
+    if (width > maxWidth) {
+      width = maxWidth
+      height = (props.height / props.width) * width
+    }
+    doc.addImage(
+      logoSrc,
+      props.fileType || 'PNG',
+      pageWidth / 2 - width / 2,
+      36,
+      width,
+      height,
+      undefined,
+      'FAST'
+    )
+  } catch (error) {
+    console.error('Failed to embed logo in invoice PDF:', error)
+  }
+}
+
+function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null, logoSrc?: string): number {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
+
+  drawLogo(doc, logoSrc)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(15)
@@ -151,12 +184,17 @@ function drawFooter(doc: jsPDF, y: number): void {
   doc.text('Authorized Signature', pageWidth - marginX, footerY + 8, { align: 'right' })
 }
 
-function buildSingleInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor: DoctorProfileData | null): jsPDF {
+function buildSingleInvoicePdf(
+  invoice: PdfInvoice,
+  patient: PdfPatient,
+  doctor: DoctorProfileData | null,
+  logoSrc?: string
+): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
 
-  let y = drawLetterhead(doc, doctor)
+  let y = drawLetterhead(doc, doctor, logoSrc)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
@@ -235,14 +273,15 @@ function buildCombinedInvoicePdf(
   invoices: PdfInvoice[],
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
-  options: BuildInvoicePdfOptions
+  options: BuildInvoicePdfOptions,
+  logoSrc?: string
 ): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
   const showItems = options.showItems ?? true
 
-  let y = drawLetterhead(doc, doctor)
+  let y = drawLetterhead(doc, doctor, logoSrc)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
@@ -395,9 +434,9 @@ export function buildInvoicePdf(
   options: BuildInvoicePdfOptions = {}
 ): jsPDF {
   if (invoices.length <= 1) {
-    return buildSingleInvoicePdf(invoices[0], patient, doctor)
+    return buildSingleInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
   }
-  return buildCombinedInvoicePdf(invoices, patient, doctor, options)
+  return buildCombinedInvoicePdf(invoices, patient, doctor, options, options.logoSrc)
 }
 
 export function invoicePdfFileName(invoices: PdfInvoice[], patient: PdfPatient): string {
