@@ -6,6 +6,7 @@ import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
+import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
@@ -173,6 +174,7 @@ export function PatientProfile() {
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
+  const [invoicePrintJob, setInvoicePrintJob] = useState<{ invoices: any[]; initialDueOnly?: boolean } | null>(null)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
@@ -2100,12 +2102,34 @@ export function PatientProfile() {
       )}
 
       <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
+        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold">Invoice History</h3>
-          <Button size="sm" onClick={() => setShowInvoiceForm(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Invoice
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {invoices.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setInvoicePrintJob({ invoices: invoices.slice().reverse() })}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Print all ({invoices.length})
+              </Button>
+            )}
+            {pendingInvoices.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setInvoicePrintJob({ invoices: invoices.slice().reverse(), initialDueOnly: true })}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Print due ({pendingInvoices.length})
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setShowInvoiceForm(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              New Invoice
+            </Button>
+          </div>
         </div>
         {invoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
@@ -2437,6 +2461,21 @@ export function PatientProfile() {
             setPayingInvoice(null)
             loadPatientData()
           }}
+        />
+      )}
+
+      {invoicePrintJob && patient && (
+        <InvoicePrint
+          invoices={invoicePrintJob.invoices}
+          patient={{
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            phone: patient.phone,
+            patient_code: patient.patient_code,
+          }}
+          doctor={doctorProfile}
+          initialDueOnly={invoicePrintJob.initialDueOnly}
+          onClose={() => setInvoicePrintJob(null)}
         />
       )}
     </div>

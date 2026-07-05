@@ -6,10 +6,13 @@ import {
   getInvoiceItemQuantity,
   getInvoiceItemUnitPrice,
   getInvoiceItemSubtotal,
+  isSchemaCompatibilityError,
+  logBillingError,
   type BillingLineItem,
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
 export interface PrintableInvoice {
@@ -38,7 +41,28 @@ interface InvoicePrintProps {
     patient_code?: string | null
   }
   doctor: DoctorProfileData | null
+  /** Combined mode only: open the preview with the "Due only" filter already on */
+  initialDueOnly?: boolean
   onClose: () => void
+}
+
+interface StatementPaymentRow {
+  id: string
+  amount: number
+  payment_date: string
+  payment_method: string | null
+  invoice_id: string
+  payment_methods: {
+    name: string
+  } | null
+}
+
+function invoiceLabel(invoice: PrintableInvoice) {
+  return invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()
+}
+
+function getInvoiceDue(invoice: PrintableInvoice) {
+  return Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
 }
 
 function InvoiceItemsTable({ invoice }: { invoice: PrintableInvoice }) {
@@ -116,11 +140,142 @@ function InvoiceTotals({ invoice }: { invoice: PrintableInvoice }) {
   )
 }
 
-export function InvoicePrint({ invoices, patient, doctor, onClose }: InvoicePrintProps) {
+/** Combined mode: one compact table, one tbody per invoice (the page-break unit). */
+function StatementTable({ invoices, showItems }: { invoices: PrintableInvoice[]; showItems: boolean }) {
+  return (
+    <table className="w-full text-sm border-collapse">
+      <thead>
+        <tr className="border-b-2 border-gray-800 text-left">
+          <th className="py-1.5 pr-2 font-semibold">Description</th>
+          <th className="py-1.5 px-2 font-semibold text-center w-16">Qty</th>
+          <th className="py-1.5 px-2 font-semibold text-right w-28">Unit Price</th>
+          <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+        </tr>
+      </thead>
+      {invoices.length === 0 ? (
+        <tbody>
+          <tr>
+            <td colSpan={4} className="py-3 text-center text-gray-500">No outstanding invoices.</td>
+          </tr>
+        </tbody>
+      ) : (
+        invoices.map((invoice) => {
+          const items = Array.isArray(invoice.items) ? invoice.items : []
+          const due = getInvoiceDue(invoice)
+          const adjustments: string[] = []
+          if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount −${formatBDT(invoice.discount_amount || 0)}`)
+          if ((invoice.tax_amount || 0) > 0) {
+            adjustments.push(`Tax${invoice.tax_rate ? ` (${invoice.tax_rate}%)` : ''} +${formatBDT(invoice.tax_amount || 0)}`)
+          }
+
+          return (
+            <tbody key={invoice.id} className="statement-invoice-block">
+              <tr className="bg-gray-100">
+                <td colSpan={4} className="py-1.5 px-2">
+                  <span className="font-bold">Invoice {invoiceLabel(invoice)}</span>
+                  <span className="text-xs text-gray-600">
+                    {' '}• {safeFormat(invoice.created_at, 'dd MMM yyyy')}
+                    {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'dd MMM yyyy')}`}
+                    {` • ${invoice.status}`}
+                    {adjustments.length > 0 && ` • ${adjustments.join(' • ')}`}
+                  </span>
+                </td>
+              </tr>
+              {showItems &&
+                (items.length === 0 ? (
+                  <tr className="border-b border-gray-200">
+                    <td className="py-1.5 pr-2 text-gray-500" colSpan={3}>Invoice total</td>
+                    <td className="py-1.5 pl-2 text-right">{formatBDT(invoice.total_amount)}</td>
+                  </tr>
+                ) : (
+                  items.map((item, idx) => (
+                    <tr key={idx} className="border-b border-gray-200">
+                      <td className="py-1.5 pr-2">{formatInvoiceItemLabel({ ...item, quantity: 1 })}</td>
+                      <td className="py-1.5 px-2 text-center">{getInvoiceItemQuantity(item)}</td>
+                      <td className="py-1.5 px-2 text-right">{formatBDT(getInvoiceItemUnitPrice(item))}</td>
+                      <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item))}</td>
+                    </tr>
+                  ))
+                ))}
+              <tr>
+                <td colSpan={4} className="py-1.5 px-2 text-right border-b border-gray-800">
+                  <span className="text-gray-600">Total</span>{' '}
+                  <span className="font-semibold">{formatBDT(invoice.total_amount || 0)}</span>
+                  <span className="text-gray-400"> · </span>
+                  <span className="text-gray-600">Paid</span>{' '}
+                  <span className="font-semibold">{formatBDT(invoice.paid_amount || 0)}</span>
+                  <span className="text-gray-400"> · </span>
+                  <span className="text-gray-600">Due</span>{' '}
+                  <span className={due > 0 ? 'font-bold' : 'font-semibold'}>{formatBDT(due)}</span>
+                </td>
+              </tr>
+            </tbody>
+          )
+        })
+      )}
+    </table>
+  )
+}
+
+export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClose }: InvoicePrintProps) {
   const combined = invoices.length > 1
-  const grandTotal = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
-  const grandPaid = invoices.reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0)
+  const [dueOnly, setDueOnly] = useState(Boolean(initialDueOnly))
+  const [showItems, setShowItems] = useState(true)
+  const [showPayments, setShowPayments] = useState(true)
+  const [payments, setPayments] = useState<StatementPaymentRow[]>([])
+
+  const visibleInvoices = combined && dueOnly ? invoices.filter((invoice) => getInvoiceDue(invoice) > 0) : invoices
+  const grandTotal = visibleInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+  const grandPaid = visibleInvoices.reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0)
   const grandDue = Math.max(grandTotal - grandPaid, 0)
+
+  const invoiceIdsKey = combined ? invoices.map((invoice) => invoice.id).join(',') : ''
+
+  useEffect(() => {
+    if (!invoiceIdsKey) return
+    let cancelled = false
+    async function loadPayments() {
+      const ids = invoiceIdsKey.split(',')
+      try {
+        const primaryQuery = await supabase
+          .from('payments')
+          .select('id, amount, payment_date, payment_method, invoice_id, payment_methods(name)')
+          .in('invoice_id', ids)
+          .order('payment_date', { ascending: true })
+
+        if (primaryQuery.error && !isSchemaCompatibilityError(primaryQuery.error)) {
+          throw primaryQuery.error
+        }
+
+        if (!primaryQuery.error) {
+          if (!cancelled) setPayments((primaryQuery.data as unknown as StatementPaymentRow[]) || [])
+          return
+        }
+
+        const fallbackQuery = await supabase
+          .from('payments')
+          .select('id, amount, payment_date, payment_method, invoice_id')
+          .in('invoice_id', ids)
+          .order('payment_date', { ascending: true })
+
+        if (fallbackQuery.error) throw fallbackQuery.error
+
+        if (!cancelled) setPayments((fallbackQuery.data as unknown as StatementPaymentRow[]) || [])
+      } catch (error) {
+        // Printing must never be blocked by a payments failure — omit the section.
+        logBillingError('Failed to load payments for combined statement', error, { invoiceIds: invoiceIdsKey })
+        if (!cancelled) setPayments([])
+      }
+    }
+    loadPayments()
+    return () => {
+      cancelled = true
+    }
+  }, [invoiceIdsKey])
+
+  const visibleInvoiceIds = new Set(visibleInvoices.map((invoice) => invoice.id))
+  const visiblePayments = payments.filter((payment) => visibleInvoiceIds.has(payment.invoice_id))
+  const invoiceLabelById = new Map(invoices.map((invoice) => [invoice.id, invoiceLabel(invoice)]))
 
   // Uploaded logos are cleaned at upload time; the bundled default needs its
   // light background stripped here so it blends into the printed page.
@@ -157,7 +312,9 @@ export function InvoicePrint({ invoices, patient, doctor, onClose }: InvoicePrin
   const handlePrint = () => {
     const namePart = `${patient.first_name} ${patient.last_name}`.trim()
     const idPart = combined
-      ? 'Combined Invoice'
+      ? dueOnly
+        ? 'Statement (Due)'
+        : 'Combined Invoice'
       : invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : '')
     document.title =
       [namePart, idPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
@@ -184,6 +341,24 @@ export function InvoicePrint({ invoices, patient, doctor, onClose }: InvoicePrin
           Close
         </button>
       </div>
+
+      {/* Statement options – combined mode only, hidden on print */}
+      {combined && (
+        <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} />
+            Due only
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={showItems} onChange={(e) => setShowItems(e.target.checked)} />
+            Line items
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={showPayments} onChange={(e) => setShowPayments(e.target.checked)} />
+            Payment history
+          </label>
+        </div>
+      )}
 
       {/* Invoice document */}
       <div
@@ -250,6 +425,9 @@ export function InvoicePrint({ invoices, patient, doctor, onClose }: InvoicePrin
           {!combined && invoices[0]?.invoice_number && (
             <div className="text-sm text-gray-600">#{invoices[0].invoice_number}</div>
           )}
+          {combined && dueOnly && (
+            <div className="text-sm text-gray-600">Outstanding invoices only</div>
+          )}
         </div>
 
         {/* ── Patient Info ── */}
@@ -275,68 +453,89 @@ export function InvoicePrint({ invoices, patient, doctor, onClose }: InvoicePrin
           </div>
         </div>
 
-        {/* ── Invoice sections ── */}
-        <div className="space-y-6">
-          {invoices.map((invoice) => (
-            <div key={invoice.id}>
-              {combined && (
-                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                  <div className="text-sm font-bold">
-                    Invoice {invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()}
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {safeFormat(invoice.created_at, 'dd MMM yyyy')}
-                    {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'dd MMM yyyy')}`}
-                    {` • ${invoice.status}`}
-                  </div>
-                </div>
-              )}
-              {!combined && (
+        {/* ── Invoice content: compact statement (combined) or full invoice (single) ── */}
+        {combined ? (
+          <StatementTable invoices={visibleInvoices} showItems={showItems} />
+        ) : (
+          <div className="space-y-6">
+            {invoices.map((invoice) => (
+              <div key={invoice.id}>
                 <div className="text-xs text-gray-600 mb-1">
                   Issued: {safeFormat(invoice.created_at, 'dd MMM yyyy')}
                   {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'dd MMM yyyy')}`}
                   {` • Status: ${invoice.status}`}
                 </div>
-              )}
-              <InvoiceItemsTable invoice={invoice} />
-              <InvoiceTotals invoice={invoice} />
-              {!combined && !!invoice.notes && (
-                <p className="text-xs text-gray-600 mt-2">Notes: {invoice.notes}</p>
-              )}
-              {!combined && !!invoice.payment_terms && (
-                <p className="text-xs text-gray-600 mt-1">Payment Terms: {invoice.payment_terms}</p>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* ── Grand totals (combined mode) ── */}
-        {combined && (
-          <div className="mt-6 border-t-2 border-gray-800 pt-3 flex justify-end">
-            <div className="w-64 text-sm space-y-1">
-              <div className="flex justify-between font-bold text-base">
-                <span>Grand Total</span>
-                <span>{formatBDT(grandTotal)}</span>
+                <InvoiceItemsTable invoice={invoice} />
+                <InvoiceTotals invoice={invoice} />
+                {!!invoice.notes && (
+                  <p className="text-xs text-gray-600 mt-2">Notes: {invoice.notes}</p>
+                )}
+                {!!invoice.payment_terms && (
+                  <p className="text-xs text-gray-600 mt-1">Payment Terms: {invoice.payment_terms}</p>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Paid</span>
-                <span>{formatBDT(grandPaid)}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span>Total Due</span>
-                <span>{formatBDT(grandDue)}</span>
-              </div>
-            </div>
+            ))}
           </div>
         )}
 
-        {/* ── Footer ── */}
-        <div className="invoice-print-footer mt-10">
-          <div className="flex justify-between items-end border-t border-gray-300 pt-4">
-            <div className="text-xs text-gray-500">Thank you for your visit.</div>
-            <div className="text-right">
-              <div className="border-t border-gray-800 w-40 mb-1" />
-              <div className="text-sm font-semibold">Authorized Signature</div>
+        {/* ── Payment history (combined mode) ── */}
+        {combined && showPayments && visiblePayments.length > 0 && (
+          <div className="statement-payments mt-4">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b-2 border-gray-800 text-left">
+                  <th className="py-1.5 pr-2 font-semibold" colSpan={2}>Payment History</th>
+                  <th className="py-1.5 px-2 font-semibold w-40">Method</th>
+                  <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiblePayments.map((payment) => (
+                  <tr key={payment.id} className="border-b border-gray-200">
+                    <td className="py-1.5 pr-2 w-32">{safeFormat(payment.payment_date, 'dd MMM yyyy')}</td>
+                    <td className="py-1.5 px-2 text-gray-600">
+                      Invoice {invoiceLabelById.get(payment.invoice_id) || '—'}
+                    </td>
+                    <td className="py-1.5 px-2">
+                      {payment.payment_method || payment.payment_methods?.name || '—'}
+                    </td>
+                    <td className="py-1.5 pl-2 text-right">{formatBDT(payment.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ── Grand totals + footer kept together on print ── */}
+        <div className={combined ? 'statement-summary' : undefined}>
+          {combined && (
+            <div className="mt-6 border-t-2 border-gray-800 pt-3 flex justify-end">
+              <div className="w-64 text-sm space-y-1">
+                <div className="flex justify-between font-bold text-base">
+                  <span>Grand Total</span>
+                  <span>{formatBDT(grandTotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Total Paid</span>
+                  <span>{formatBDT(grandPaid)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-base">
+                  <span>Total Due</span>
+                  <span>{formatBDT(grandDue)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Footer ── */}
+          <div className={`invoice-print-footer ${combined ? 'mt-6' : 'mt-10'}`}>
+            <div className="flex justify-between items-end border-t border-gray-300 pt-4">
+              <div className="text-xs text-gray-500">Thank you for your visit.</div>
+              <div className="text-right">
+                <div className="border-t border-gray-800 w-40 mb-1" />
+                <div className="text-sm font-semibold">Authorized Signature</div>
+              </div>
             </div>
           </div>
         </div>

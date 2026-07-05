@@ -17,6 +17,7 @@ import {
   FileSpreadsheet,
   FileText,
   Mail,
+  MessageCircle,
   MoreVertical,
   Printer,
   Settings,
@@ -86,7 +87,8 @@ export function Billing() {
   const [patientFilter, setPatientFilter] = useState<{ id: string; name: string } | null>(null)
   const [patientSearch, setPatientSearch] = useState('')
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false)
-  const [printJob, setPrintJob] = useState<{ invoices: Invoice[]; patient: NonNullable<Invoice['patients']> } | null>(null)
+  const [printJob, setPrintJob] = useState<{ invoices: Invoice[]; patient: NonNullable<Invoice['patients']>; initialDueOnly?: boolean } | null>(null)
+  const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
   const [showListPrint, setShowListPrint] = useState(false)
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
 
@@ -310,7 +312,7 @@ export function Billing() {
     setShowListPrint(true)
   }
 
-  async function startPrint(invoice: Invoice, mode: 'single' | 'all') {
+  async function startPrint(invoice: Invoice, mode: 'single' | 'all' | 'due') {
     await ensureDoctorProfile()
 
     const patient = invoice.patients || {
@@ -321,10 +323,10 @@ export function Billing() {
       patient_code: null,
     }
     const jobInvoices =
-      mode === 'all'
-        ? invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
-        : [invoice]
-    setPrintJob({ invoices: jobInvoices, patient })
+      mode === 'single'
+        ? [invoice]
+        : invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
+    setPrintJob({ invoices: jobInvoices, patient, initialDueOnly: mode === 'due' })
   }
 
   const billedPatients = useMemo(() => {
@@ -373,6 +375,19 @@ export function Billing() {
     if (filter !== 'all') result = result.filter((invoice) => invoice.status === filter)
     return result
   }, [filter, invoices, patientFilter, patientSearch])
+
+  const groupedInvoices = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, Invoice[]>()
+    for (const invoice of filteredInvoices) {
+      if (!map.has(invoice.patient_id)) {
+        map.set(invoice.patient_id, [])
+        order.push(invoice.patient_id)
+      }
+      map.get(invoice.patient_id)!.push(invoice)
+    }
+    return order.map((patientId) => ({ patientId, invoices: map.get(patientId)! }))
+  }, [filteredInvoices])
 
   const stats = {
     total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
@@ -629,24 +644,92 @@ export function Billing() {
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {filteredInvoices.map((invoice) => (
-              <InvoiceRow
-                key={invoice.id}
-                invoice={invoice}
-                checked={selectedInvoices.includes(invoice.id)}
-                onSelect={(checked) => {
-                  setSelectedInvoices((prev) => {
-                    if (checked) return [...new Set([...prev, invoice.id])]
-                    return prev.filter((id) => id !== invoice.id)
-                  })
-                }}
-                onMarkPaid={() => markAsPaid(invoice.id, invoice.total_amount)}
-                onDelete={() => deleteInvoice(invoice.id)}
-                onPaymentRecorded={loadInvoices}
-                onPrint={(mode) => startPrint(invoice, mode)}
-                patientInvoiceCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id).length}
-              />
-            ))}
+            {groupedInvoices.map((group) => {
+              const firstInvoice = group.invoices[0]
+              const isExpanded = expandedPatients.has(group.patientId) || groupedInvoices.length === 1
+              const groupDueCount = group.invoices.filter(
+                (inv) => (inv.total_amount || 0) > (inv.paid_amount || 0)
+              ).length
+              const groupTotal = group.invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+              const groupDue = group.invoices.reduce(
+                (sum, inv) => sum + Math.max((inv.total_amount || 0) - (inv.paid_amount || 0), 0),
+                0
+              )
+              const togglePatient = () => {
+                setExpandedPatients((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(group.patientId)) next.delete(group.patientId)
+                  else next.add(group.patientId)
+                  return next
+                })
+              }
+
+              return (
+                <div key={group.patientId}>
+                  <div
+                    className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none hover:bg-gray-50 transition-colors"
+                    onClick={togglePatient}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">
+                        {firstInvoice.patients
+                          ? `${firstInvoice.patients.first_name} ${firstInvoice.patients.last_name}`
+                          : 'Unknown Patient'}
+                      </p>
+                      <p className="text-xs text-text-secondary mt-0.5">
+                        {group.invoices.length} invoice{group.invoices.length !== 1 ? 's' : ''}
+                        {firstInvoice.patients?.patient_code && ` • ${firstInvoice.patients.patient_code}`}
+                        {` • Billed ${formatBDT(groupTotal)}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      <span className={`text-sm font-semibold ${groupDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {groupDue > 0 ? `Due ${formatBDT(groupDue)}` : 'Paid up'}
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => startPrint(firstInvoice, 'all')}>
+                        Print all ({group.invoices.length})
+                      </Button>
+                      {groupDueCount > 0 && (
+                        <Button size="sm" variant="outline" onClick={() => startPrint(firstInvoice, 'due')}>
+                          Print due ({groupDueCount})
+                        </Button>
+                      )}
+                      <button
+                        className="p-1 text-text-secondary hover:text-text-primary transition-colors"
+                        aria-label={isExpanded ? 'Collapse invoices' : 'Expand invoices'}
+                        onClick={togglePatient}
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="divide-y divide-gray-200 border-t border-gray-200">
+                      {group.invoices.map((invoice) => (
+                        <InvoiceRow
+                          key={invoice.id}
+                          invoice={invoice}
+                          hideName
+                          checked={selectedInvoices.includes(invoice.id)}
+                          onSelect={(checked) => {
+                            setSelectedInvoices((prev) => {
+                              if (checked) return [...new Set([...prev, invoice.id])]
+                              return prev.filter((id) => id !== invoice.id)
+                            })
+                          }}
+                          onMarkPaid={() => markAsPaid(invoice.id, invoice.total_amount)}
+                          onDelete={() => deleteInvoice(invoice.id)}
+                          onPaymentRecorded={loadInvoices}
+                          onPrint={(mode) => startPrint(invoice, mode)}
+                          patientInvoiceCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id).length}
+                          patientDueCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id && (inv.total_amount || 0) > (inv.paid_amount || 0)).length}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -690,6 +773,7 @@ export function Billing() {
           invoices={printJob.invoices}
           patient={printJob.patient}
           doctor={doctorProfile}
+          initialDueOnly={printJob.initialDueOnly}
           onClose={() => setPrintJob(null)}
         />
       )}
@@ -734,8 +818,18 @@ function SummaryCard({ title, value, icon, color }: { title: string; value: stri
   )
 }
 
+function toWhatsAppNumber(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('880')) return digits
+  if (digits.startsWith('0')) return `880${digits.slice(1)}`
+  if (digits.length === 10) return `880${digits}`
+  return digits
+}
+
 function InvoiceRow({
   invoice,
+  hideName,
   checked,
   onSelect,
   onMarkPaid,
@@ -743,19 +837,23 @@ function InvoiceRow({
   onPaymentRecorded,
   onPrint,
   patientInvoiceCount,
+  patientDueCount,
 }: {
   invoice: Invoice
+  hideName?: boolean
   checked: boolean
   onSelect: (checked: boolean) => void
   onMarkPaid: () => void
   onDelete: () => void
   onPaymentRecorded: () => void
-  onPrint: (mode: 'single' | 'all') => void
+  onPrint: (mode: 'single' | 'all' | 'due') => void
   patientInvoiceCount: number
+  patientDueCount: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showPrintMenu, setShowPrintMenu] = useState(false)
+  const [showShareMenu, setShowShareMenu] = useState(false)
 
   useEffect(() => {
     if (!showPrintMenu) return
@@ -763,6 +861,13 @@ function InvoiceRow({
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [showPrintMenu])
+
+  useEffect(() => {
+    if (!showShareMenu) return
+    const handler = () => setShowShareMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showShareMenu])
 
   const items = Array.isArray(invoice.items) ? invoice.items : []
   const subtotal = getInvoiceItemSubtotal(items)
@@ -796,12 +901,14 @@ function InvoiceRow({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium">
-                  {invoice.patients?.first_name} {invoice.patients?.last_name}
+                  {hideName
+                    ? `Invoice ${invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()}`
+                    : `${invoice.patients?.first_name} ${invoice.patients?.last_name}`}
                 </p>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
                   {invoice.status}
                 </span>
-                {invoice.invoice_number && (
+                {!hideName && invoice.invoice_number && (
                   <span className="text-xs text-text-secondary">#{invoice.invoice_number}</span>
                 )}
               </div>
@@ -843,7 +950,7 @@ function InvoiceRow({
                 <Printer className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">Print</span>
               </Button>
               {showPrintMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-52">
+                <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-52 max-w-[calc(100vw-2rem)]">
                   <button
                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
                     onClick={() => {
@@ -864,26 +971,70 @@ function InvoiceRow({
                       All invoices for patient ({patientInvoiceCount})
                     </button>
                   )}
+                  {invoice.patients && patientInvoiceCount > 1 && patientDueCount > 0 && (
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => {
+                        onPrint('due')
+                        setShowPrintMenu(false)
+                      }}
+                    >
+                      Due invoices for patient ({patientDueCount})
+                    </button>
+                  )}
                 </div>
               )}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Email invoice"
-              onClick={() => {
-                const email = invoice.patients?.email
-                if (!email) {
-                  alert('Patient email is not available')
-                  return
-                }
-                const subject = encodeURIComponent(`Invoice ${invoice.invoice_number || invoice.id}`)
-                const body = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
-                window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
-              }}
-            >
-              <Mail className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">Email</span>
-            </Button>
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Email or WhatsApp invoice"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowShareMenu((v) => !v)
+                }}
+              >
+                <Mail className="w-4 h-4" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600" />
+                <span className="hidden sm:inline ml-1">Share</span>
+              </Button>
+              {showShareMenu && (
+                <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-2rem)]">
+                  <button
+                    className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      const email = invoice.patients?.email
+                      if (!email) {
+                        alert('Patient email is not available')
+                        return
+                      }
+                      const subject = encodeURIComponent(`Invoice ${invoice.invoice_number || invoice.id}`)
+                      const body = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
+                      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
+                      setShowShareMenu(false)
+                    }}
+                  >
+                    <Mail className="w-4 h-4" /> Email
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      const phone = invoice.patients?.phone
+                      const waNumber = phone ? toWhatsAppNumber(phone) : null
+                      if (!waNumber) {
+                        alert('Patient phone number is not available')
+                        return
+                      }
+                      const message = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
+                      window.open(`https://wa.me/${waNumber}?text=${message}`, '_blank')
+                      setShowShareMenu(false)
+                    }}
+                  >
+                    <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
+                  </button>
+                </div>
+              )}
+            </div>
             {canDelete() && (
               <Button variant="outline" size="sm" onClick={onDelete}>Delete</Button>
             )}

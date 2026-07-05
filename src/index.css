@@ -194,6 +194,12 @@
     box-shadow: none !important;
     border-radius: 0 !important;
   }
+  .statement-invoice-block,
+  .statement-payments,
+  .statement-summary {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
 /* ── Print styles for invoice list ── */
