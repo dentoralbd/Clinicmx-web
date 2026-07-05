@@ -10,7 +10,8 @@ import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
-import { buildInvoiceItemPreview, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getInvoiceItemLineTotal, getInvoiceItemSubtotal } from '@/lib/billing'
+import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildTreatmentInvoiceItems, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
+import { ToothSelector } from '@/components/ToothSelector'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -44,6 +45,24 @@ import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
+
+interface VisitTreatmentEntry {
+  key: string
+  description: string
+  teeth: number[]
+  cost: string
+  status: 'In Progress' | 'Completed'
+}
+
+function createEmptyVisitTreatment(): VisitTreatmentEntry {
+  return {
+    key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    description: '',
+    teeth: [],
+    cost: '',
+    status: 'Completed',
+  }
+}
 
 type SectionId =
   | 'profile'
@@ -191,10 +210,11 @@ export function PatientProfile() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [showTreatmentPlanForm, setShowTreatmentPlanForm] = useState(false)
   const [treatmentPlanForm, setTreatmentPlanForm] = useState({
     treatment_type: '',
-    tooth_number: '',
+    teeth: [] as number[],
     description: '',
     status: 'Planned',
     cost: '',
@@ -211,6 +231,8 @@ export function PatientProfile() {
     treatment_plan: '',
     notes: '',
   })
+  const [visitTreatmentsDone, setVisitTreatmentsDone] = useState<VisitTreatmentEntry[]>([])
+  const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
 
   const [prescriptionForm, setPrescriptionForm] = useState({
     chief_complaint_entries: [createEmptyEntry()] as ClinicalEntry[],
@@ -363,17 +385,18 @@ export function PatientProfile() {
     if (!id) return
 
     try {
+      const teethNote = treatmentPlanForm.teeth.length > 1 ? `Teeth: ${treatmentPlanForm.teeth.join(', ')}` : null
       await supabase.from('treatments').insert([{
         patient_id: id,
-        tooth_number: treatmentPlanForm.tooth_number ? parseInt(treatmentPlanForm.tooth_number) : null,
+        tooth_number: treatmentPlanForm.teeth.length > 0 ? treatmentPlanForm.teeth[0] : null,
         treatment_type: treatmentPlanForm.treatment_type,
         description: treatmentPlanForm.description || null,
         status: treatmentPlanForm.status,
         cost: parseFloat(treatmentPlanForm.cost) || 0,
-        notes: treatmentPlanForm.notes || null,
+        notes: [teethNote, treatmentPlanForm.notes || null].filter(Boolean).join(' — ') || null,
       }])
       setShowTreatmentPlanForm(false)
-      setTreatmentPlanForm({ treatment_type: '', tooth_number: '', description: '', status: 'Planned', cost: '', notes: '' })
+      setTreatmentPlanForm({ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' })
       loadPatientData()
     } catch (error) {
       console.error('Error saving treatment plan:', error)
@@ -432,11 +455,45 @@ export function PatientProfile() {
     e.preventDefault()
     if (!id) return
 
+    const doneEntries = visitTreatmentsDone.filter((entry) => entry.description.trim())
+    const paymentAmount = parseFloat(visitPayment.amount) || 0
+    const treatmentsTotal = doneEntries.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0), 0)
+    if (paymentAmount > 0 && doneEntries.length === 0) {
+      alert('Add at least one Treatment Done entry before recording a payment')
+      return
+    }
+    if (paymentAmount > treatmentsTotal) {
+      alert('Payment amount cannot be greater than the total treatment cost')
+      return
+    }
+
     try {
       await supabase.from('patient_visits').insert([{
         patient_id: id,
         ...visitForm,
       }])
+
+      let insertedTreatments: any[] = []
+      if (doneEntries.length > 0) {
+        const rows = doneEntries.map((entry) => ({
+          patient_id: id,
+          ...mapEntryToOperation({ id: entry.key, text: entry.description.trim(), teeth: entry.teeth }),
+          status: entry.status,
+          cost: parseFloat(entry.cost) || 0,
+          notes: entry.teeth.length > 1 ? `Teeth: ${entry.teeth.join(', ')}` : null,
+        }))
+        const { data, error } = await supabase
+          .from('treatments')
+          .insert(rows)
+          .select('id, treatment_type, description, tooth_number, cost')
+        if (error) throw error
+        insertedTreatments = data || []
+      }
+
+      if (paymentAmount > 0 && insertedTreatments.length > 0) {
+        await createVisitInvoiceWithPayment(insertedTreatments, paymentAmount)
+      }
+
       setShowVisitForm(false)
       setVisitForm({
         chief_complaint: '',
@@ -445,10 +502,91 @@ export function PatientProfile() {
         treatment_plan: '',
         notes: '',
       })
+      setVisitTreatmentsDone([])
+      setVisitPayment({ amount: '', method: 'Cash' })
       loadPatientData()
     } catch (error) {
       console.error('Error saving visit:', error)
-      alert('Failed to save visit')
+      alert(`Failed to save visit: ${getFriendlySupabaseErrorMessage(error)}`)
+    }
+  }
+
+  async function createVisitInvoiceWithPayment(insertedTreatments: any[], paymentAmount: number) {
+    if (!id) return
+
+    const items = buildTreatmentInvoiceItems(insertedTreatments)
+    const totalAmount = getInvoiceItemSubtotal(items)
+    const { data: invoice, error: invoiceError } = await supabase
+      .from('invoices')
+      .insert([buildLegacySafeInvoicePayload({
+        patientId: id,
+        items,
+        totalAmount,
+        paidAmount: 0,
+        status: 'Pending',
+        dueDate: null,
+      })])
+      .select('id')
+      .single()
+    if (invoiceError) throw invoiceError
+    if (!invoice?.id) return
+
+    // invoice_history / is_invoiced columns arrive in later migrations — ignore if missing
+    await supabase.from('invoice_history').insert({
+      invoice_id: invoice.id,
+      event_type: 'invoice_created',
+      event_data: { source: 'visit_form' },
+    }).then(() => {}, () => {})
+
+    await supabase
+      .from('treatments')
+      .update({ is_invoiced: true, invoice_id: invoice.id })
+      .in('id', insertedTreatments.map((treatment) => treatment.id))
+      .then(() => {}, () => {})
+
+    // Same fallback chain as InvoiceModal.recordImmediatePayment for older payments schemas
+    const paymentDateIso = new Date().toISOString()
+    let paymentStored = false
+    let paymentSchemaError: unknown = null
+    const paymentPayloads: Array<{
+      invoice_id: string
+      amount: number
+      payment_method?: string
+      payment_date?: string
+      notes?: string | null
+    }> = [
+      { invoice_id: invoice.id, amount: paymentAmount, payment_method: visitPayment.method, payment_date: paymentDateIso, notes: null },
+      { invoice_id: invoice.id, amount: paymentAmount, payment_date: paymentDateIso },
+      { invoice_id: invoice.id, amount: paymentAmount },
+    ]
+    for (const payload of paymentPayloads) {
+      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      if (!paymentError) {
+        paymentStored = true
+        paymentSchemaError = null
+        break
+      }
+      if (!isSchemaCompatibilityError(paymentError)) throw paymentError
+      paymentSchemaError = paymentError
+    }
+
+    const { error: statusError } = await supabase
+      .from('invoices')
+      .update({
+        paid_amount: paymentAmount,
+        status: paymentAmount >= totalAmount ? 'Paid' : 'Partial',
+      })
+      .eq('id', invoice.id)
+    if (statusError) throw statusError
+
+    await supabase.from('invoice_history').insert({
+      invoice_id: invoice.id,
+      event_type: 'payment_recorded',
+      event_data: { amount: paymentAmount, payment_method: visitPayment.method },
+    }).then(() => {}, () => {})
+
+    if (!paymentStored && paymentSchemaError) {
+      logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount: paymentAmount })
     }
   }
 
@@ -2340,6 +2478,53 @@ export function PatientProfile() {
         </div>
       </div>
 
+      <div className={`fixed right-4 bottom-20 md:right-6 md:bottom-6 ${showQuickAdd ? 'z-50' : 'z-40'}`}>
+        {showQuickAdd && (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowQuickAdd(false)} />
+            <div className="absolute bottom-16 right-0 z-50 w-56 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-xl">
+              <button
+                onClick={() => { setShowQuickAdd(false); setShowTreatmentPlanForm(true) }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100"
+              >
+                <Activity className="h-4 w-4 text-primary" />
+                New Treatment Plan
+              </button>
+              <button
+                onClick={() => { setShowQuickAdd(false); setShowVisitForm(true) }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100"
+              >
+                <Stethoscope className="h-4 w-4 text-primary" />
+                New Visit
+              </button>
+              <button
+                disabled={pendingInvoices.length === 0}
+                onClick={() => {
+                  setShowQuickAdd(false)
+                  if (pendingInvoices.length === 1) {
+                    setPayingInvoice(pendingInvoices[0])
+                  } else {
+                    updateSection('billing')
+                  }
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+              >
+                <DollarSign className="h-4 w-4 text-primary" />
+                Add Payment
+                {pendingInvoices.length === 0 && <span className="ml-auto text-xs font-normal text-text-secondary">No due invoices</span>}
+              </button>
+            </div>
+          </>
+        )}
+        <button
+          onClick={() => setShowQuickAdd((prev) => !prev)}
+          aria-label={showQuickAdd ? 'Close quick actions' : 'Open quick actions'}
+          className={`relative z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all duration-200 hover:shadow-xl ${showQuickAdd ? 'rotate-45' : ''}`}
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      </div>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -2383,6 +2568,10 @@ export function PatientProfile() {
         <VisitFormModal
           formData={visitForm}
           setFormData={setVisitForm}
+          treatmentsDone={visitTreatmentsDone}
+          setTreatmentsDone={setVisitTreatmentsDone}
+          payment={visitPayment}
+          setPayment={setVisitPayment}
           onSubmit={handleVisitSubmit}
           onClose={() => setShowVisitForm(false)}
         />
@@ -2660,11 +2849,18 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
   )
 }
 
-function VisitFormModal({ formData, setFormData, onSubmit, onClose }: any) {
+function VisitFormModal({ formData, setFormData, treatmentsDone, setTreatmentsDone, payment, setPayment, onSubmit, onClose }: any) {
+  const validTreatments = (treatmentsDone as VisitTreatmentEntry[]).filter((entry) => entry.description.trim())
+  const treatmentsTotal = validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0), 0)
+
+  function updateTreatmentEntry(index: number, patch: Partial<VisitTreatmentEntry>) {
+    setTreatmentsDone(treatmentsDone.map((entry: VisitTreatmentEntry, i: number) => (i === index ? { ...entry, ...patch } : entry)))
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8">
-        <div className="p-6 border-b border-gray-200">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-xl font-bold">Add Visit</h2>
         </div>
 
@@ -2707,6 +2903,98 @@ function VisitFormModal({ formData, setFormData, onSubmit, onClose }: any) {
               onChange={(e) => setFormData({ ...formData, treatment_plan: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Treatment Done</label>
+            <div className="space-y-2">
+              {(treatmentsDone as VisitTreatmentEntry[]).map((entry, index) => (
+                <div key={entry.key} className="rounded-lg border border-gray-200 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Treatment done (e.g. Extraction, RCT)"
+                      value={entry.description}
+                      onChange={(e) => updateTreatmentEntry(index, { description: e.target.value })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTreatmentsDone(treatmentsDone.filter((_: VisitTreatmentEntry, i: number) => i !== index))}
+                      className="text-gray-400 hover:text-red-500"
+                      aria-label="Remove treatment"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ToothSelector selectedTeeth={entry.teeth} onChange={(teeth) => updateTreatmentEntry(index, { teeth })} />
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Cost (BDT)"
+                      value={entry.cost}
+                      onChange={(e) => updateTreatmentEntry(index, { cost: e.target.value })}
+                      className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <select
+                      value={entry.status}
+                      onChange={(e) => updateTreatmentEntry(index, { status: e.target.value as VisitTreatmentEntry['status'] })}
+                      className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="Completed">Completed</option>
+                      <option value="In Progress">In Progress</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setTreatmentsDone([...treatmentsDone, createEmptyVisitTreatment()])}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80"
+              >
+                <Plus className="w-4 h-4" />
+                Add Treatment
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Payment Received</label>
+            {validTreatments.length > 0 ? (
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="Amount (BDT)"
+                    value={payment.amount}
+                    onChange={(e) => setPayment({ ...payment, amount: e.target.value })}
+                    className="w-36 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <select
+                    value={payment.method}
+                    onChange={(e) => setPayment({ ...payment, method: e.target.value })}
+                    className="px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="Card">Card</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Transfer">Transfer</option>
+                  </select>
+                  <span className="text-xs text-text-secondary">Treatments total: {formatBDT(treatmentsTotal)}</span>
+                </div>
+                {(parseFloat(payment.amount) || 0) > 0 && (
+                  <p className="text-xs text-text-secondary">A new invoice will be generated for the treatments above.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-text-secondary px-3 py-2 border border-dashed border-gray-300 rounded-lg">
+                Add a treatment done first to record a payment.
+              </p>
+            )}
           </div>
 
           <div>
@@ -3592,16 +3880,8 @@ function TreatmentPlanModal({ formData, setFormData, onSubmit, onClose }: any) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Tooth Number (FDI)</label>
-              <input
-                type="number"
-                min="11"
-                max="85"
-                value={formData.tooth_number}
-                onChange={(e) => setFormData({ ...formData, tooth_number: e.target.value })}
-                placeholder="e.g. 11–48, 51–85"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
+              <ToothSelector selectedTeeth={formData.teeth} onChange={(teeth) => setFormData({ ...formData, teeth })} />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Status</label>
