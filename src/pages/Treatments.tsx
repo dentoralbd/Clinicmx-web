@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { logEdit } from '@/lib/editHistory'
 
 interface Treatment {
   id: string
@@ -76,6 +77,18 @@ export function Treatments() {
 
   async function updateTreatmentStatus(id: string, newStatus: string) {
     try {
+      const previous = treatments.find((t) => t.id === id)
+      if (previous) {
+        const patientName = `${previous.patients?.first_name ?? ''} ${previous.patients?.last_name ?? ''}`.trim()
+        await logEdit({
+          entityType: 'treatment',
+          entityId: id,
+          entityLabel: previous.treatment_type,
+          patientId: previous.patient_id,
+          patientName: patientName || null,
+          previousPayload: previous,
+        })
+      }
       const { error } = await supabase
         .from('treatments')
         .update({ status: newStatus })

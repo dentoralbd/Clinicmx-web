@@ -818,6 +818,7 @@ export interface Database {
           patient_name: string | null
           payload: Json
           deleted_by: string
+          restored_at: string | null
         }
         Insert: {
           id?: string
@@ -829,6 +830,7 @@ export interface Database {
           patient_name?: string | null
           payload: Json
           deleted_by?: string
+          restored_at?: string | null
         }
         Update: {
           id?: string
@@ -840,6 +842,46 @@ export interface Database {
           patient_name?: string | null
           payload?: Json
           deleted_by?: string
+          restored_at?: string | null
+        }
+        Relationships: []
+      }
+      edit_history: {
+        Row: {
+          id: string
+          edited_at: string
+          entity_type: string
+          entity_id: string
+          entity_label: string | null
+          patient_id: string | null
+          patient_name: string | null
+          previous_payload: Json
+          edited_by: string
+          reverted_at: string | null
+        }
+        Insert: {
+          id?: string
+          edited_at?: string
+          entity_type: string
+          entity_id: string
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          previous_payload: Json
+          edited_by?: string
+          reverted_at?: string | null
+        }
+        Update: {
+          id?: string
+          edited_at?: string
+          entity_type?: string
+          entity_id?: string
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          previous_payload?: Json
+          edited_by?: string
+          reverted_at?: string | null
         }
         Relationships: []
       }

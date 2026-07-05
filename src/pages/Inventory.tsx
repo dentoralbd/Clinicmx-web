@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { safeFormat } from '@/lib/utils'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { logEdit } from '@/lib/editHistory'
 import { differenceInDays } from 'date-fns'
 
 type Category = 'Materials' | 'Instruments' | 'Others'
@@ -125,6 +126,14 @@ export function Inventory() {
 
     try {
       if (editingItem) {
+        await logEdit({
+          entityType: 'inventory_item',
+          entityId: editingItem.id,
+          entityLabel: editingItem.name,
+          patientId: null,
+          patientName: null,
+          previousPayload: editingItem,
+        })
         const { error } = await supabase
           .from('inventory_items')
           .update(payload)
@@ -187,6 +196,14 @@ export function Inventory() {
     const newQty = Math.max(0, showAdjustModal.quantity + delta)
 
     try {
+      await logEdit({
+        entityType: 'inventory_item',
+        entityId: showAdjustModal.id,
+        entityLabel: showAdjustModal.name,
+        patientId: null,
+        patientName: null,
+        previousPayload: showAdjustModal,
+      })
       const { error: itemErr } = await supabase
         .from('inventory_items')
         .update({ quantity: newQty })

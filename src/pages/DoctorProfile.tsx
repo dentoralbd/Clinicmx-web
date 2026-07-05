@@ -28,6 +28,8 @@ import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type Do
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
 import { getAppRole } from '@/lib/appSession'
 import { supabase } from '@/lib/supabase'
+import { restoreDeletion, isRestorableEntityType } from '@/lib/deleteHistory'
+import { revertEdit } from '@/lib/editHistory'
 
 const DEFAULT_LOGO = '/logo.png'
 
@@ -83,7 +85,32 @@ interface DeleteHistoryRow {
   patient_name: string | null
   payload: unknown
   deleted_by: string
+  restored_at: string | null
 }
+
+interface EditHistoryRow {
+  id: string
+  edited_at: string
+  entity_type: string
+  entity_id: string
+  entity_label: string | null
+  patient_id: string | null
+  patient_name: string | null
+  previous_payload: unknown
+  edited_by: string
+  reverted_at: string | null
+}
+
+type EditHistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'inventory_item'
+
+const EDIT_HISTORY_FILTERS: Array<{ value: EditHistoryFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'patient', label: 'Pt. Profile' },
+  { value: 'prescription', label: 'Prescriptions' },
+  { value: 'treatment', label: 'Treatments' },
+  { value: 'invoice', label: 'Invoices' },
+  { value: 'inventory_item', label: 'Inventory' },
+]
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   patient: 'Patient',
@@ -108,6 +135,10 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
 
 function humanizeKey(key: string) {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function roleLabelOf(role: string) {
+  return role === 'doctor' ? 'Doctor' : role === 'operator' ? 'Operator' : role
 }
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/
@@ -205,13 +236,22 @@ export function DoctorProfile() {
   const [defaultLogo, setDefaultLogo] = useState(DEFAULT_LOGO)
   const logoInputRef = useRef<HTMLInputElement>(null)
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'history'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'history' | 'edits'>('profile')
   const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const [historyHasMore, setHistoryHasMore] = useState(true)
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+
+  const [editHistory, setEditHistory] = useState<EditHistoryRow[]>([])
+  const [editHistoryLoading, setEditHistoryLoading] = useState(false)
+  const [editHistoryPage, setEditHistoryPage] = useState(0)
+  const [editHistoryHasMore, setEditHistoryHasMore] = useState(true)
+  const [editHistoryFilter, setEditHistoryFilter] = useState<EditHistoryFilter>('all')
+  const [expandedEditId, setExpandedEditId] = useState<string | null>(null)
+  const [revertingId, setRevertingId] = useState<string | null>(null)
 
   useEffect(() => {
     loadProfile()
@@ -230,6 +270,13 @@ export function DoctorProfile() {
       loadDeleteHistory(0, historyFilter)
     }
   }, [activeTab, historyFilter])
+
+  useEffect(() => {
+    if (activeTab === 'edits') {
+      setExpandedEditId(null)
+      loadEditHistory(0, editHistoryFilter)
+    }
+  }, [activeTab, editHistoryFilter])
 
   async function loadDeleteHistory(page: number, filter: HistoryFilter) {
     setHistoryLoading(true)
@@ -254,6 +301,76 @@ export function DoctorProfile() {
       console.error('Error loading delete history:', err)
     } finally {
       setHistoryLoading(false)
+    }
+  }
+
+  async function handleRestore(entry: DeleteHistoryRow) {
+    const typeLabel = ENTITY_TYPE_LABELS[entry.entity_type] || entry.entity_type
+    if (!confirm(`Restore this ${typeLabel.toLowerCase()} to its previous state?`)) return
+    setRestoringId(entry.id)
+    try {
+      const result = await restoreDeletion(entry)
+      if (result.ok) {
+        const restoredAt = new Date().toISOString()
+        setDeleteHistory((prev) =>
+          prev.map((row) => (row.id === entry.id ? { ...row, restored_at: restoredAt } : row))
+        )
+      } else {
+        alert(result.reason)
+      }
+    } catch (err) {
+      console.error('Error restoring record:', err)
+      alert('Restore failed. Please try again.')
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
+  async function loadEditHistory(page: number, filter: EditHistoryFilter) {
+    setEditHistoryLoading(true)
+    try {
+      const from = page * HISTORY_PAGE_SIZE
+      const to = from + HISTORY_PAGE_SIZE - 1
+      let query = supabase
+        .from('edit_history')
+        .select('*')
+        .order('edited_at', { ascending: false })
+        .range(from, to)
+      if (filter !== 'all') {
+        query = query.eq('entity_type', filter)
+      }
+      const { data, error } = await query
+      if (error) throw error
+      const rows = (data || []) as EditHistoryRow[]
+      setEditHistory((prev) => (page === 0 ? rows : [...prev, ...rows]))
+      setEditHistoryHasMore(rows.length === HISTORY_PAGE_SIZE)
+      setEditHistoryPage(page)
+    } catch (err) {
+      console.error('Error loading edit history:', err)
+    } finally {
+      setEditHistoryLoading(false)
+    }
+  }
+
+  async function handleRevert(entry: EditHistoryRow) {
+    const typeLabel = ENTITY_TYPE_LABELS[entry.entity_type] || entry.entity_type
+    if (!confirm(`Revert this ${typeLabel.toLowerCase()} to its previous state? This will undo the edit made after this point.`)) return
+    setRevertingId(entry.id)
+    try {
+      const result = await revertEdit(entry)
+      if (result.ok) {
+        const revertedAt = new Date().toISOString()
+        setEditHistory((prev) =>
+          prev.map((row) => (row.id === entry.id ? { ...row, reverted_at: revertedAt } : row))
+        )
+      } else {
+        alert(result.reason)
+      }
+    } catch (err) {
+      console.error('Error reverting edit:', err)
+      alert('Revert failed. Please try again.')
+    } finally {
+      setRevertingId(null)
     }
   }
 
@@ -422,7 +539,7 @@ export function DoctorProfile() {
       </div>
 
       {/* Main action tabs */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <button
           type="button"
           onClick={() => setActiveTab('profile')}
@@ -434,6 +551,18 @@ export function DoctorProfile() {
         >
           <Pencil className="w-5 h-5" />
           Edit Profile
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('edits')}
+          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
+            activeTab === 'edits'
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
+          }`}
+        >
+          <RotateCcw className="w-5 h-5" />
+          Edit History
         </button>
         <button
           type="button"
@@ -692,15 +821,48 @@ export function DoctorProfile() {
                           </p>
                         </div>
                       </div>
-                      {isExpanded ? (
-                        <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                          {roleLabelOf(entry.deleted_by)}
+                        </span>
+                        {entry.restored_at && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                            <CheckCircle className="w-3 h-3" />
+                            Restored
+                          </span>
+                        )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                        )}
+                      </div>
                     </button>
                     {isExpanded && (
-                      <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
                         <SnapshotDetails payload={entry.payload} />
+                        <div className="pt-2 border-t border-gray-200">
+                          {entry.restored_at ? (
+                            <p className="text-xs text-green-700 flex items-center gap-1.5">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Restored on {format(new Date(entry.restored_at), 'MMM d, yyyy h:mm a')}
+                            </p>
+                          ) : isRestorableEntityType(entry.entity_type) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRestore(entry)}
+                              disabled={restoringId === entry.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              {restoringId === entry.id ? 'Restoring…' : 'Restore this record'}
+                            </button>
+                          ) : (
+                            <p className="text-xs text-gray-400">
+                              File content can't be recovered — the file itself was permanently removed from storage when deleted.
+                            </p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -717,6 +879,124 @@ export function DoctorProfile() {
               className="w-full text-sm font-medium text-primary hover:underline py-2 text-center disabled:opacity-50"
             >
               {historyLoading ? 'Loading…' : 'Load more'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'edits' && (
+        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <RotateCcw className="w-5 h-5 text-amber-500" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-800">Edit History</h2>
+              <p className="text-xs text-gray-400">Every change made after a record's first save — revert any of them back</p>
+            </div>
+          </div>
+
+          {/* Category filters */}
+          <div className="flex flex-wrap gap-2">
+            {EDIT_HISTORY_FILTERS.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => setEditHistoryFilter(filter.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  editHistoryFilter === filter.value
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-text-secondary border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
+          {editHistory.length === 0 && !editHistoryLoading ? (
+            <p className="text-sm text-gray-400 py-4 text-center">
+              {editHistoryFilter === 'all' ? 'No edits recorded yet.' : 'No edits in this category yet.'}
+            </p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {editHistory.map((entry) => {
+                const isExpanded = expandedEditId === entry.id
+                return (
+                  <div key={entry.id} className="py-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedEditId(isExpanded ? null : entry.id)}
+                      className="w-full flex items-center justify-between gap-3 text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Pencil className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {ENTITY_TYPE_LABELS[entry.entity_type] || entry.entity_type}
+                            {entry.entity_label ? `: ${entry.entity_label}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {format(new Date(entry.edited_at), 'MMM d, yyyy h:mm a')}
+                            {entry.patient_name ? ` · ${entry.patient_name}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                          {roleLabelOf(entry.edited_by)}
+                        </span>
+                        {entry.reverted_at && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                            <CheckCircle className="w-3 h-3" />
+                            Reverted
+                          </span>
+                        )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                        )}
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Version before this edit</p>
+                        <SnapshotDetails payload={entry.previous_payload} />
+                        <div className="pt-2 border-t border-gray-200">
+                          {entry.reverted_at ? (
+                            <p className="text-xs text-green-700 flex items-center gap-1.5">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Reverted on {format(new Date(entry.reverted_at), 'MMM d, yyyy h:mm a')}
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleRevert(entry)}
+                              disabled={revertingId === entry.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              {revertingId === entry.id ? 'Reverting…' : 'Revert to this version'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {editHistoryHasMore && (
+            <button
+              type="button"
+              onClick={() => loadEditHistory(editHistoryPage + 1, editHistoryFilter)}
+              disabled={editHistoryLoading}
+              className="w-full text-sm font-medium text-primary hover:underline py-2 text-center disabled:opacity-50"
+            >
+              {editHistoryLoading ? 'Loading…' : 'Load more'}
             </button>
           )}
         </div>

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { logEdit } from '@/lib/editHistory'
 import { format } from 'date-fns'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
@@ -102,6 +103,17 @@ export function Patients() {
 
     try {
       if (editingId) {
+        const previous = patients.find((p) => p.id === editingId)
+        if (previous) {
+          await logEdit({
+            entityType: 'patient',
+            entityId: editingId,
+            entityLabel: `${previous.first_name} ${previous.last_name}`.trim(),
+            patientId: editingId,
+            patientName: `${previous.first_name} ${previous.last_name}`.trim(),
+            previousPayload: previous,
+          })
+        }
         const { error: updateError } = await supabase
           .from('patients')
           .update(patientPayload as any)

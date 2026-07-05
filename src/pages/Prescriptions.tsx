@@ -37,6 +37,7 @@ import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, ca
 import { routeToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, dosageToBengali } from '@/lib/medicationBengali'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { logEdit } from '@/lib/editHistory'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -257,6 +258,18 @@ export function Prescriptions() {
 
       let prescriptionId = editingId
       if (editingId) {
+        const previous = prescriptions.find((p) => p.id === editingId)
+        if (previous) {
+          const patientName = `${previous.patients?.first_name ?? ''} ${previous.patients?.last_name ?? ''}`.trim()
+          await logEdit({
+            entityType: 'prescription',
+            entityId: editingId,
+            entityLabel: previous.diagnosis || 'Prescription',
+            patientId: previous.patient_id,
+            patientName: patientName || null,
+            previousPayload: previous,
+          })
+        }
         await supabase.from('prescriptions').update(payload).eq('id', editingId)
       } else {
         const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()

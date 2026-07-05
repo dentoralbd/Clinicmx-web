@@ -41,6 +41,7 @@ import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
+import { logEdit } from '@/lib/editHistory'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
 
@@ -382,6 +383,17 @@ export function PatientProfile() {
 
   async function updateTreatmentStatus(treatmentId: string, newStatus: string) {
     try {
+      const previous = treatments.find((t) => t.id === treatmentId)
+      if (previous) {
+        await logEdit({
+          entityType: 'treatment',
+          entityId: treatmentId,
+          entityLabel: previous.treatment_type,
+          patientId: previous.patient_id,
+          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+          previousPayload: previous,
+        })
+      }
       const { error } = await supabase.from('treatments').update({ status: newStatus }).eq('id', treatmentId)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, status: newStatus } : t)))
@@ -469,6 +481,17 @@ export function PatientProfile() {
 
       let prescriptionId = editingPrescriptionId
       if (editingPrescriptionId) {
+        const previousPrescription = prescriptions.find((p: any) => p.id === editingPrescriptionId)
+        if (previousPrescription) {
+          await logEdit({
+            entityType: 'prescription',
+            entityId: editingPrescriptionId,
+            entityLabel: previousPrescription.diagnosis || 'Prescription',
+            patientId: id ?? null,
+            patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+            previousPayload: previousPrescription,
+          })
+        }
         await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
       } else {
         const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()
@@ -680,6 +703,17 @@ export function PatientProfile() {
 
   async function handleMarkInvoicePaid(invoiceId: string, totalAmount: number) {
     try {
+      const previousInvoice = invoices.find((inv: any) => inv.id === invoiceId)
+      if (previousInvoice) {
+        await logEdit({
+          entityType: 'invoice',
+          entityId: invoiceId,
+          entityLabel: previousInvoice.invoice_number || 'Invoice',
+          patientId: id ?? null,
+          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+          previousPayload: previousInvoice,
+        })
+      }
       const { error } = await supabase
         .from('invoices')
         .update({
