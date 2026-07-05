@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Printer, X } from 'lucide-react'
+import { Mail, MessageCircle, Printer, X } from 'lucide-react'
 import {
   formatInvoiceItemLabel,
   getInvoiceItemLineTotal,
@@ -12,6 +12,8 @@ import {
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { buildInvoicePdf, invoicePdfFileName } from '@/lib/invoicePdf'
+import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
@@ -38,6 +40,7 @@ interface InvoicePrintProps {
     first_name: string
     last_name: string
     phone?: string | null
+    email?: string | null
     patient_code?: string | null
   }
   doctor: DoctorProfileData | null
@@ -322,6 +325,44 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
     window.print()
   }
 
+  const [showShareMenu, setShowShareMenu] = useState(false)
+
+  useEffect(() => {
+    if (!showShareMenu) return
+    const handler = () => setShowShareMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showShareMenu])
+
+  async function shareStatement(channel: 'email' | 'whatsapp') {
+    const email = patient.email
+    const waNumber = patient.phone ? toWhatsAppNumber(patient.phone) : null
+
+    if (channel === 'email' && !email) {
+      alert('Patient email is not available')
+      return
+    }
+    if (channel === 'whatsapp' && !waNumber) {
+      alert('Patient phone number is not available')
+      return
+    }
+
+    const pdf = buildInvoicePdf(visibleInvoices, patient, doctor, {
+      dueOnly,
+      showItems,
+      payments: showPayments ? visiblePayments : [],
+    })
+    const fileName = invoicePdfFileName(visibleInvoices, patient)
+    const subject = combined
+      ? `${dueOnly ? 'Statement (Due)' : 'Combined Invoice'} - ${patient.first_name} ${patient.last_name}`
+      : `Invoice ${invoices[0]?.invoice_number || invoices[0]?.id}`
+    const text = combined
+      ? `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your invoice statement. Total Due: ${formatBDT(grandDue)}.`
+      : `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your invoice. Total: ${formatBDT(invoices[0]?.total_amount || 0)}.`
+
+    await sharePdf(pdf, fileName, { channel, email, waNumber, subject, text })
+  }
+
   return (
     <div className="invoice-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
       {/* Action bar – hidden on print */}
@@ -333,6 +374,41 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
           <Printer className="w-4 h-4" />
           Print / Save as PDF
         </button>
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowShareMenu((v) => !v)
+            }}
+            aria-label="Email or WhatsApp invoice"
+            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+          >
+            <Mail className="w-4 h-4" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600" />
+            <span>Share</span>
+          </button>
+          {showShareMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-2rem)]">
+              <button
+                className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                onClick={() => {
+                  shareStatement('email')
+                  setShowShareMenu(false)
+                }}
+              >
+                <Mail className="w-4 h-4" /> Email
+              </button>
+              <button
+                className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                onClick={() => {
+                  shareStatement('whatsapp')
+                  setShowShareMenu(false)
+                }}
+              >
+                <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
+              </button>
+            </div>
+          )}
+        </div>
         <button
           onClick={onClose}
           className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"

@@ -39,6 +39,7 @@ import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 import { buildInvoicePdf, invoicePdfFileName } from '@/lib/invoicePdf'
+import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { matchesPatientSearch } from '@/lib/patients'
@@ -346,37 +347,12 @@ export function Billing() {
 
     const doctor = await ensureDoctorProfile()
     const patientInfo = patient || { first_name: 'Unknown', last_name: 'Patient', patient_code: null, phone: null }
-    const doc = buildInvoicePdf(invoice, patientInfo, doctor)
-    const fileName = invoicePdfFileName(invoice, patientInfo)
-    const blob = doc.output('blob')
-    const file = new File([blob], fileName, { type: 'application/pdf' })
+    const doc = buildInvoicePdf([invoice], patientInfo, doctor)
+    const fileName = invoicePdfFileName([invoice], patientInfo)
     const subject = `Invoice ${invoice.invoice_number || invoice.id}`
     const text = `Dear ${patientInfo.first_name || 'Patient'},\n\nPlease find attached your invoice. Total: ${formatBDT(invoice.total_amount)}.`
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: subject, text })
-        return
-      } catch (error) {
-        if ((error as { name?: string })?.name === 'AbortError') return
-        console.error('Native share failed, falling back to download:', error)
-      }
-    }
-
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-
-    if (channel === 'email') {
-      alert('Invoice PDF downloaded. Please attach it to the email before sending.')
-      window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`
-    } else {
-      alert('Invoice PDF downloaded. Please attach it in WhatsApp before sending.')
-      window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
-    }
+    await sharePdf(doc, fileName, { channel, email, waNumber, subject, text })
   }
 
   const billedPatients = useMemo(() => {
@@ -867,15 +843,6 @@ function SummaryCard({ title, value, icon, color }: { title: string; value: stri
       </div>
     </div>
   )
-}
-
-function toWhatsAppNumber(phone: string): string | null {
-  const digits = phone.replace(/\D/g, '')
-  if (!digits) return null
-  if (digits.startsWith('880')) return digits
-  if (digits.startsWith('0')) return `880${digits.slice(1)}`
-  if (digits.length === 10) return `880${digits}`
-  return digits
 }
 
 function InvoiceRow({

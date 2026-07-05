@@ -32,8 +32,37 @@ export interface PdfPatient {
   patient_code?: string | null
 }
 
-export function buildInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor: DoctorProfileData | null): jsPDF {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+export interface PdfPayment {
+  id: string
+  amount: number
+  payment_date: string
+  payment_method: string | null
+  invoice_id: string
+  payment_methods?: { name: string } | null
+}
+
+export interface BuildInvoicePdfOptions {
+  /** Combined statement only: adds an "Outstanding invoices only" subtitle */
+  dueOnly?: boolean
+  /** Combined statement only: whether to include each invoice's line items or just its totals */
+  showItems?: boolean
+  /** Combined statement only: payment history table */
+  payments?: PdfPayment[]
+}
+
+function invoiceLabel(invoice: PdfInvoice) {
+  return invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()
+}
+
+function getInvoiceDue(invoice: PdfInvoice) {
+  return Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
+}
+
+function lastAutoTableY(doc: jsPDF): number {
+  return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+}
+
+function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null): number {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
 
@@ -81,10 +110,53 @@ export function buildInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor
     ry += 11
   }
 
-  let y = Math.max(ly, ry) + 10
+  const y = Math.max(ly, ry) + 10
   doc.setDrawColor(30)
   doc.line(marginX, y, pageWidth - marginX, y)
-  y += 26
+  return y + 26
+}
+
+function drawTotalsBlock(
+  doc: jsPDF,
+  y: number,
+  lines: Array<[string, string, boolean]>,
+  opts?: { fontSize?: number }
+): number {
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const totalsRight = pageWidth - marginX
+  const totalsLeft = totalsRight - 150
+
+  doc.setFontSize(opts?.fontSize ?? 9)
+  let cursor = y
+  for (const [label, value, bold] of lines) {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.text(label, totalsLeft, cursor)
+    doc.text(value, totalsRight, cursor, { align: 'right' })
+    cursor += 14
+  }
+  return cursor
+}
+
+function drawFooter(doc: jsPDF, y: number): void {
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+  doc.setDrawColor(190)
+  doc.line(marginX, y, pageWidth - marginX, y)
+  const footerY = y + 22
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.text('Thank you for your visit.', marginX, footerY)
+  doc.line(pageWidth - marginX - 120, footerY - 4, pageWidth - marginX, footerY - 4)
+  doc.text('Authorized Signature', pageWidth - marginX, footerY + 8, { align: 'right' })
+}
+
+function buildSingleInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor: DoctorProfileData | null): jsPDF {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+
+  let y = drawLetterhead(doc, doctor)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
@@ -139,12 +211,10 @@ export function buildInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor
     columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
   })
 
-  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 18
+  y = lastAutoTableY(doc) + 18
 
   const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
-  const due = Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
-  const totalsRight = pageWidth - marginX
-  const totalsLeft = totalsRight - 150
+  const due = getInvoiceDue(invoice)
 
   const lines: Array<[string, string, boolean]> = [['Subtotal', formatBDT(subtotal), false]]
   if ((invoice.discount_amount || 0) > 0) lines.push(['Discount', `-${formatBDT(invoice.discount_amount || 0)}`, false])
@@ -155,29 +225,186 @@ export function buildInvoicePdf(invoice: PdfInvoice, patient: PdfPatient, doctor
   lines.push(['Paid', formatBDT(invoice.paid_amount || 0), false])
   lines.push(['Due', formatBDT(due), true])
 
-  doc.setFontSize(9)
-  for (const [label, value, bold] of lines) {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
-    doc.text(label, totalsLeft, y)
-    doc.text(value, totalsRight, y, { align: 'right' })
-    y += 14
-  }
-
-  y += 16
-  doc.setDrawColor(190)
-  doc.line(marginX, y, pageWidth - marginX, y)
-  y += 22
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.text('Thank you for your visit.', marginX, y)
-  doc.line(pageWidth - marginX - 120, y - 4, pageWidth - marginX, y - 4)
-  doc.text('Authorized Signature', pageWidth - marginX, y + 8, { align: 'right' })
+  y = drawTotalsBlock(doc, y, lines) + 16
+  drawFooter(doc, y)
 
   return doc
 }
 
-export function invoicePdfFileName(invoice: PdfInvoice, patient: PdfPatient): string {
-  const idPart = invoice.invoice_number || invoice.id.slice(0, 8).toUpperCase()
+function buildCombinedInvoicePdf(
+  invoices: PdfInvoice[],
+  patient: PdfPatient,
+  doctor: DoctorProfileData | null,
+  options: BuildInvoicePdfOptions
+): jsPDF {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const showItems = options.showItems ?? true
+
+  let y = drawLetterhead(doc, doctor)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.text('COMBINED INVOICE / STATEMENT', pageWidth / 2, y, { align: 'center' })
+  if (options.dueOnly) {
+    y += 14
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text('Outstanding invoices only', pageWidth / 2, y, { align: 'center' })
+  }
+  y += 24
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  const patientLine = [
+    `Patient: ${patient.first_name} ${patient.last_name}`,
+    patient.patient_code ? `ID: ${patient.patient_code}` : null,
+    patient.phone ? `Phone: ${patient.phone}` : null,
+  ]
+    .filter(Boolean)
+    .join('    ')
+  doc.text(patientLine, marginX, y)
+  doc.text(`Date: ${safeFormat(new Date().toISOString(), 'dd MMM yyyy')}`, pageWidth - marginX, y, { align: 'right' })
+  y += 20
+
+  for (const invoice of invoices) {
+    const items = Array.isArray(invoice.items) ? invoice.items : []
+    const adjustments: string[] = []
+    if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount -${formatBDT(invoice.discount_amount || 0)}`)
+    if ((invoice.tax_amount || 0) > 0) {
+      adjustments.push(`Tax${invoice.tax_rate ? ` (${invoice.tax_rate}%)` : ''} +${formatBDT(invoice.tax_amount || 0)}`)
+    }
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Invoice ${invoiceLabel(invoice)}`, marginX, y)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.text(
+      `${safeFormat(invoice.created_at, 'dd MMM yyyy')}` +
+        (invoice.due_date ? ` • Due: ${safeFormat(invoice.due_date, 'dd MMM yyyy')}` : '') +
+        ` • ${invoice.status}` +
+        (adjustments.length > 0 ? ` • ${adjustments.join(' • ')}` : ''),
+      pageWidth - marginX,
+      y,
+      { align: 'right' }
+    )
+    y += 8
+
+    if (showItems) {
+      const rows =
+        items.length > 0
+          ? items.map((item) => [
+              formatInvoiceItemLabel({ ...item, quantity: 1 }),
+              String(getInvoiceItemQuantity(item)),
+              formatBDT(getInvoiceItemUnitPrice(item)),
+              formatBDT(getInvoiceItemLineTotal(item)),
+            ])
+          : [['Invoice total', '', '', formatBDT(invoice.total_amount)]]
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Description', 'Qty', 'Unit Price', 'Amount']],
+        body: rows,
+        margin: { left: marginX, right: marginX },
+        styles: { font: 'helvetica', fontSize: 8, cellPadding: 4 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], lineWidth: 0.5, lineColor: [30, 30, 30] },
+        columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+      })
+      y = lastAutoTableY(doc) + 6
+    } else {
+      y += 4
+    }
+
+    const due = getInvoiceDue(invoice)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    const totalsText = `Total ${formatBDT(invoice.total_amount || 0)}   ·   Paid ${formatBDT(invoice.paid_amount || 0)}   ·   Due ${formatBDT(due)}`
+    doc.text(totalsText, pageWidth - marginX, y, { align: 'right' })
+    y += 18
+
+    if (y > doc.internal.pageSize.getHeight() - 120 && invoice !== invoices[invoices.length - 1]) {
+      doc.addPage()
+      y = 50
+    }
+  }
+
+  const payments = options.payments || []
+  if (payments.length > 0) {
+    if (y > doc.internal.pageSize.getHeight() - 150) {
+      doc.addPage()
+      y = 50
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('Payment History', marginX, y)
+    y += 8
+
+    const invoiceLabelById = new Map(invoices.map((invoice) => [invoice.id, invoiceLabel(invoice)]))
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Invoice', 'Method', 'Amount']],
+      body: payments.map((payment) => [
+        safeFormat(payment.payment_date, 'dd MMM yyyy'),
+        invoiceLabelById.get(payment.invoice_id) || '—',
+        payment.payment_method || payment.payment_methods?.name || '—',
+        formatBDT(payment.amount),
+      ]),
+      margin: { left: marginX, right: marginX },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [255, 255, 255], textColor: [20, 20, 20], lineWidth: 0.75, lineColor: [30, 30, 30] },
+      columnStyles: { 3: { halign: 'right' } },
+    })
+    y = lastAutoTableY(doc) + 18
+  }
+
+  if (y > doc.internal.pageSize.getHeight() - 120) {
+    doc.addPage()
+    y = 50
+  }
+
+  const grandTotal = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+  const grandPaid = invoices.reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0)
+  const grandDue = Math.max(grandTotal - grandPaid, 0)
+
+  doc.setDrawColor(30)
+  doc.line(marginX, y, pageWidth - marginX, y)
+  y += 16
+  y = drawTotalsBlock(
+    doc,
+    y,
+    [
+      ['Grand Total', formatBDT(grandTotal), true],
+      ['Total Paid', formatBDT(grandPaid), false],
+      ['Total Due', formatBDT(grandDue), true],
+    ],
+    { fontSize: 10 }
+  )
+  y += 12
+
+  drawFooter(doc, y)
+
+  return doc
+}
+
+export function buildInvoicePdf(
+  invoices: PdfInvoice[],
+  patient: PdfPatient,
+  doctor: DoctorProfileData | null,
+  options: BuildInvoicePdfOptions = {}
+): jsPDF {
+  if (invoices.length <= 1) {
+    return buildSingleInvoicePdf(invoices[0], patient, doctor)
+  }
+  return buildCombinedInvoicePdf(invoices, patient, doctor, options)
+}
+
+export function invoicePdfFileName(invoices: PdfInvoice[], patient: PdfPatient): string {
   const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
-  return `Invoice_${namePart}_${idPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
+  if (invoices.length <= 1) {
+    const idPart = invoices[0]?.invoice_number || invoices[0]?.id.slice(0, 8).toUpperCase() || 'Invoice'
+    return `Invoice_${namePart}_${idPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
+  }
+  return `Statement_${namePart}_${invoices.length}invoices.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }
