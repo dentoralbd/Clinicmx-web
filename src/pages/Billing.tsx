@@ -784,16 +784,16 @@ function InvoiceRow({
   return (
     <div className="hover:bg-gray-50 transition-colors">
       <div className="p-4 cursor-pointer select-none" onClick={() => setExpanded((prev) => !prev)}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 flex-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <div className="flex items-start gap-3 min-w-0">
             <input
               type="checkbox"
               checked={checked}
               onChange={(e) => onSelect(e.target.checked)}
               onClick={(e) => e.stopPropagation()}
-              className="mt-1"
+              className="mt-1 shrink-0"
             />
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium">
                   {invoice.patients?.first_name} {invoice.patients?.last_name}
@@ -826,12 +826,12 @@ function InvoiceRow({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap sm:shrink-0" onClick={(e) => e.stopPropagation()}>
             {invoice.status === 'Pending' && (
               <Button variant="outline" size="sm" onClick={onMarkPaid}>Mark Paid</Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)} disabled={remainingBalance <= 0}>
-              Record Payment
+              <span className="hidden sm:inline">Record </span>Payment
             </Button>
             <div className="relative">
               <Button
@@ -841,8 +841,9 @@ function InvoiceRow({
                   e.stopPropagation()
                   setShowPrintMenu((v) => !v)
                 }}
+                aria-label="Print invoice"
               >
-                <Printer className="w-4 h-4 mr-1" />Print
+                <Printer className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">Print</span>
               </Button>
               {showPrintMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-52">
@@ -872,6 +873,7 @@ function InvoiceRow({
             <Button
               variant="outline"
               size="sm"
+              aria-label="Email invoice"
               onClick={() => {
                 const email = invoice.patients?.email
                 if (!email) {
@@ -883,7 +885,7 @@ function InvoiceRow({
                 window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
               }}
             >
-              <Mail className="w-4 h-4 mr-1" />Email
+              <Mail className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">Email</span>
             </Button>
             {canDelete() && (
               <Button variant="outline" size="sm" onClick={onDelete}>Delete</Button>
