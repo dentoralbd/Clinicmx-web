@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles } from 'lucide-react'
+import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
@@ -59,6 +59,7 @@ export function Prescriptions() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set())
   const [showMedTemplates, setShowMedTemplates] = useState(false)
   const [showInvTemplates, setShowInvTemplates] = useState(false)
   const [showComplaintTemplates, setShowComplaintTemplates] = useState(false)
@@ -157,7 +158,7 @@ export function Prescriptions() {
       setLoading(true)
       const { data } = await supabase
         .from('prescriptions')
-        .select(`*, patients (first_name, last_name)`)
+        .select(`*, patients (first_name, last_name, patient_code, phone)`)
         .order('prescribed_date', { ascending: false })
       setPrescriptions(data || [])
     } catch (error) {
@@ -594,12 +595,43 @@ export function Prescriptions() {
   }
 
   const filteredPrescriptions = prescriptions.filter((p) => {
+    const term = searchTerm.toLowerCase()
     const patientName = `${p.patients?.first_name} ${p.patients?.last_name}`.toLowerCase()
     return (
-      patientName.includes(searchTerm.toLowerCase()) ||
-      p.diagnosis?.toLowerCase().includes(searchTerm.toLowerCase())
+      patientName.includes(term) ||
+      p.diagnosis?.toLowerCase().includes(term) ||
+      p.patients?.patient_code?.toLowerCase().includes(term) ||
+      p.patients?.phone?.toLowerCase().includes(term)
     )
   })
+
+  // Prescriptions are already sorted newest-first, so groups come out ordered by
+  // each patient's most recent prescription and stay newest-first within a group.
+  const groupedPrescriptions: Array<{ patientId: string; patient: any; prescriptions: any[] }> = []
+  {
+    const byPatient = new Map<string, { patientId: string; patient: any; prescriptions: any[] }>()
+    for (const p of filteredPrescriptions) {
+      let group = byPatient.get(p.patient_id)
+      if (!group) {
+        group = { patientId: p.patient_id, patient: p.patients, prescriptions: [] }
+        byPatient.set(p.patient_id, group)
+        groupedPrescriptions.push(group)
+      }
+      group.prescriptions.push(p)
+    }
+  }
+
+  function togglePatientExpanded(patientId: string) {
+    setExpandedPatients((prev) => {
+      const next = new Set(prev)
+      if (next.has(patientId)) {
+        next.delete(patientId)
+      } else {
+        next.add(patientId)
+      }
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -629,82 +661,126 @@ export function Prescriptions() {
         <div className="text-center py-12">Loading...</div>
       ) : (
         <div className="bg-card rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Patient</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Diagnosis</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Medications</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Investigations</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredPrescriptions.map((prescription) => (
-                  <tr key={prescription.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div
-                        className="font-medium cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => navigate(`/patients/${prescription.patient_id}`)}
-                      >
-                        {prescription.patients?.first_name} {prescription.patients?.last_name}
+          {groupedPrescriptions.length === 0 ? (
+            <div className="text-center py-12 text-text-secondary">No prescriptions found</div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {groupedPrescriptions.map((group) => {
+                const isExpanded = searchTerm.trim() !== '' || expandedPatients.has(group.patientId)
+                const latest = group.prescriptions[0]
+                return (
+                  <div key={group.patientId}>
+                    <div
+                      className="flex items-center gap-3 px-4 sm:px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => togglePatientExpanded(group.patientId)}
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 text-text-secondary flex-shrink-0 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-medium">
+                            {group.patient?.first_name} {group.patient?.last_name}
+                          </span>
+                          {group.patient?.patient_code && (
+                            <span className="text-xs text-text-secondary bg-gray-100 px-2 py-0.5 rounded">
+                              {group.patient.patient_code}
+                            </span>
+                          )}
+                          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {group.prescriptions.length} prescription{group.prescriptions.length > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs text-text-secondary mt-0.5">
+                          Last: {safeFormat(latest.prescribed_date, 'MMM d, yyyy')}
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {safeFormat(prescription.prescribed_date, 'MMM d, yyyy')}
-                    </td>
-                    <td className="px-6 py-4 text-sm">{prescription.diagnosis || 'N/A'}</td>
-                    <td className="px-6 py-4 text-sm">
-                      {Array.isArray(prescription.medications) && prescription.medications.length > 0
-                        ? `${prescription.medications.length} medication(s)`
-                        : 'None'}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {Array.isArray(prescription.investigations) && prescription.investigations.length > 0
-                        ? `${prescription.investigations.length} test(s)`
-                        : 'None'}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                     <div className="flex gap-2">
-                       <button
-                         type="button"
-                         onClick={() => {
-                           const pat = patients.find((p) => p.id === prescription.patient_id)
-                           setPrintingPatient(pat || null)
-                           setPrintingPrescription(prescription)
-                         }}
-                         className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
-                         title="Print"
-                       >
-                         <Printer className="w-4 h-4" />
-                       </button>
-                       <button
-                         type="button"
-                         onClick={() => startEdit(prescription)}
-                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                         title="Edit"
-                       >
-                         <Pencil className="w-4 h-4" />
-                       </button>
-                       {canDelete() && (
-                         <button
-                           type="button"
-                           onClick={() => handleDelete(prescription)}
-                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                           title="Delete"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                       )}
-                     </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/patients/${group.patientId}`)
+                        }}
+                        className="p-2 text-text-secondary hover:text-primary hover:bg-gray-100 rounded-lg flex-shrink-0"
+                        title="View profile"
+                      >
+                        <User className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
+                        <table className="w-full">
+                          <thead>
+                            <tr>
+                              <th className="pl-11 pr-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
+                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Diagnosis</th>
+                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Medications</th>
+                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Investigations</th>
+                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {group.prescriptions.map((prescription) => (
+                              <tr key={prescription.id} className="hover:bg-gray-100/60">
+                                <td className="pl-11 pr-6 py-3 text-sm">
+                                  {safeFormat(prescription.prescribed_date, 'MMM d, yyyy')}
+                                </td>
+                                <td className="px-6 py-3 text-sm">{prescription.diagnosis || 'N/A'}</td>
+                                <td className="px-6 py-3 text-sm">
+                                  {Array.isArray(prescription.medications) && prescription.medications.length > 0
+                                    ? `${prescription.medications.length} medication(s)`
+                                    : 'None'}
+                                </td>
+                                <td className="px-6 py-3 text-sm">
+                                  {Array.isArray(prescription.investigations) && prescription.investigations.length > 0
+                                    ? `${prescription.investigations.length} test(s)`
+                                    : 'None'}
+                                </td>
+                                <td className="px-6 py-3 text-sm">
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const pat = patients.find((p) => p.id === prescription.patient_id)
+                                        setPrintingPatient(pat || null)
+                                        setPrintingPrescription(prescription)
+                                      }}
+                                      className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                                      title="Print"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEdit(prescription)}
+                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                                      title="Edit"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                    {canDelete() && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDelete(prescription)}
+                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
