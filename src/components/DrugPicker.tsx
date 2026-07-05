@@ -47,6 +47,7 @@ interface DrugPickerProps {
     generic: string
     dosageForm: string
     drugKey: string
+    category: BDDrug['category']
   }) => void
   className?: string
 }
@@ -176,6 +177,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
       generic: drug.generic,
       dosageForm: drug.dosageForm,
       drugKey: `${drug.brand}-${drug.company}-${drug.pack}`,
+      category: drug.category,
     })
     setIsOpen(false)
   }

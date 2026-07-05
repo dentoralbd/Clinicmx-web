@@ -34,6 +34,7 @@ import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeT
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
+import { routeToBengali, frequencyToBengali, durationToBengali, instructionsToBengali } from '@/lib/medicationBengali'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 
@@ -1112,10 +1113,10 @@ export function Prescriptions() {
                                 ...newMeds[index],
                                 name: drug.name,
                                 dosage: drug.ageDosing[defaultTier],
-                                frequency: drug.frequency,
-                                duration: drug.duration,
-                                instructions: drug.instructions,
-                                route: drug.route,
+                                frequency: frequencyToBengali(drug.frequency, drug.category),
+                                duration: durationToBengali(drug.duration),
+                                instructions: instructionsToBengali(drug.instructions),
+                                route: routeToBengali(drug.route),
                                 ageDosing: drug.ageDosing,
                                 generic: drug.generic,
                                 dosageForm: drug.dosageForm,
