@@ -16,6 +16,7 @@ const FORM_ABBREVIATIONS: Record<string, string> = {
   'Oral Paste': 'Paste',
   Suspension: 'Susp.',
   'Pediatric Drop': 'Drop',
+  Suppository: 'Supp.',
 }
 
 function formatDrugName(drug: BDDrug): string {
