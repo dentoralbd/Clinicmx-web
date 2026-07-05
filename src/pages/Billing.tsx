@@ -38,6 +38,7 @@ import { FinancialReportsPanel } from '@/components/FinancialReportsPanel'
 import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
+import { buildInvoicePdf, invoicePdfFileName } from '@/lib/invoicePdf'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { matchesPatientSearch } from '@/lib/patients'
@@ -327,6 +328,55 @@ export function Billing() {
         ? [invoice]
         : invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
     setPrintJob({ invoices: jobInvoices, patient, initialDueOnly: mode === 'due' })
+  }
+
+  async function shareInvoice(invoice: Invoice, channel: 'email' | 'whatsapp') {
+    const patient = invoice.patients
+    const email = patient?.email
+    const waNumber = patient?.phone ? toWhatsAppNumber(patient.phone) : null
+
+    if (channel === 'email' && !email) {
+      alert('Patient email is not available')
+      return
+    }
+    if (channel === 'whatsapp' && !waNumber) {
+      alert('Patient phone number is not available')
+      return
+    }
+
+    const doctor = await ensureDoctorProfile()
+    const patientInfo = patient || { first_name: 'Unknown', last_name: 'Patient', patient_code: null, phone: null }
+    const doc = buildInvoicePdf(invoice, patientInfo, doctor)
+    const fileName = invoicePdfFileName(invoice, patientInfo)
+    const blob = doc.output('blob')
+    const file = new File([blob], fileName, { type: 'application/pdf' })
+    const subject = `Invoice ${invoice.invoice_number || invoice.id}`
+    const text = `Dear ${patientInfo.first_name || 'Patient'},\n\nPlease find attached your invoice. Total: ${formatBDT(invoice.total_amount)}.`
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: subject, text })
+        return
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') return
+        console.error('Native share failed, falling back to download:', error)
+      }
+    }
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+
+    if (channel === 'email') {
+      alert('Invoice PDF downloaded. Please attach it to the email before sending.')
+      window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`
+    } else {
+      alert('Invoice PDF downloaded. Please attach it in WhatsApp before sending.')
+      window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
+    }
   }
 
   const billedPatients = useMemo(() => {
@@ -721,6 +771,7 @@ export function Billing() {
                           onDelete={() => deleteInvoice(invoice.id)}
                           onPaymentRecorded={loadInvoices}
                           onPrint={(mode) => startPrint(invoice, mode)}
+                          onShare={(mode) => shareInvoice(invoice, mode)}
                           patientInvoiceCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id).length}
                           patientDueCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id && (inv.total_amount || 0) > (inv.paid_amount || 0)).length}
                         />
@@ -836,6 +887,7 @@ function InvoiceRow({
   onDelete,
   onPaymentRecorded,
   onPrint,
+  onShare,
   patientInvoiceCount,
   patientDueCount,
 }: {
@@ -847,6 +899,7 @@ function InvoiceRow({
   onDelete: () => void
   onPaymentRecorded: () => void
   onPrint: (mode: 'single' | 'all' | 'due') => void
+  onShare: (channel: 'email' | 'whatsapp') => void
   patientInvoiceCount: number
   patientDueCount: number
 }) {
@@ -1003,14 +1056,7 @@ function InvoiceRow({
                   <button
                     className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
                     onClick={() => {
-                      const email = invoice.patients?.email
-                      if (!email) {
-                        alert('Patient email is not available')
-                        return
-                      }
-                      const subject = encodeURIComponent(`Invoice ${invoice.invoice_number || invoice.id}`)
-                      const body = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
-                      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
+                      onShare('email')
                       setShowShareMenu(false)
                     }}
                   >
@@ -1019,14 +1065,7 @@ function InvoiceRow({
                   <button
                     className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
                     onClick={() => {
-                      const phone = invoice.patients?.phone
-                      const waNumber = phone ? toWhatsAppNumber(phone) : null
-                      if (!waNumber) {
-                        alert('Patient phone number is not available')
-                        return
-                      }
-                      const message = encodeURIComponent(`Dear ${invoice.patients?.first_name || 'Patient'},\n\nYour invoice total is ${formatBDT(invoice.total_amount)}.`)
-                      window.open(`https://wa.me/${waNumber}?text=${message}`, '_blank')
+                      onShare('whatsapp')
                       setShowShareMenu(false)
                     }}
                   >
