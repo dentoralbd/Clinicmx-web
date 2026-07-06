@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
+import { RescheduleModal } from '@/components/RescheduleModal'
 import { getPatientDobOrAge } from '@/lib/utils'
 
 interface Appointment {
@@ -30,6 +31,7 @@ export function Appointments() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [rescheduleAppointment, setRescheduleAppointment] = useState<Appointment | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
@@ -203,6 +205,7 @@ export function Appointments() {
                 appointment={appointment}
                 onCancel={() => cancelAppointment(appointment.id)}
                 onStatusChange={(status) => updateStatus(appointment.id, status)}
+                onReschedule={() => setRescheduleAppointment(appointment)}
               />
             ))}
           </div>
@@ -216,14 +219,23 @@ export function Appointments() {
           onSave={() => { loadAppointments(); loadWeekAppointments(); setShowModal(false) }}
         />
       )}
+
+      {rescheduleAppointment && (
+        <RescheduleModal
+          appointment={rescheduleAppointment}
+          onClose={() => setRescheduleAppointment(null)}
+          onSave={() => { loadAppointments(); loadWeekAppointments(); setRescheduleAppointment(null) }}
+        />
+      )}
     </div>
   )
 }
 
-function AppointmentRow({ appointment, onCancel, onStatusChange }: {
+function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }: {
   appointment: Appointment
   onCancel: () => void
   onStatusChange: (status: string) => void
+  onReschedule: () => void
 }) {
   // Safe guard against missing patient data
   if (!appointment || !appointment.patients) {
@@ -289,6 +301,14 @@ function AppointmentRow({ appointment, onCancel, onStatusChange }: {
                 Done
               </button>
             )}
+            <button
+              onClick={onReschedule}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              title="Reschedule"
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              Reschedule
+            </button>
             <button
               onClick={onCancel}
               className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
