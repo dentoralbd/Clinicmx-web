@@ -18,7 +18,7 @@ import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
-import { type ClinicalEntry, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
+import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
 import {
   getComplaintTemplates,
@@ -385,16 +385,18 @@ export function PatientProfile() {
     if (!id) return
 
     try {
-      const teethNote = treatmentPlanForm.teeth.length > 1 ? `Teeth: ${treatmentPlanForm.teeth.join(', ')}` : null
-      await supabase.from('treatments').insert([{
+      // One treatments row per tooth so each is labelled and billed individually,
+      // matching the prescription treatment-plan flow. Cost is per tooth.
+      const teethList: Array<number | null> = treatmentPlanForm.teeth.length > 0 ? treatmentPlanForm.teeth : [null]
+      await supabase.from('treatments').insert(teethList.map((tooth) => ({
         patient_id: id,
-        tooth_number: treatmentPlanForm.teeth.length > 0 ? treatmentPlanForm.teeth[0] : null,
+        tooth_number: tooth,
         treatment_type: treatmentPlanForm.treatment_type,
         description: treatmentPlanForm.description || null,
         status: treatmentPlanForm.status,
         cost: parseFloat(treatmentPlanForm.cost) || 0,
-        notes: [teethNote, treatmentPlanForm.notes || null].filter(Boolean).join(' — ') || null,
-      }])
+        notes: treatmentPlanForm.notes || null,
+      })))
       setShowTreatmentPlanForm(false)
       setTreatmentPlanForm({ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' })
       loadPatientData()
@@ -465,8 +467,9 @@ export function PatientProfile() {
       ({ treatment }) => !treatment.is_invoiced && !treatment.invoice_id
     )
     const paymentAmount = parseFloat(visitPayment.amount) || 0
+    // Ad-hoc entries create one row per tooth, each at the entry's cost
     const treatmentsTotal =
-      doneEntries.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0), 0) +
+      doneEntries.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
       billableFromPlan.reduce((sum, { selection }) => sum + (parseFloat(selection.cost) || 0), 0)
     if (paymentAmount > 0 && doneEntries.length === 0 && billableFromPlan.length === 0) {
       alert('Add at least one unbilled Treatment Done entry before recording a payment')
@@ -508,13 +511,18 @@ export function PatientProfile() {
 
       let insertedTreatments: any[] = []
       if (doneEntries.length > 0) {
-        const rows = doneEntries.map((entry) => ({
-          patient_id: id,
-          ...mapEntryToOperation({ id: entry.key, text: entry.description.trim(), teeth: entry.teeth }),
-          status: entry.status,
-          cost: parseFloat(entry.cost) || 0,
-          notes: entry.teeth.length > 1 ? `Teeth: ${entry.teeth.join(', ')}` : null,
-        }))
+        // One row per tooth (cost per tooth), matching the prescription flow
+        const rows = doneEntries.flatMap((entry) => {
+          const clinicalEntry = { id: entry.key, text: entry.description.trim(), teeth: entry.teeth }
+          const teethList: Array<number | null> = entry.teeth.length > 0 ? entry.teeth : [null]
+          return teethList.map((tooth) => ({
+            patient_id: id,
+            ...mapEntryToOperation(clinicalEntry, tooth),
+            status: entry.status,
+            cost: parseFloat(entry.cost) || 0,
+            notes: null,
+          }))
+        })
         const { data, error } = await supabase
           .from('treatments')
           .insert(rows)
@@ -2910,8 +2918,9 @@ function VisitFormModal({
 }: any) {
   const validTreatments = (treatmentsDone as VisitTreatmentEntry[]).filter((entry) => entry.description.trim())
   const selectedPlanned = (plannedTreatments as any[]).filter((t) => plannedSelections[t.id]?.selected)
+  // Ad-hoc entries create one treatment row per tooth, each at the entry's cost
   const treatmentsTotal =
-    validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0), 0) +
+    validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
     selectedPlanned.reduce((sum, t) => sum + (parseFloat(plannedSelections[t.id]?.cost) || 0), 0)
   const hasAnyDone = validTreatments.length > 0 || selectedPlanned.length > 0
 
@@ -3192,6 +3201,36 @@ function PrescriptionFormModal({
     void loadSectionTemplates()
   }, [])
 
+  // Auto-select teeth already tagged upstream (On Examination → Diagnosis → Treatment Plan)
+  // onto each field's own first entry, so a tooth picked once doesn't need re-picking.
+  // Only touches the first entry; manual removals stick unless the upstream tooth set changes again.
+  const diagnosisUpstreamTeeth = collectSuggestedTeeth([formData.on_examination_entries])
+  const treatmentPlanUpstreamTeeth = collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])
+
+  useEffect(() => {
+    if (diagnosisUpstreamTeeth.length === 0) return
+    setFormData((prev: any) => {
+      const entries = prev.diagnosis_entries
+      if (entries.length === 0) return prev
+      const merged = Array.from(new Set([...entries[0].teeth, ...diagnosisUpstreamTeeth])).sort((a: number, b: number) => a - b)
+      if (merged.length === entries[0].teeth.length) return prev
+      return { ...prev, diagnosis_entries: [{ ...entries[0], teeth: merged }, ...entries.slice(1)] }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(diagnosisUpstreamTeeth)])
+
+  useEffect(() => {
+    if (treatmentPlanUpstreamTeeth.length === 0) return
+    setFormData((prev: any) => {
+      const entries = prev.treatment_plan_entries
+      if (entries.length === 0) return prev
+      const merged = Array.from(new Set([...entries[0].teeth, ...treatmentPlanUpstreamTeeth])).sort((a: number, b: number) => a - b)
+      if (merged.length === entries[0].teeth.length) return prev
+      return { ...prev, treatment_plan_entries: [{ ...entries[0], teeth: merged }, ...entries.slice(1)] }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(treatmentPlanUpstreamTeeth)])
+
   function addMedication() {
     setFormData({
       ...formData,
@@ -3419,6 +3458,7 @@ function PrescriptionFormModal({
             onChange={(entries: ClinicalEntry[]) => setFormData({ ...formData, diagnosis_entries: entries })}
             placeholder="Enter diagnosis"
             helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
+            suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries])}
             dentitionType={dentitionType}
           />
 
@@ -3429,6 +3469,7 @@ function PrescriptionFormModal({
             onChange={(entries: ClinicalEntry[]) => setFormData({ ...formData, treatment_plan_entries: entries })}
             placeholder="e.g., RCT + Cap"
             helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
+            suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
             dentitionType={dentitionType}
           />
 
@@ -3983,9 +4024,9 @@ function PrescriptionFormModal({
 
 function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, onClose }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
           <h2 className="text-xl font-bold">New Treatment Plan</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />

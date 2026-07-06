@@ -147,6 +147,36 @@ export function Prescriptions() {
     void refreshSectionTemplates()
   }, [])
 
+  // Auto-select teeth already tagged upstream (On Examination → Diagnosis → Treatment Plan)
+  // onto each field's own first entry, so a tooth picked once doesn't need re-picking.
+  // Only touches the first entry; manual removals stick unless the upstream tooth set changes again.
+  const diagnosisUpstreamTeeth = collectSuggestedTeeth([formData.on_examination_entries])
+  const treatmentPlanUpstreamTeeth = collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])
+
+  useEffect(() => {
+    if (diagnosisUpstreamTeeth.length === 0) return
+    setFormData((prev) => {
+      const entries = prev.diagnosis_entries
+      if (entries.length === 0) return prev
+      const merged = Array.from(new Set([...entries[0].teeth, ...diagnosisUpstreamTeeth])).sort((a, b) => a - b)
+      if (merged.length === entries[0].teeth.length) return prev
+      return { ...prev, diagnosis_entries: [{ ...entries[0], teeth: merged }, ...entries.slice(1)] }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(diagnosisUpstreamTeeth)])
+
+  useEffect(() => {
+    if (treatmentPlanUpstreamTeeth.length === 0) return
+    setFormData((prev) => {
+      const entries = prev.treatment_plan_entries
+      if (entries.length === 0) return prev
+      const merged = Array.from(new Set([...entries[0].teeth, ...treatmentPlanUpstreamTeeth])).sort((a, b) => a - b)
+      if (merged.length === entries[0].teeth.length) return prev
+      return { ...prev, treatment_plan_entries: [{ ...entries[0], teeth: merged }, ...entries.slice(1)] }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(treatmentPlanUpstreamTeeth)])
+
   async function refreshSectionTemplates() {
     setComplaintTemplates(await getComplaintTemplates())
     setExaminationTemplates(await getExaminationTemplates())

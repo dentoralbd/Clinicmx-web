@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Activity } from 'lucide-react'
+import { Plus, Search, Activity, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
+import { ToothSelector } from '@/components/ToothSelector'
+import { getDentitionTypeFromDOB } from '@/lib/ageTier'
+import { formatBDT } from '@/lib/utils'
 
 interface Treatment {
   id: string
@@ -148,12 +151,13 @@ export function Treatments() {
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {filteredTreatments.map((treatment) => (
-              <TreatmentRow
-                key={treatment.id}
-                treatment={treatment}
-                onDelete={() => deleteTreatment(treatment)}
-                onStatusChange={(status) => updateTreatmentStatus(treatment.id, status)}
+            {groupTreatmentsByPatient(filteredTreatments).map((group) => (
+              <PatientTreatmentGroup
+                key={group.patientId}
+                patientName={group.patientName}
+                treatments={group.treatments}
+                onDelete={deleteTreatment}
+                onStatusChange={updateTreatmentStatus}
               />
             ))}
           </div>
@@ -165,6 +169,60 @@ export function Treatments() {
           onClose={() => setShowModal(false)}
           onSave={() => { loadTreatments(); setShowModal(false) }}
         />
+      )}
+    </div>
+  )
+}
+
+function groupTreatmentsByPatient(treatments: Treatment[]) {
+  const order: string[] = []
+  const groups = new Map<string, { patientId: string; patientName: string; treatments: Treatment[] }>()
+
+  for (const treatment of treatments) {
+    const patientId = treatment.patient_id
+    if (!groups.has(patientId)) {
+      order.push(patientId)
+      const patientName = `${treatment.patients?.first_name ?? ''} ${treatment.patients?.last_name ?? ''}`.trim()
+      groups.set(patientId, { patientId, patientName: patientName || 'Unknown patient', treatments: [] })
+    }
+    groups.get(patientId)!.treatments.push(treatment)
+  }
+
+  return order.map((patientId) => groups.get(patientId)!)
+}
+
+function PatientTreatmentGroup({ patientName, treatments, onDelete, onStatusChange }: {
+  patientName: string
+  treatments: Treatment[]
+  onDelete: (treatment: Treatment) => void
+  onStatusChange: (id: string, status: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <ChevronDown className={`w-4 h-4 text-text-secondary flex-shrink-0 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} />
+        <p className="font-semibold">{patientName}</p>
+        <span className="text-xs text-text-secondary">
+          {treatments.length} treatment{treatments.length > 1 ? 's' : ''}
+        </span>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-gray-100 border-t border-gray-100">
+          {treatments.map((treatment) => (
+            <TreatmentRow
+              key={treatment.id}
+              treatment={treatment}
+              onDelete={() => onDelete(treatment)}
+              onStatusChange={(status) => onStatusChange(treatment.id, status)}
+            />
+          ))}
+        </div>
       )}
     </div>
   )
@@ -195,20 +253,17 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium">
-              {treatment.patients?.first_name} {treatment.patients?.last_name}
+              {treatment.treatment_type}
+              {treatment.tooth_number && ` - Tooth #${treatment.tooth_number}`}
             </p>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[treatment.status] || 'bg-gray-100'}`}>
               {treatment.status}
             </span>
           </div>
-          <p className="text-sm text-text-secondary mt-1">
-            {treatment.treatment_type}
-            {treatment.tooth_number && ` - Tooth #${treatment.tooth_number}`}
-          </p>
           {treatment.description && (
             <p className="text-sm text-text-secondary mt-1">{treatment.description}</p>
           )}
-          <p className="text-sm font-medium text-primary mt-2">${(Number(treatment.cost) || 0).toFixed(2)}</p>
+          <p className="text-sm font-medium text-primary mt-2">{formatBDT(Number(treatment.cost) || 0)}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {nextStatus && (
@@ -235,7 +290,7 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
   const [patients, setPatients] = useState<any[]>([])
   const [formData, setFormData] = useState({
     patient_id: '',
-    tooth_number: '',
+    teeth: [] as number[],
     treatment_type: '',
     description: '',
     status: 'Planned',
@@ -251,25 +306,32 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
   async function loadPatients() {
     const { data } = await supabase
       .from('patients')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, date_of_birth')
       .order('last_name')
     setPatients(data || [])
   }
+
+  const dentitionType = getDentitionTypeFromDOB(
+    patients.find((p) => p.id === formData.patient_id)?.date_of_birth
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
 
     try {
-      const { error } = await supabase.from('treatments').insert([{
+      // One treatments row per tooth so each is labelled and billed individually,
+      // matching the prescription treatment-plan flow. Cost is per tooth.
+      const teethList: Array<number | null> = formData.teeth.length > 0 ? formData.teeth : [null]
+      const { error } = await supabase.from('treatments').insert(teethList.map((tooth) => ({
         patient_id: formData.patient_id,
-        tooth_number: formData.tooth_number ? parseInt(formData.tooth_number) : null,
+        tooth_number: tooth,
         treatment_type: formData.treatment_type,
         description: formData.description || null,
         status: formData.status,
         cost: parseFloat(formData.cost) || 0,
         notes: formData.notes || null,
-      }])
+      })))
 
       if (error) throw error
       onSave()
@@ -283,8 +345,8 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-        <div className="p-6 border-b border-gray-200">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-xl font-bold">New Treatment</h2>
         </div>
 
@@ -329,14 +391,11 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Tooth Number</label>
-              <input
-                type="number"
-                min="1"
-                max="32"
-                value={formData.tooth_number}
-                onChange={(e) => setFormData({ ...formData, tooth_number: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
+              <ToothSelector
+                selectedTeeth={formData.teeth}
+                onChange={(teeth) => setFormData({ ...formData, teeth })}
+                dentitionType={dentitionType}
               />
             </div>
           </div>

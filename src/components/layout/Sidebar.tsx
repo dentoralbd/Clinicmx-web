@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, Sparkles } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, Sparkles, Activity, ChevronDown } from 'lucide-react'
 import { canDelete } from '@/lib/appSession'
 
 interface SidebarProps {
@@ -21,7 +21,12 @@ const menuGroups = [
   {
     label: 'Patient Care',
     items: [
-      { icon: Users, label: 'Patients', path: '/patients' },
+      {
+        icon: Users,
+        label: 'Patients',
+        path: '/patients',
+        children: [{ icon: Activity, label: 'Treatments', path: '/treatments' }],
+      },
       { icon: Calendar, label: 'Appointments', path: '/appointments' },
       { icon: FileText, label: 'Prescriptions', path: '/prescriptions' },
     ],
@@ -57,6 +62,19 @@ function SectionLabel({ children }: { children: ReactNode }) {
 }
 
 export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDesignPreview }: SidebarProps) {
+  const location = useLocation()
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    for (const group of menuGroups) {
+      for (const item of group.items) {
+        if (item.children?.some((child) => location.pathname.startsWith(child.path))) {
+          initial[item.label] = true
+        }
+      }
+    }
+    return initial
+  })
+
   return (
     <>
       {isOpen && (
@@ -100,23 +118,74 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
               <div key={group.label}>
                 <SectionLabel>{group.label}</SectionLabel>
                 <div className="space-y-1">
-                  {group.items.map((item) => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      onClick={onNavClick}
-                      className={navLinkClass}
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <span className={iconChipClass(isActive)}>
-                            <item.icon className="w-5 h-5" />
-                          </span>
-                          <span>{item.label}</span>
-                        </>
-                      )}
-                    </NavLink>
-                  ))}
+                  {group.items.map((item) =>
+                    item.children ? (
+                      <div key={item.path}>
+                        <div className="flex items-center gap-1">
+                          <NavLink
+                            to={item.path}
+                            onClick={onNavClick}
+                            className={navLinkClass}
+                            style={{ flex: 1 }}
+                          >
+                            {({ isActive }) => (
+                              <>
+                                <span className={iconChipClass(isActive)}>
+                                  <item.icon className="w-5 h-5" />
+                                </span>
+                                <span>{item.label}</span>
+                              </>
+                            )}
+                          </NavLink>
+                          <button
+                            type="button"
+                            onClick={() => setExpanded((prev) => ({ ...prev, [item.label]: !prev[item.label] }))}
+                            aria-label={expanded[item.label] ? `Collapse ${item.label}` : `Expand ${item.label}`}
+                            className="p-2 rounded-lg text-text-secondary hover:bg-primary/5 hover:text-primary transition-colors duration-150"
+                          >
+                            <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${expanded[item.label] ? 'rotate-180' : ''}`} />
+                          </button>
+                        </div>
+                        {expanded[item.label] && (
+                          <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-3">
+                            {item.children.map((child) => (
+                              <NavLink
+                                key={child.path}
+                                to={child.path}
+                                onClick={onNavClick}
+                                className={navLinkClass}
+                              >
+                                {({ isActive }) => (
+                                  <>
+                                    <span className={iconChipClass(isActive)}>
+                                      <child.icon className="w-5 h-5" />
+                                    </span>
+                                    <span>{child.label}</span>
+                                  </>
+                                )}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        onClick={onNavClick}
+                        className={navLinkClass}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <span className={iconChipClass(isActive)}>
+                              <item.icon className="w-5 h-5" />
+                            </span>
+                            <span>{item.label}</span>
+                          </>
+                        )}
+                      </NavLink>
+                    )
+                  )}
                 </div>
               </div>
             ))}
