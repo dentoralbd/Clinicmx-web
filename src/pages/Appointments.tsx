@@ -259,8 +259,8 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
 
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
+      <div className="flex flex-col sm:flex-row items-start sm:justify-between gap-3">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p
               className="font-medium cursor-pointer hover:text-primary transition-colors"
@@ -280,7 +280,7 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
         </div>
 
         {!isClosed && (
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-1 flex-wrap flex-shrink-0">
             {appointment.status === 'Scheduled' && (
               <button
                 onClick={() => onStatusChange('Confirmed')}
