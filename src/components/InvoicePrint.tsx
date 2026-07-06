@@ -12,7 +12,6 @@ import {
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
-import { buildInvoicePdf, invoicePdfFileName } from '@/lib/invoicePdf'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
@@ -347,6 +346,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
       return
     }
 
+    const { buildInvoicePdf, invoicePdfFileName } = await import('@/lib/invoicePdf')
     const pdf = buildInvoicePdf(visibleInvoices, patient, doctor, {
       dueOnly,
       showItems,

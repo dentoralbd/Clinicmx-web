@@ -272,52 +272,49 @@ export function PatientProfile() {
     try {
       setLoading(true)
       
-      const { data: patientData } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      const { data: visitsData } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', id)
-        .order('visit_date', { ascending: false })
-
-      const { data: dentalData } = await supabase
-        .from('dental_records')
-        .select('*')
-        .eq('patient_id', id)
-
-      const { data: treatmentsData } = await supabase
-        .from('treatments')
-        .select('*')
-        .eq('patient_id', id)
-        .order('created_at', { ascending: false })
-
-      const { data: prescriptionsData } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('patient_id', id)
-        .order('prescribed_date', { ascending: false })
-
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('patient_id', id)
-        .order('date_time', { ascending: false })
-
-      const { data: invoicesData } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('patient_id', id)
-        .order('created_at', { ascending: false })
-
-      const { data: filesData } = await supabase
-        .from('patient_files')
-        .select('*')
-        .eq('patient_id', id)
-        .order('created_at', { ascending: false })
+      const [
+        { data: patientData },
+        { data: visitsData },
+        { data: dentalData },
+        { data: treatmentsData },
+        { data: prescriptionsData },
+        { data: appointmentsData },
+        { data: invoicesData },
+        { data: filesData },
+      ] = await Promise.all([
+        supabase.from('patients').select('*').eq('id', id).single(),
+        supabase
+          .from('patient_visits')
+          .select('*')
+          .eq('patient_id', id)
+          .order('visit_date', { ascending: false }),
+        supabase.from('dental_records').select('*').eq('patient_id', id),
+        supabase
+          .from('treatments')
+          .select('*')
+          .eq('patient_id', id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('prescriptions')
+          .select('*')
+          .eq('patient_id', id)
+          .order('prescribed_date', { ascending: false }),
+        supabase
+          .from('appointments')
+          .select('*')
+          .eq('patient_id', id)
+          .order('date_time', { ascending: false }),
+        supabase
+          .from('invoices')
+          .select('*')
+          .eq('patient_id', id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('patient_files')
+          .select('*')
+          .eq('patient_id', id)
+          .order('created_at', { ascending: false }),
+      ])
 
       setPatient(patientData)
       setVisits(visitsData || [])
@@ -335,15 +332,10 @@ export function PatientProfile() {
   }
 
   async function loadTemplates() {
-    const { data: medTemplates } = await supabase
-      .from('medication_templates')
-      .select('*')
-      .order('usage_count', { ascending: false })
-
-    const { data: invTemplates } = await supabase
-      .from('investigation_templates')
-      .select('*')
-      .order('usage_count', { ascending: false })
+    const [{ data: medTemplates }, { data: invTemplates }] = await Promise.all([
+      supabase.from('medication_templates').select('*').order('usage_count', { ascending: false }),
+      supabase.from('investigation_templates').select('*').order('usage_count', { ascending: false }),
+    ])
 
     setMedicationTemplates(medTemplates || [])
     setInvestigationTemplates(invTemplates || [])
