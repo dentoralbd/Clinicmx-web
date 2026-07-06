@@ -6,6 +6,7 @@ import { QuadrantSelector } from '@/components/QuadrantSelector'
 import { type ClinicalEntry, createEmptyEntry } from '@/lib/clinicalEntries'
 import { getMemory } from '@/lib/prescriptionMemory'
 import type { SectionTemplate } from '@/lib/prescriptionSectionTemplates'
+import type { DentitionType } from '@/lib/ageTier'
 
 interface TemplatesConfig {
   list: Array<SectionTemplate<string>>
@@ -30,6 +31,9 @@ interface MultiEntryClinicalFieldProps {
   // 'quadrant' picks a dental quadrant instead of an individual tooth — used for
   // Chief Complaint, which is usually described by area rather than an exact tooth.
   pickerMode?: 'tooth' | 'quadrant'
+  // Age-based dentition (from getDentitionTypeFromDOB) so the tooth picker shows
+  // primary/mixed/permanent teeth consistently with the patient's dental chart.
+  dentitionType?: DentitionType
 }
 
 export function MultiEntryClinicalField({
@@ -42,6 +46,7 @@ export function MultiEntryClinicalField({
   memoryKey,
   suggestedTeeth,
   pickerMode = 'tooth',
+  dentitionType,
 }: MultiEntryClinicalFieldProps) {
   function updateEntry(id: string, patch: Partial<ClinicalEntry>) {
     onChange(entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)))
@@ -128,7 +133,7 @@ export function MultiEntryClinicalField({
                   onChange={(quadrants) => updateEntry(entry.id, { quadrants })}
                 />
               ) : (
-                <ToothSelector selectedTeeth={entry.teeth} onChange={(teeth) => updateEntry(entry.id, { teeth })} />
+                <ToothSelector selectedTeeth={entry.teeth} onChange={(teeth) => updateEntry(entry.id, { teeth })} dentitionType={dentitionType} />
               )}
               {suggestedTeeth &&
                 suggestedTeeth

@@ -30,7 +30,7 @@ import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medica
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
-import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier } from '@/lib/ageTier'
+import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
@@ -646,6 +646,13 @@ export function Prescriptions() {
     })
   }
 
+  const selectedPatientDOB =
+    patientMode === 'new'
+      ? newPatientData.date_of_birth ||
+        (newPatientData.age ? deriveDateOfBirthFromAge(Number.parseInt(newPatientData.age, 10)) : '')
+      : patients.find((p) => p.id === formData.patient_id)?.date_of_birth
+  const selectedPatientDentition = getDentitionTypeFromDOB(selectedPatientDOB)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1050,6 +1057,7 @@ export function Prescriptions() {
                 onChange={(entries) => setFormData({ ...formData, on_examination_entries: entries })}
                 placeholder="e.g., Deep caries in 36, Periapical pathology on OPG, Pocket depth 5mm..."
                 memoryKey={MEMORY_KEYS.EXAMINATIONS}
+                dentitionType={selectedPatientDentition}
                 templates={{
                   list: examinationTemplates,
                   show: showExamTemplates,
@@ -1068,6 +1076,7 @@ export function Prescriptions() {
                 placeholder="Enter diagnosis"
                 helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
                 suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries])}
+                dentitionType={selectedPatientDentition}
               />
 
               {/* ── Treatment Plan ── */}
@@ -1078,6 +1087,7 @@ export function Prescriptions() {
                 placeholder="e.g., RCT + Cap"
                 helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
                 suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
+                dentitionType={selectedPatientDentition}
               />
 
               {/* ── Medications ── */}

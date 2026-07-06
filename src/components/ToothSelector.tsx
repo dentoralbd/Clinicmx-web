@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { DentitionType } from '@/lib/ageTier'
 
 // FDI permanent quadrants (display order: distal → mesial), matching the layout
 // used by the Patient Profile dental chart for visual consistency.
@@ -6,6 +7,12 @@ const Q1 = [18, 17, 16, 15, 14, 13, 12, 11] // upper right
 const Q2 = [21, 22, 23, 24, 25, 26, 27, 28] // upper left
 const Q3 = [31, 32, 33, 34, 35, 36, 37, 38] // lower left
 const Q4 = [48, 47, 46, 45, 44, 43, 42, 41] // lower right
+
+// FDI primary quadrants, same order as the dental chart.
+const Q5 = [55, 54, 53, 52, 51] // upper right primary
+const Q6 = [61, 62, 63, 64, 65] // upper left primary
+const Q7 = [71, 72, 73, 74, 75] // lower left primary
+const Q8 = [85, 84, 83, 82, 81] // lower right primary
 
 interface MiniToothProps {
   number: number
@@ -43,10 +50,14 @@ function MiniTooth({ number, selected, onClick }: MiniToothProps) {
 interface ToothSelectorProps {
   selectedTeeth: number[]
   onChange: (teeth: number[]) => void
+  dentitionType?: DentitionType
 }
 
-export function ToothSelector({ selectedTeeth, onChange }: ToothSelectorProps) {
+export function ToothSelector({ selectedTeeth, onChange, dentitionType = 'permanent' }: ToothSelectorProps) {
   const [open, setOpen] = useState(false)
+
+  const showPermanent = dentitionType === 'permanent' || dentitionType === 'mixed'
+  const showPrimary = dentitionType === 'deciduous' || dentitionType === 'mixed'
 
   function toggleTooth(num: number) {
     if (selectedTeeth.includes(num)) {
@@ -56,21 +67,26 @@ export function ToothSelector({ selectedTeeth, onChange }: ToothSelectorProps) {
     }
   }
 
-  const renderQuadrantRow = (left: number[], right: number[]) => (
-    <div className="flex justify-center items-center gap-px sm:gap-0.5">
-      <div className="flex gap-px sm:gap-0.5">
-        {left.map((num) => (
-          <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
-        ))}
-      </div>
-      <div className="w-px h-8 bg-gray-300 mx-0.5 sm:mx-1" />
-      <div className="flex gap-px sm:gap-0.5">
-        {right.map((num) => (
-          <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
-        ))}
+  const renderQuadrantRow = (left: number[], right: number[], label?: string) => (
+    <div>
+      {label && <p className="text-[9px] text-gray-400 text-center mb-0.5">{label}</p>}
+      <div className="flex justify-center items-center gap-px sm:gap-0.5">
+        <div className="flex gap-px sm:gap-0.5">
+          {left.map((num) => (
+            <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
+          ))}
+        </div>
+        <div className="w-px h-8 bg-gray-300 mx-0.5 sm:mx-1" />
+        <div className="flex gap-px sm:gap-0.5">
+          {right.map((num) => (
+            <MiniTooth key={num} number={num} selected={selectedTeeth.includes(num)} onClick={() => toggleTooth(num)} />
+          ))}
+        </div>
       </div>
     </div>
   )
+
+  const rowLabel = (kind: 'Permanent' | 'Primary') => (dentitionType === 'mixed' ? kind : undefined)
 
   return (
     <div className="relative inline-block">
@@ -111,10 +127,16 @@ export function ToothSelector({ selectedTeeth, onChange }: ToothSelectorProps) {
             </button>
           </div>
           <p className="text-[10px] text-gray-400 text-center mb-1">Maxilla</p>
-          {renderQuadrantRow(Q1, Q2)}
+          <div className="space-y-1">
+            {showPermanent && renderQuadrantRow(Q1, Q2, rowLabel('Permanent'))}
+            {showPrimary && renderQuadrantRow(Q5, Q6, rowLabel('Primary'))}
+          </div>
           <div className="border-t border-dashed border-gray-200 my-2" />
           <p className="text-[10px] text-gray-400 text-center mb-1">Mandible</p>
-          {renderQuadrantRow(Q4, Q3)}
+          <div className="space-y-1">
+            {showPrimary && renderQuadrantRow(Q8, Q7, rowLabel('Primary'))}
+            {showPermanent && renderQuadrantRow(Q4, Q3, rowLabel('Permanent'))}
+          </div>
         </div>
       )}
     </div>
