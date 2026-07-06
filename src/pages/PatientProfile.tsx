@@ -12,6 +12,7 @@ import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { ToothSelector } from '@/components/ToothSelector'
+import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -1028,7 +1029,7 @@ export function PatientProfile() {
   }
 
   function getDentitionType(age: number | null): 'deciduous' | 'mixed' | 'permanent' {
-    if (age === null || age > 16) return 'permanent'
+    if (age === null || age > 14) return 'permanent'
     if (age >= 5) return 'mixed'
     return 'deciduous'
   }
@@ -1460,18 +1461,6 @@ export function PatientProfile() {
   }
 
   const renderClinicalSection = () => {
-    // FDI permanent quadrants (display order: distal → mesial)
-    const Q1 = [18, 17, 16, 15, 14, 13, 12, 11] // upper right
-    const Q2 = [21, 22, 23, 24, 25, 26, 27, 28] // upper left
-    const Q3 = [31, 32, 33, 34, 35, 36, 37, 38] // lower left
-    const Q4 = [48, 47, 46, 45, 44, 43, 42, 41] // lower right
-
-    // FDI primary quadrants (display order: distal → mesial)
-    const Q5 = [55, 54, 53, 52, 51] // upper right primary
-    const Q6 = [61, 62, 63, 64, 65] // upper left primary
-    const Q7 = [71, 72, 73, 74, 75] // lower left primary
-    const Q8 = [85, 84, 83, 82, 81] // lower right primary
-
     const patientAge = getPatientAge(patient.date_of_birth)
     const dentitionType = getDentitionType(patientAge)
 
@@ -1480,50 +1469,6 @@ export function PatientProfile() {
       mixed: 'Mixed dentition',
       permanent: 'Permanent dentition',
     }
-
-    const renderArch = (
-      leftQuadrant: number[],
-      rightQuadrant: number[],
-      label: string,
-      isPrimary = false,
-    ) => (
-      <div className="mb-1">
-        <p className="text-xs text-text-secondary text-center mb-1">{label}</p>
-        <div className="flex justify-center items-center gap-px sm:gap-0.5">
-          <div className="flex gap-px sm:gap-0.5">
-            {leftQuadrant.map((num) => {
-              const condition = getToothCondition(num)
-              return (
-                <Tooth
-                  key={num}
-                  number={num}
-                  condition={condition}
-                  color={getToothColor(condition)}
-                  onClick={() => setSelectedTooth(num)}
-                  small={isPrimary}
-                />
-              )
-            })}
-          </div>
-          <div className="w-px h-10 bg-gray-300 mx-0.5 sm:mx-1" />
-          <div className="flex gap-px sm:gap-0.5">
-            {rightQuadrant.map((num) => {
-              const condition = getToothCondition(num)
-              return (
-                <Tooth
-                  key={num}
-                  number={num}
-                  condition={condition}
-                  color={getToothColor(condition)}
-                  onClick={() => setSelectedTooth(num)}
-                  small={isPrimary}
-                />
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
 
     const conditionDotColors: Record<string, string> = {
       Cavity: 'bg-red-500',
@@ -1561,31 +1506,12 @@ export function PatientProfile() {
             {patientAge !== null ? `Age ${patientAge} · ` : ''}{dentitionLabel[dentitionType]}
           </p>
 
-          <div className="overflow-x-auto">
-            <div className="min-w-max">
-              {/* Labels row */}
-              <div className="flex justify-between text-xs text-text-secondary mb-1 px-4">
-                <span>Patient's Right</span>
-                <span>Patient's Left</span>
-              </div>
-
-              {/* MAXILLA */}
-              <div className="mb-4">
-                <p className="text-xs font-medium text-center text-text-secondary mb-2 uppercase tracking-wide">Maxilla (Upper)</p>
-                {(dentitionType === 'permanent' || dentitionType === 'mixed') && renderArch(Q1, Q2, 'Permanent')}
-                {(dentitionType === 'deciduous' || dentitionType === 'mixed') && renderArch(Q5, Q6, dentitionType === 'mixed' ? 'Primary' : '', true)}
-              </div>
-
-              <div className="border-t border-dashed border-gray-300 my-3" />
-
-              {/* MANDIBLE */}
-              <div className="mt-4">
-                <p className="text-xs font-medium text-center text-text-secondary mb-2 uppercase tracking-wide">Mandible (Lower)</p>
-                {(dentitionType === 'deciduous' || dentitionType === 'mixed') && renderArch(Q8, Q7, dentitionType === 'mixed' ? 'Primary' : '', true)}
-                {(dentitionType === 'permanent' || dentitionType === 'mixed') && renderArch(Q4, Q3, 'Permanent')}
-              </div>
-            </div>
-          </div>
+          <ArchDentalChart
+            dentitionType={dentitionType}
+            getToothClass={(num) => getToothColor(getToothCondition(num))}
+            getToothTitle={(num) => getToothCondition(num)}
+            onToothClick={(num) => setSelectedTooth(num)}
+          />
 
           <div className="flex flex-wrap gap-3 justify-center pt-5 border-t border-gray-200 mt-6">
             <Legend color="fill-white stroke-gray-400" label="Healthy" />
@@ -2803,21 +2729,6 @@ function MetricTile({ label, value }: any) {
 
 function EmptyState({ message }: any) {
   return <p className="rounded-2xl bg-gray-50 p-4 text-sm text-text-secondary">{message}</p>
-}
-
-function Tooth({ number, condition, color, onClick, small }: any) {
-  const sizeClasses = small ? 'w-4 h-6 sm:w-6 sm:h-9' : 'w-[18px] h-[27px] sm:w-8 sm:h-12'
-  return (
-    <div className="flex flex-col items-center cursor-pointer group" onClick={onClick} title={condition}>
-      <svg viewBox="0 0 32 48" className={`${sizeClasses} ${color} group-hover:opacity-75 transition-opacity`}>
-        <path
-          d="M16 2 C10 2, 6 6, 6 12 C6 18, 8 24, 10 32 C11 36, 12 42, 16 46 C20 42, 21 36, 22 32 C24 24, 26 18, 26 12 C26 6, 22 2, 16 2 Z"
-          strokeWidth="2"
-        />
-      </svg>
-      <span className="text-xs font-medium mt-0.5" style={{ fontSize: small ? '9px' : undefined }}>{number}</span>
-    </div>
-  )
 }
 
 function BottomNavButton({ active, icon: Icon, label, onClick }: any) {

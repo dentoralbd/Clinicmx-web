@@ -26,12 +26,12 @@ export function getAgeTierFromDOB(dateOfBirth: string | null | undefined): AgeTi
 }
 
 // Dentition thresholds matching the Patient Profile dental chart:
-// <5 deciduous, 5–16 mixed, >=17 or unknown permanent.
+// <5 deciduous, 5–14 mixed, >=15 or unknown permanent.
 export type DentitionType = 'deciduous' | 'mixed' | 'permanent'
 
 export function getDentitionTypeFromDOB(dateOfBirth: string | null | undefined): DentitionType {
   const age = calculateAgeYears(dateOfBirth)
-  if (age === null || age > 16) return 'permanent'
+  if (age === null || age > 14) return 'permanent'
   if (age >= 5) return 'mixed'
   return 'deciduous'
 }
