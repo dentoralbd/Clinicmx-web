@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -8,9 +8,10 @@ import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
-import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
+import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
@@ -202,6 +203,9 @@ export function PatientProfile() {
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
+  const [showPayPicker, setShowPayPicker] = useState(false)
+  const [mergeMode, setMergeMode] = useState(false)
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set())
   const [invoicePrintJob, setInvoicePrintJob] = useState<{ invoices: any[]; initialDueOnly?: boolean } | null>(null)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
@@ -883,32 +887,64 @@ export function PatientProfile() {
     }
   }
 
-  async function handleMarkInvoicePaid(invoiceId: string, totalAmount: number) {
-    try {
-      const previousInvoice = invoices.find((inv: any) => inv.id === invoiceId)
-      if (previousInvoice) {
-        await logEdit({
-          entityType: 'invoice',
-          entityId: invoiceId,
-          entityLabel: previousInvoice.invoice_number || 'Invoice',
-          patientId: id ?? null,
-          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
-          previousPayload: previousInvoice,
-        })
-      }
-      const { error } = await supabase
-        .from('invoices')
-        .update({
-          status: 'Paid',
-          paid_amount: totalAmount,
-        })
-        .eq('id', invoiceId)
+  function openPaymentFlow() {
+    if (pendingInvoices.length === 1) {
+      setPayingInvoice(pendingInvoices[0])
+    } else if (pendingInvoices.length > 1) {
+      setShowPayPicker(true)
+    }
+  }
 
+  async function handleMergeSelectedInvoices() {
+    const toMerge = pendingInvoices.filter((invoice: any) => selectedForMerge.has(invoice.id))
+    if (toMerge.length < 2 || !id) return
+
+    try {
+      const payload = buildMergedInvoicePayload(id, toMerge)
+      const { data, error } = await supabase.from('invoices').insert([payload]).select('id').single()
       if (error) throw error
+
+      const oldIds = toMerge.map((invoice: any) => invoice.id)
+      const newId = data.id as string
+
+      const { error: treatmentsError } = await supabase
+        .from('treatments')
+        .update({ invoice_id: newId })
+        .in('invoice_id', oldIds)
+      if (treatmentsError) throw treatmentsError
+
+      const { error: paymentsError } = await supabase
+        .from('payments')
+        .update({ invoice_id: newId })
+        .in('invoice_id', oldIds)
+      if (paymentsError) throw paymentsError
+
+      const { error: mergeError } = await supabase
+        .from('invoices')
+        .update({ status: 'Merged', merged_into_invoice_id: newId })
+        .in('id', oldIds)
+      if (mergeError) throw mergeError
+
+      await supabase.from('invoice_history').insert({
+        invoice_id: newId,
+        event_type: 'merged_from',
+        event_data: { source_invoice_ids: oldIds },
+      }).then(() => {}, () => {})
+
+      await supabase.from('invoice_history').insert(
+        oldIds.map((invoiceId: string) => ({
+          invoice_id: invoiceId,
+          event_type: 'merged_into',
+          event_data: { merged_into_invoice_id: newId },
+        }))
+      ).then(() => {}, () => {})
+
+      setMergeMode(false)
+      setSelectedForMerge(new Set())
       loadPatientData()
     } catch (error) {
-      console.error('Error updating invoice:', error)
-      alert('Failed to update invoice')
+      logBillingError('Failed to merge invoices', error, { invoiceIds: Array.from(selectedForMerge) })
+      alert(`Failed to merge invoices: ${getFriendlySupabaseErrorMessage(error)}`)
     }
   }
 
@@ -1060,10 +1096,11 @@ export function PatientProfile() {
     : (legacySectionMap[requestedSection] || 'profile')
   const activeTab = sectionToTab[activeSection] ?? 'overview'
   const activeTabMeta = tabOptions.find((tab) => tab.id === activeTab) || tabOptions[0]
-  const totalBilled = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
-  const totalPaid = invoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
+  const activeInvoices = invoices.filter((invoice) => invoice.status !== 'Merged')
+  const totalBilled = activeInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+  const totalPaid = activeInvoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
   const totalDue = totalBilled - totalPaid
-  const pendingInvoices = invoices.filter((invoice) => getInvoiceDue(invoice) > 0)
+  const pendingInvoices = activeInvoices.filter((invoice) => getInvoiceDue(invoice) > 0)
   const patientDentition = getDentitionTypeFromDOB(patient?.date_of_birth)
   const plannedTreatments = treatments.filter(
     (treatment) => treatment.status === 'Planned' || treatment.status === 'In Progress'
@@ -2250,24 +2287,36 @@ export function PatientProfile() {
         <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold">Invoice History</h3>
           <div className="flex items-center gap-2 flex-wrap">
-            {invoices.length > 0 && (
+            {activeInvoices.length > 0 && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setInvoicePrintJob({ invoices: invoices.slice().reverse() })}
+                onClick={() => setInvoicePrintJob({ invoices: activeInvoices.slice().reverse() })}
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Print all ({invoices.length})
+                Print all ({activeInvoices.length})
               </Button>
             )}
             {pendingInvoices.length > 0 && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setInvoicePrintJob({ invoices: invoices.slice().reverse(), initialDueOnly: true })}
+                onClick={() => setInvoicePrintJob({ invoices: activeInvoices.slice().reverse(), initialDueOnly: true })}
               >
                 <Printer className="w-4 h-4 mr-2" />
                 Print due ({pendingInvoices.length})
+              </Button>
+            )}
+            {pendingInvoices.length > 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setMergeMode((prev) => !prev)
+                  setSelectedForMerge(new Set())
+                }}
+              >
+                {mergeMode ? 'Cancel merge' : 'Select to merge'}
               </Button>
             )}
             <Button size="sm" onClick={() => setShowInvoiceForm(true)}>
@@ -2276,6 +2325,34 @@ export function PatientProfile() {
             </Button>
           </div>
         </div>
+        {mergeMode && (
+          <div className="p-3 bg-blue-50 border-b border-blue-200 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-blue-800">
+              {selectedForMerge.size >= 2
+                ? `Merge ${selectedForMerge.size} invoices — total due ${formatCurrency(
+                    pendingInvoices
+                      .filter((invoice: any) => selectedForMerge.has(invoice.id))
+                      .reduce((sum: number, invoice: any) => sum + getInvoiceDue(invoice), 0)
+                  )}`
+                : 'Select 2 or more due invoices to merge'}
+            </span>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={selectedForMerge.size < 2} onClick={handleMergeSelectedInvoices}>
+                Merge selected
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setMergeMode(false)
+                  setSelectedForMerge(new Set())
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
         {invoices.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No invoices recorded</div>
         ) : (
@@ -2284,9 +2361,21 @@ export function PatientProfile() {
               <PatientInvoiceRow
                 key={invoice.id}
                 invoice={invoice}
-                onMarkPaid={() => handleMarkInvoicePaid(invoice.id, invoice.total_amount || 0)}
                 onDelete={() => handleDeleteInvoice(invoice.id)}
                 onPaymentRecorded={loadPatientData}
+                mergeMode={mergeMode}
+                mergeSelected={selectedForMerge.has(invoice.id)}
+                onToggleMergeSelected={() => {
+                  setSelectedForMerge((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(invoice.id)) {
+                      next.delete(invoice.id)
+                    } else {
+                      next.add(invoice.id)
+                    }
+                    return next
+                  })
+                }}
               />
             ))}
           </div>
@@ -2361,13 +2450,7 @@ export function PatientProfile() {
           icon={DollarSign}
           label="Record Payment"
           disabled={pendingInvoices.length === 0}
-          onClick={() => {
-            if (pendingInvoices.length === 1) {
-              setPayingInvoice(pendingInvoices[0])
-            } else {
-              updateSection('billing')
-            }
-          }}
+          onClick={openPaymentFlow}
         />
         <QuickActionButton icon={Upload} label="Upload File" onClick={() => fileInputRef.current?.click()} />
         {patient.phone && (
@@ -2474,11 +2557,7 @@ export function PatientProfile() {
                 disabled={pendingInvoices.length === 0}
                 onClick={() => {
                   setShowQuickAdd(false)
-                  if (pendingInvoices.length === 1) {
-                    setPayingInvoice(pendingInvoices[0])
-                  } else {
-                    updateSection('billing')
-                  }
+                  openPaymentFlow()
                 }}
                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
               >
@@ -2663,6 +2742,15 @@ export function PatientProfile() {
             setPayingInvoice(null)
             loadPatientData()
           }}
+        />
+      )}
+
+      {showPayPicker && id && (
+        <PayInvoicePickerModal
+          patientId={id}
+          invoices={pendingInvoices}
+          onClose={() => setShowPayPicker(false)}
+          onChanged={loadPatientData}
         />
       )}
 
@@ -4093,14 +4181,18 @@ function MedicalHistoryModal({ formData, setFormData, onSubmit, onClose }: any) 
 
 function PatientInvoiceRow({
   invoice,
-  onMarkPaid,
   onDelete,
   onPaymentRecorded,
+  mergeMode = false,
+  mergeSelected = false,
+  onToggleMergeSelected,
 }: {
   invoice: any
-  onMarkPaid: () => void
   onDelete: () => void
   onPaymentRecorded: () => void
+  mergeMode?: boolean
+  mergeSelected?: boolean
+  onToggleMergeSelected?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -4112,16 +4204,34 @@ function PatientInvoiceRow({
     Paid: 'bg-green-100 text-green-800',
     Partial: 'bg-yellow-100 text-yellow-800',
     Pending: 'bg-red-100 text-red-800',
+    Merged: 'bg-gray-100 text-gray-500',
   }
   const due = getInvoiceDue(invoice)
+  const isMerged = invoice.status === 'Merged'
+  const mergeEligible = !isMerged && due > 0
 
   return (
-    <div className="hover:bg-gray-50 transition-colors">
+    <div className={`hover:bg-gray-50 transition-colors ${isMerged ? 'opacity-60' : ''}`}>
       <div
         className="p-4 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start justify-between gap-3">
+          {mergeMode && (
+            <button
+              type="button"
+              disabled={!mergeEligible}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleMergeSelected?.()
+              }}
+              className="mt-0.5 flex-shrink-0 disabled:opacity-30"
+            >
+              {mergeSelected
+                ? <CheckSquare className="w-5 h-5 text-primary" />
+                : <Square className="w-5 h-5 text-gray-400" />}
+            </button>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm">{formatDateValue(invoice.created_at)}</span>
@@ -4137,16 +4247,24 @@ function PatientInvoiceRow({
               {due > 0 && <span className="text-red-600">Due: {formatCurrency(due)}</span>}
             </div>
             {itemPreview && <p className="mt-1 text-sm text-text-secondary truncate">{itemPreview}</p>}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            {invoice.status !== 'Paid' && (
-              <Button size="sm" variant="outline" onClick={onMarkPaid}>Mark Paid</Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => setShowPaymentModal(true)} disabled={due <= 0}>Record Payment</Button>
-            {canDelete() && (
-              <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+            {isMerged && invoice.merged_into_invoice_id && (
+              <p className="mt-1 text-xs text-text-secondary">
+                Merged into #{invoice.merged_into_invoice_id.slice(0, 8).toUpperCase()}
+              </p>
             )}
           </div>
+          {!mergeMode && (
+            <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              {!isMerged && (
+                <Button size="sm" variant="outline" onClick={() => setShowPaymentModal(true)} disabled={due <= 0}>
+                  Pay
+                </Button>
+              )}
+              {canDelete() && (
+                <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

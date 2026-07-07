@@ -1,0 +1,5 @@
+-- Support merging multiple pending invoices into a single consolidated invoice
+ALTER TABLE public.invoices
+  ADD COLUMN IF NOT EXISTS merged_into_invoice_id uuid REFERENCES public.invoices(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_invoices_merged_into ON public.invoices(merged_into_invoice_id);

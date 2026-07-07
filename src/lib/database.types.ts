@@ -253,6 +253,7 @@ export interface Database {
           status: string
           due_date: string | null
           created_at: string
+          merged_into_invoice_id: string | null
         }
         Insert: {
           id?: string
@@ -278,6 +279,7 @@ export interface Database {
           status?: string
           due_date?: string | null
           created_at?: string
+          merged_into_invoice_id?: string | null
         }
         Update: {
           id?: string
@@ -303,6 +305,7 @@ export interface Database {
           status?: string
           due_date?: string | null
           created_at?: string
+          merged_into_invoice_id?: string | null
         }
         Relationships: [
           {

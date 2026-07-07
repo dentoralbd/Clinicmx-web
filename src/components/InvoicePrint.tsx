@@ -63,6 +63,10 @@ function invoiceLabel(invoice: PrintableInvoice) {
   return invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()
 }
 
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100
+}
+
 function getInvoiceDue(invoice: PrintableInvoice) {
   return Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
 }
@@ -136,6 +140,114 @@ function InvoiceTotals({ invoice }: { invoice: PrintableInvoice }) {
         <div className="flex justify-between font-semibold">
           <span>Due</span>
           <span>{formatBDT(due)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Alternate single-invoice layout: pharmacy-receipt style (Sl No / item / qty / price / discount / amount). */
+function ReceiptStyleInvoice({
+  invoice,
+  patient,
+  doctor,
+}: {
+  invoice: PrintableInvoice
+  patient: InvoicePrintProps['patient']
+  doctor: DoctorProfileData | null
+}) {
+  const items = Array.isArray(invoice.items) ? invoice.items : []
+  const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
+  const discountAmount = invoice.discount_amount || 0
+  const roundingOff = roundCurrency((invoice.total_amount || 0) - (subtotal - discountAmount))
+  const due = getInvoiceDue(invoice)
+
+  return (
+    <div>
+      <div className="flex flex-wrap justify-between gap-x-6 gap-y-1 text-sm mb-3">
+        <span><span className="font-semibold">Invoice No:</span> {invoiceLabel(invoice)}</span>
+        <span><span className="font-semibold">Invoice Date:</span> {safeFormat(invoice.created_at, 'dd/MM/yyyy')}</span>
+        {invoice.due_date && (
+          <span><span className="font-semibold">Due Date:</span> {safeFormat(invoice.due_date, 'dd/MM/yyyy')}</span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 text-sm">
+        <div>
+          <div className="font-semibold mb-1">Bill From</div>
+          {doctor?.workplace && <div>{doctor.workplace}</div>}
+          {doctor?.clinic_address && <div className="text-gray-600 whitespace-pre-line">{doctor.clinic_address}</div>}
+          {doctor?.phone && <div className="text-gray-600">{doctor.phone}</div>}
+        </div>
+        <div>
+          <div className="font-semibold mb-1">Billed To</div>
+          <div>{patient.first_name} {patient.last_name}</div>
+          {patient.phone && <div className="text-gray-600">{patient.phone}</div>}
+        </div>
+      </div>
+
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b-2 border-gray-800 text-left">
+            <th className="py-1.5 pr-2 font-semibold w-10">Sl.</th>
+            <th className="py-1.5 px-2 font-semibold">Product/Treatment</th>
+            <th className="py-1.5 px-2 font-semibold text-center w-16">Qty</th>
+            <th className="py-1.5 px-2 font-semibold text-right w-24">Price</th>
+            <th className="py-1.5 px-2 font-semibold text-right w-24">Discount</th>
+            <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.length === 0 ? (
+            <tr className="border-b border-gray-200">
+              <td className="py-1.5 pr-2 text-gray-500">1</td>
+              <td className="py-1.5 px-2 text-gray-500" colSpan={3}>Invoice total</td>
+              <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
+              <td className="py-1.5 pl-2 text-right">{formatBDT(invoice.total_amount)}</td>
+            </tr>
+          ) : (
+            items.map((item, idx) => (
+              <tr key={idx} className="border-b border-gray-200">
+                <td className="py-1.5 pr-2">{idx + 1}</td>
+                <td className="py-1.5 px-2">{formatInvoiceItemLabel({ ...item, quantity: 1 })}</td>
+                <td className="py-1.5 px-2 text-center">{getInvoiceItemQuantity(item)}</td>
+                <td className="py-1.5 px-2 text-right">{formatBDT(getInvoiceItemUnitPrice(item))}</td>
+                <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
+                <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item))}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <div className="flex justify-end mt-2">
+        <div className="w-64 text-sm space-y-1">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Subtotal</span>
+            <span>{formatBDT(subtotal)}</span>
+          </div>
+          {discountAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Discount applied</span>
+              <span>-{formatBDT(discountAmount)}</span>
+            </div>
+          )}
+          {roundingOff !== 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Rounding Off</span>
+              <span>{roundingOff > 0 ? '+' : ''}{formatBDT(roundingOff)}</span>
+            </div>
+          )}
+          {(invoice.paid_amount || 0) > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Paid</span>
+              <span>{formatBDT(invoice.paid_amount || 0)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold border-t border-gray-800 pt-1">
+            <span>Amount Payable</span>
+            <span>{formatBDT(due)}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -224,6 +336,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   const [dueOnly, setDueOnly] = useState(Boolean(initialDueOnly))
   const [showItems, setShowItems] = useState(true)
   const [showPayments, setShowPayments] = useState(true)
+  const [format, setFormat] = useState<'detailed' | 'receipt'>('detailed')
   const [payments, setPayments] = useState<StatementPaymentRow[]>([])
 
   const visibleInvoices = combined && dueOnly ? invoices.filter((invoice) => getInvoiceDue(invoice) > 0) : invoices
@@ -437,6 +550,24 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         </div>
       )}
 
+      {/* Format options – single-invoice mode only, hidden on print */}
+      {!combined && (
+        <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 flex items-center gap-1">
+          <button
+            onClick={() => setFormat('detailed')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${format === 'detailed' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            Detailed
+          </button>
+          <button
+            onClick={() => setFormat('receipt')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${format === 'receipt' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            Receipt
+          </button>
+        </div>
+      )}
+
       {/* Invoice document */}
       <div
         id="invoice-print-root"
@@ -533,6 +664,12 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         {/* ── Invoice content: compact statement (combined) or full invoice (single) ── */}
         {combined ? (
           <StatementTable invoices={visibleInvoices} showItems={showItems} />
+        ) : format === 'receipt' ? (
+          <div className="space-y-6">
+            {invoices.map((invoice) => (
+              <ReceiptStyleInvoice key={invoice.id} invoice={invoice} patient={patient} doctor={doctor} />
+            ))}
+          </div>
         ) : (
           <div className="space-y-6">
             {invoices.map((invoice) => (

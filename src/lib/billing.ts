@@ -208,6 +208,43 @@ export function buildLegacySafeInvoicePayload({
   }
 }
 
+export interface MergeableInvoice {
+  id: string
+  items: BillingLineItem[] | null
+  total_amount: number
+  paid_amount: number
+  discount_amount?: number | null
+  tax_amount?: number | null
+  due_date?: string | null
+  invoice_number?: string | null
+}
+
+function mergeInvoiceLabel(invoice: MergeableInvoice) {
+  return invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()
+}
+
+export function buildMergedInvoicePayload(patientId: string, invoices: MergeableInvoice[]) {
+  const items = invoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
+  const totalAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0))
+  const paidAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0))
+  const discountAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.discount_amount || 0), 0))
+  const taxAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.tax_amount || 0), 0))
+  const dueDates = invoices.map((inv) => inv.due_date).filter((d): d is string => Boolean(d)).sort()
+  const status = paidAmount >= totalAmount && totalAmount > 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Pending'
+
+  return {
+    patient_id: patientId,
+    items: items as unknown as Json,
+    total_amount: totalAmount,
+    paid_amount: paidAmount,
+    discount_amount: discountAmount,
+    tax_amount: taxAmount,
+    due_date: dueDates[0] || null,
+    status,
+    notes: `Merged from invoices ${invoices.map(mergeInvoiceLabel).join(', ')}`,
+  }
+}
+
 export function getFriendlySupabaseErrorMessage(error: unknown) {
   if (error && typeof error === 'object') {
     const maybeError = error as { message?: string; details?: string; hint?: string }
