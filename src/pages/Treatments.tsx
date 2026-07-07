@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Activity, ChevronDown } from 'lucide-react'
+import { Plus, Search, Activity, ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
@@ -19,6 +19,7 @@ interface Treatment {
   cost: number
   notes: string | null
   created_at: string
+  treatment_plan_group_id: string | null
   patients: {
     first_name: string
     last_name: string
@@ -199,6 +200,13 @@ function PatientTreatmentGroup({ patientName, treatments, onDelete, onStatusChan
 }) {
   const [expanded, setExpanded] = useState(false)
 
+  const planGroupCounts = new Map<string, number>()
+  treatments.forEach((t) => {
+    if (t.treatment_plan_group_id) {
+      planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+    }
+  })
+
   return (
     <div>
       <button
@@ -218,6 +226,7 @@ function PatientTreatmentGroup({ patientName, treatments, onDelete, onStatusChan
             <TreatmentRow
               key={treatment.id}
               treatment={treatment}
+              planItemCount={treatment.treatment_plan_group_id ? planGroupCounts.get(treatment.treatment_plan_group_id) || 0 : 0}
               onDelete={() => onDelete(treatment)}
               onStatusChange={(status) => onStatusChange(treatment.id, status)}
             />
@@ -233,8 +242,9 @@ const STATUS_TRANSITIONS: Record<string, string> = {
   'In Progress': 'Completed',
 }
 
-function TreatmentRow({ treatment, onDelete, onStatusChange }: {
+function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange }: {
   treatment: Treatment
+  planItemCount?: number
   onDelete: () => void
   onStatusChange: (status: string) => void
 }) {
@@ -259,6 +269,11 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[treatment.status] || 'bg-gray-100'}`}>
               {treatment.status}
             </span>
+            {planItemCount > 1 && (
+              <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                Plan &middot; {planItemCount} items
+              </span>
+            )}
           </div>
           {treatment.description && (
             <p className="text-sm text-text-secondary mt-1">{treatment.description}</p>
@@ -286,16 +301,15 @@ function TreatmentRow({ treatment, onDelete, onStatusChange }: {
   )
 }
 
+function emptyTreatmentItem() {
+  return { teeth: [] as number[], treatment_type: '', description: '', status: 'Planned', cost: '', notes: '' }
+}
+
 function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
   const [patients, setPatients] = useState<any[]>([])
   const [formData, setFormData] = useState({
     patient_id: '',
-    teeth: [] as number[],
-    treatment_type: '',
-    description: '',
-    status: 'Planned',
-    cost: '',
-    notes: '',
+    items: [emptyTreatmentItem()],
   })
   const [saving, setSaving] = useState(false)
 
@@ -315,23 +329,44 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
     patients.find((p) => p.id === formData.patient_id)?.date_of_birth
   )
 
+  function updateItem(index: number, patch: Record<string, any>) {
+    const newItems = [...formData.items]
+    newItems[index] = { ...newItems[index], ...patch }
+    setFormData({ ...formData, items: newItems })
+  }
+
+  function addItem() {
+    setFormData({ ...formData, items: [...formData.items, emptyTreatmentItem()] })
+  }
+
+  function removeItem(index: number) {
+    setFormData({ ...formData, items: formData.items.filter((_, i) => i !== index) })
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
 
     try {
-      // One treatments row per tooth so each is labelled and billed individually,
-      // matching the prescription treatment-plan flow. Cost is per tooth.
-      const teethList: Array<number | null> = formData.teeth.length > 0 ? formData.teeth : [null]
-      const { error } = await supabase.from('treatments').insert(teethList.map((tooth) => ({
-        patient_id: formData.patient_id,
-        tooth_number: tooth,
-        treatment_type: formData.treatment_type,
-        description: formData.description || null,
-        status: formData.status,
-        cost: parseFloat(formData.cost) || 0,
-        notes: formData.notes || null,
-      })))
+      // One treatments row per (item x tooth) so each is labelled and billed individually,
+      // matching the prescription treatment-plan flow. Cost is per item.
+      // Items created in the same submission share a planGroupId so they can be
+      // displayed/selected together later (Treatment History grouping, invoice picker).
+      const planGroupId = crypto.randomUUID()
+      const rows = formData.items.flatMap((item) => {
+        const teethList: Array<number | null> = item.teeth.length > 0 ? item.teeth : [null]
+        return teethList.map((tooth) => ({
+          patient_id: formData.patient_id,
+          tooth_number: tooth,
+          treatment_type: item.treatment_type,
+          description: item.description || null,
+          status: item.status,
+          cost: parseFloat(item.cost) || 0,
+          notes: item.notes || null,
+          treatment_plan_group_id: planGroupId,
+        }))
+      })
+      const { error } = await supabase.from('treatments').insert(rows)
 
       if (error) throw error
       onSave()
@@ -368,84 +403,112 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-              <select
-                required
-                value={formData.treatment_type}
-                onChange={(e) => setFormData({ ...formData, treatment_type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">Select...</option>
-                <option>Filling</option>
-                <option>Root Canal</option>
-                <option>Crown</option>
-                <option>Bridge</option>
-                <option>Extraction</option>
-                <option>Implant</option>
-                <option>Cleaning</option>
-                <option>Whitening</option>
-                <option>Braces</option>
-                <option>Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
-              <ToothSelector
-                selectedTeeth={formData.teeth}
-                onChange={(teeth) => setFormData({ ...formData, teeth })}
-                dentitionType={dentitionType}
-              />
-            </div>
+          <div className="space-y-3">
+            {formData.items.map((item, index) => (
+              <div key={index} className="relative rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+                <div className="absolute -left-3 top-4 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shadow">
+                  {index + 1}
+                </div>
+                {formData.items.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    className="absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Treatment Type *</label>
+                    <select
+                      required
+                      value={item.treatment_type}
+                      onChange={(e) => updateItem(index, { treatment_type: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Select...</option>
+                      <option>Filling</option>
+                      <option>Root Canal</option>
+                      <option>Crown</option>
+                      <option>Bridge</option>
+                      <option>Extraction</option>
+                      <option>Implant</option>
+                      <option>Cleaning</option>
+                      <option>Whitening</option>
+                      <option>Braces</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
+                    <ToothSelector
+                      selectedTeeth={item.teeth}
+                      onChange={(teeth) => updateItem(index, { teeth })}
+                      dentitionType={dentitionType}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description</label>
+                  <textarea
+                    rows={2}
+                    value={item.description}
+                    onChange={(e) => updateItem(index, { description: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Status</label>
+                    <select
+                      value={item.status}
+                      onChange={(e) => updateItem(index, { status: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option>Planned</option>
+                      <option>In Progress</option>
+                      <option>Completed</option>
+                      <option>Cancelled</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cost *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={item.cost}
+                      onChange={(e) => updateItem(index, { cost: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes</label>
+                  <textarea
+                    rows={2}
+                    value={item.notes}
+                    onChange={(e) => updateItem(index, { notes: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              rows={2}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Status</label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option>Planned</option>
-                <option>In Progress</option>
-                <option>Completed</option>
-                <option>Cancelled</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Cost *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.cost}
-                onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
-              rows={2}
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={addItem}
+            className="w-full text-sm font-medium text-primary border border-dashed border-primary/40 rounded-lg py-2 hover:bg-primary/5"
+          >
+            + Add Treatment Item
+          </button>
 
           <div className="flex gap-3 pt-4">
             <Button type="submit" disabled={saving} className="flex-1">

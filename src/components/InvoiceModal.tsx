@@ -44,6 +44,7 @@ interface PendingTreatment {
   cost: number
   is_invoiced?: boolean
   invoice_id?: string | null
+  treatment_plan_group_id?: string | null
 }
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'Cheque', 'Transfer'] as const
@@ -142,7 +143,7 @@ export function InvoiceModal({
     try {
       const { data, error } = await supabase
         .from('treatments')
-        .select('id, treatment_type, description, tooth_number, status, cost, is_invoiced, invoice_id')
+        .select('id, treatment_type, description, tooth_number, status, cost, is_invoiced, invoice_id, treatment_plan_group_id')
         .eq('patient_id', patientId)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -157,7 +158,7 @@ export function InvoiceModal({
         const [{ data: treatmentsData, error: treatmentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
           supabase
             .from('treatments')
-            .select('id, treatment_type, description, tooth_number, status, cost')
+            .select('id, treatment_type, description, tooth_number, status, cost, treatment_plan_group_id')
             .eq('patient_id', patientId)
             .order('created_at', { ascending: false }),
           supabase
@@ -207,6 +208,11 @@ export function InvoiceModal({
 
   function selectAllTreatments() {
     applyTreatmentSelection(new Set(pendingTreatments.map((t) => t.id)))
+  }
+
+  function selectPlanGroup(groupId: string) {
+    const groupIds = pendingTreatments.filter((t) => t.treatment_plan_group_id === groupId).map((t) => t.id)
+    applyTreatmentSelection(new Set([...selectedTreatmentIds, ...groupIds]))
   }
 
   function clearTreatmentSelection() {
@@ -540,32 +546,57 @@ export function InvoiceModal({
 
               <div className="p-3 space-y-2">
                 <ul className="space-y-1 max-h-48 overflow-y-auto">
-                  {pendingTreatments.map((t) => {
-                    const checked = selectedTreatmentIds.has(t.id)
-                    return (
-                      <li key={t.id}>
-                        <button
-                          type="button"
-                          onClick={() => toggleTreatment(t.id)}
-                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${
-                            checked ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
-                          }`}
-                        >
-                          {checked
-                            ? <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                            : <Square className="w-4 h-4 text-gray-400 flex-shrink-0" />}
-                          <span className="flex-1 min-w-0 truncate">
-                            {t.treatment_type}
-                            {t.tooth_number ? ` (T${t.tooth_number})` : ''}
-                            {t.description ? ` – ${t.description}` : ''}
-                          </span>
-                          <span className="text-gray-500 font-medium flex-shrink-0">
-                            {formatBDT(t.cost || 0)}
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
+                  {(() => {
+                    const planGroupCounts = new Map<string, number>()
+                    pendingTreatments.forEach((t) => {
+                      if (t.treatment_plan_group_id) {
+                        planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+                      }
+                    })
+                    const seenGroupIds = new Set<string>()
+                    return pendingTreatments.map((t) => {
+                      const checked = selectedTreatmentIds.has(t.id)
+                      const groupId = t.treatment_plan_group_id
+                      const groupCount = groupId ? planGroupCounts.get(groupId) || 0 : 0
+                      const showGroupHeader = !!groupId && groupCount > 1 && !seenGroupIds.has(groupId)
+                      if (groupId && showGroupHeader) seenGroupIds.add(groupId)
+                      return (
+                        <li key={t.id}>
+                          {showGroupHeader && (
+                            <div className="flex items-center justify-between px-2 pt-1">
+                              <span className="text-xs font-medium text-blue-700">Plan ({groupCount} items)</span>
+                              <button
+                                type="button"
+                                onClick={() => selectPlanGroup(groupId!)}
+                                className="text-xs text-blue-600 hover:underline"
+                              >
+                                Select all
+                              </button>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleTreatment(t.id)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${
+                              checked ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
+                            }`}
+                          >
+                            {checked
+                              ? <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              : <Square className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                            <span className="flex-1 min-w-0 truncate">
+                              {t.treatment_type}
+                              {t.tooth_number ? ` (T${t.tooth_number})` : ''}
+                              {t.description ? ` – ${t.description}` : ''}
+                            </span>
+                            <span className="text-gray-500 font-medium flex-shrink-0">
+                              {formatBDT(t.cost || 0)}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })
+                  })()}
                 </ul>
 
                 {autoImported ? (

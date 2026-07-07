@@ -225,12 +225,9 @@ export function PatientProfile() {
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [showTreatmentPlanForm, setShowTreatmentPlanForm] = useState(false)
   const [treatmentPlanForm, setTreatmentPlanForm] = useState({
-    treatment_type: '',
-    teeth: [] as number[],
-    description: '',
-    status: 'Planned',
-    cost: '',
-    notes: '',
+    items: [
+      { treatment_type: '', teeth: [] as number[], description: '', status: 'Planned', cost: '', notes: '' },
+    ],
   })
 
   const [showMedicalHistoryForm, setShowMedicalHistoryForm] = useState(false)
@@ -390,25 +387,51 @@ export function PatientProfile() {
     if (!id) return
 
     try {
-      // One treatments row per tooth so each is labelled and billed individually,
-      // matching the prescription treatment-plan flow. Cost is per tooth.
-      const teethList: Array<number | null> = treatmentPlanForm.teeth.length > 0 ? treatmentPlanForm.teeth : [null]
-      await supabase.from('treatments').insert(teethList.map((tooth) => ({
-        patient_id: id,
-        tooth_number: tooth,
-        treatment_type: treatmentPlanForm.treatment_type,
-        description: treatmentPlanForm.description || null,
-        status: treatmentPlanForm.status,
-        cost: parseFloat(treatmentPlanForm.cost) || 0,
-        notes: treatmentPlanForm.notes || null,
-      })))
+      // One treatments row per (item x tooth) so each is labelled and billed individually,
+      // matching the prescription treatment-plan flow. Cost is per item.
+      // Items created in the same submission share a planGroupId so they can be
+      // displayed/selected together later (Treatment History grouping, invoice picker).
+      const planGroupId = crypto.randomUUID()
+      const rows = treatmentPlanForm.items.flatMap((item) => {
+        const teethList: Array<number | null> = item.teeth.length > 0 ? item.teeth : [null]
+        return teethList.map((tooth) => ({
+          patient_id: id,
+          tooth_number: tooth,
+          treatment_type: item.treatment_type,
+          description: item.description || null,
+          status: item.status,
+          cost: parseFloat(item.cost) || 0,
+          notes: item.notes || null,
+          treatment_plan_group_id: planGroupId,
+        }))
+      })
+      await supabase.from('treatments').insert(rows)
       setShowTreatmentPlanForm(false)
-      setTreatmentPlanForm({ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' })
+      setTreatmentPlanForm({
+        items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' }],
+      })
       loadPatientData()
     } catch (error) {
       console.error('Error saving treatment plan:', error)
       alert('Failed to save treatment plan')
     }
+  }
+
+  function addTreatmentPlanItem() {
+    setTreatmentPlanForm({
+      ...treatmentPlanForm,
+      items: [
+        ...treatmentPlanForm.items,
+        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' },
+      ],
+    })
+  }
+
+  function removeTreatmentPlanItem(index: number) {
+    setTreatmentPlanForm({
+      ...treatmentPlanForm,
+      items: treatmentPlanForm.items.filter((_, i) => i !== index),
+    })
   }
 
   async function updateTreatmentStatus(treatmentId: string, newStatus: string) {
@@ -1693,7 +1716,14 @@ export function PatientProfile() {
     </div>
   )
 
-  const renderOperationsSection = () => (
+  const renderOperationsSection = () => {
+    const planGroupCounts = new Map<string, number>()
+    treatments.forEach((t) => {
+      if (t.treatment_plan_group_id) {
+        planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+      }
+    })
+    return (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <div>
@@ -1753,7 +1783,14 @@ export function PatientProfile() {
                 <tr key={treatment.id}>
                   <td className="px-4 py-3 text-sm">{formatDateValue(treatment.created_at)}</td>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{treatment.treatment_type}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {treatment.treatment_type}
+                      {treatment.treatment_plan_group_id && (planGroupCounts.get(treatment.treatment_plan_group_id) || 0) > 1 && (
+                        <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                          Plan &middot; {planGroupCounts.get(treatment.treatment_plan_group_id)} items
+                        </span>
+                      )}
+                    </div>
                     {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
                   </td>
                   <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
@@ -1789,7 +1826,8 @@ export function PatientProfile() {
         </div>
       )}
     </div>
-  )
+    )
+  }
 
   const renderPrescriptionsSection = () => (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
@@ -2696,6 +2734,8 @@ export function PatientProfile() {
           dentitionType={patientDentition}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
+          onAddItem={addTreatmentPlanItem}
+          onRemoveItem={removeTreatmentPlanItem}
         />
       )}
 
@@ -4021,7 +4061,13 @@ function PrescriptionFormModal({
   )
 }
 
-function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, onClose }: any) {
+function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
+  function updateItem(index: number, patch: Record<string, any>) {
+    const newItems = [...formData.items]
+    newItems[index] = { ...newItems[index], ...patch }
+    setFormData({ ...formData, items: newItems })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
@@ -4033,85 +4079,113 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, on
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-            <select
-              required
-              value={formData.treatment_type}
-              onChange={(e) => setFormData({ ...formData, treatment_type: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Select treatment type...</option>
-              <option>Filling</option>
-              <option>Root Canal</option>
-              <option>Crown</option>
-              <option>Bridge</option>
-              <option>Extraction</option>
-              <option>Implant</option>
-              <option>Cleaning</option>
-              <option>Whitening</option>
-              <option>Braces</option>
-              <option>Dentures</option>
-              <option>Veneer</option>
-              <option>Consultation</option>
-              <option>Other</option>
-            </select>
+          <div className="space-y-3">
+            {formData.items.map((item: any, index: number) => (
+              <div key={index} className="relative rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+                <div className="absolute -left-3 top-4 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shadow">
+                  {index + 1}
+                </div>
+                {formData.items.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveItem(index)}
+                    className="absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Treatment Type *</label>
+                  <select
+                    required
+                    value={item.treatment_type}
+                    onChange={(e) => updateItem(index, { treatment_type: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select treatment type...</option>
+                    <option>Filling</option>
+                    <option>Root Canal</option>
+                    <option>Crown</option>
+                    <option>Bridge</option>
+                    <option>Extraction</option>
+                    <option>Implant</option>
+                    <option>Cleaning</option>
+                    <option>Whitening</option>
+                    <option>Braces</option>
+                    <option>Dentures</option>
+                    <option>Veneer</option>
+                    <option>Consultation</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
+                    <ToothSelector selectedTeeth={item.teeth} onChange={(teeth) => updateItem(index, { teeth })} dentitionType={dentitionType} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Status</label>
+                    <select
+                      value={item.status}
+                      onChange={(e) => updateItem(index, { status: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option>Planned</option>
+                      <option>In Progress</option>
+                      <option>Completed</option>
+                      <option>Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description</label>
+                  <textarea
+                    rows={2}
+                    value={item.description}
+                    onChange={(e) => updateItem(index, { description: e.target.value })}
+                    placeholder="Brief description of the treatment..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Estimated Cost</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.cost}
+                    onChange={(e) => updateItem(index, { cost: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes</label>
+                  <textarea
+                    rows={2}
+                    value={item.notes}
+                    onChange={(e) => updateItem(index, { notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>
-              <ToothSelector selectedTeeth={formData.teeth} onChange={(teeth) => setFormData({ ...formData, teeth })} dentitionType={dentitionType} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Status</label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option>Planned</option>
-                <option>In Progress</option>
-                <option>Completed</option>
-                <option>Cancelled</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              rows={2}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Brief description of the treatment..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Estimated Cost</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={formData.cost}
-              onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
-              placeholder="0.00"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
-              rows={2}
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Additional notes..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={onAddItem}
+            className="w-full text-sm font-medium text-primary border border-dashed border-primary/40 rounded-lg py-2 hover:bg-primary/5"
+          >
+            + Add Treatment Item
+          </button>
 
           <div className="flex gap-3 pt-4">
             <Button type="submit" className="flex-1">Save Treatment Plan</Button>

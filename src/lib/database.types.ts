@@ -116,6 +116,7 @@ export interface Database {
           notes: string | null
           is_invoiced: boolean
           invoice_id: string | null
+          treatment_plan_group_id: string | null
           created_at: string
         }
         Insert: {
@@ -132,6 +133,7 @@ export interface Database {
           notes?: string | null
           is_invoiced?: boolean
           invoice_id?: string | null
+          treatment_plan_group_id?: string | null
           created_at?: string
         }
         Update: {
@@ -148,6 +150,7 @@ export interface Database {
           notes?: string | null
           is_invoiced?: boolean
           invoice_id?: string | null
+          treatment_plan_group_id?: string | null
           created_at?: string
         }
         Relationships: [
