@@ -50,6 +50,8 @@ export interface BuildInvoicePdfOptions {
   payments?: PdfPayment[]
   /** Clinic/doctor logo as a data URL — same source used by the on-screen letterhead */
   logoSrc?: string
+  /** Single-invoice only: matches the on-screen Detailed/Receipt toggle */
+  format?: 'detailed' | 'receipt'
 }
 
 function invoiceLabel(invoice: PdfInvoice) {
@@ -58,6 +60,10 @@ function invoiceLabel(invoice: PdfInvoice) {
 
 function getInvoiceDue(invoice: PdfInvoice) {
   return Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
+}
+
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100
 }
 
 function lastAutoTableY(doc: jsPDF): number {
@@ -269,6 +275,122 @@ function buildSingleInvoicePdf(
   return doc
 }
 
+function buildReceiptInvoicePdf(
+  invoice: PdfInvoice,
+  patient: PdfPatient,
+  doctor: DoctorProfileData | null,
+  logoSrc?: string
+): jsPDF {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+
+  let y = drawLetterhead(doc, doctor, logoSrc)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.text('INVOICE', pageWidth / 2, y, { align: 'center' })
+  y += 24
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  const patientLine = [
+    `Patient: ${patient.first_name} ${patient.last_name}`,
+    patient.patient_code ? `ID: ${patient.patient_code}` : null,
+    patient.phone ? `Phone: ${patient.phone}` : null,
+  ]
+    .filter(Boolean)
+    .join('    ')
+  doc.text(patientLine, marginX, y)
+  doc.text(`Date: ${safeFormat(new Date().toISOString(), 'dd MMM yyyy')}`, pageWidth - marginX, y, { align: 'right' })
+  y += 20
+
+  doc.text(`Invoice No: ${invoiceLabel(invoice)}`, marginX, y)
+  doc.text(`Invoice Date: ${safeFormat(invoice.created_at, 'dd/MM/yyyy')}`, pageWidth - marginX, y, { align: 'right' })
+  y += 18
+  if (invoice.due_date) {
+    doc.text(`Due Date: ${safeFormat(invoice.due_date, 'dd/MM/yyyy')}`, pageWidth - marginX, y, { align: 'right' })
+    y += 18
+  }
+
+  const colWidth = (pageWidth - marginX * 2) / 2
+  doc.setFont('helvetica', 'bold')
+  doc.text('Bill From', marginX, y)
+  doc.text('Billed To', marginX + colWidth, y)
+  y += 14
+  doc.setFont('helvetica', 'normal')
+  let leftY = y
+  if (doctor?.workplace) {
+    doc.text(doctor.workplace, marginX, leftY)
+    leftY += 12
+  }
+  if (doctor?.clinic_address) {
+    for (const line of doctor.clinic_address.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      doc.text(line, marginX, leftY)
+      leftY += 12
+    }
+  }
+  if (doctor?.phone) {
+    doc.text(doctor.phone, marginX, leftY)
+    leftY += 12
+  }
+  let rightY = y
+  doc.text(`${patient.first_name} ${patient.last_name}`, marginX + colWidth, rightY)
+  rightY += 12
+  if (patient.phone) {
+    doc.text(patient.phone, marginX + colWidth, rightY)
+    rightY += 12
+  }
+  y = Math.max(leftY, rightY) + 12
+
+  const items = Array.isArray(invoice.items) ? invoice.items : []
+  const rows =
+    items.length > 0
+      ? items.map((item, idx) => [
+          String(idx + 1),
+          formatInvoiceItemLabel({ ...item, quantity: 1 }),
+          String(getInvoiceItemQuantity(item)),
+          formatBDT(getInvoiceItemUnitPrice(item)),
+          formatBDT(0),
+          formatBDT(getInvoiceItemLineTotal(item)),
+        ])
+      : [['1', 'Invoice total', '', '', formatBDT(0), formatBDT(invoice.total_amount)]]
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Sl.', 'Product/Treatment', 'Qty', 'Price', 'Discount', 'Amount']],
+    body: rows,
+    margin: { left: marginX, right: marginX },
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [255, 255, 255], textColor: [20, 20, 20], lineWidth: 0.75, lineColor: [30, 30, 30] },
+    columnStyles: {
+      0: { cellWidth: 24 },
+      2: { halign: 'center' },
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' },
+    },
+  })
+
+  y = lastAutoTableY(doc) + 18
+
+  const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
+  const discountAmount = invoice.discount_amount || 0
+  const roundingOff = roundCurrency((invoice.total_amount || 0) - (subtotal - discountAmount))
+  const due = getInvoiceDue(invoice)
+
+  const lines: Array<[string, string, boolean]> = [['Subtotal', formatBDT(subtotal), false]]
+  if (discountAmount > 0) lines.push(['Discount applied', `-${formatBDT(discountAmount)}`, false])
+  if (roundingOff !== 0) lines.push(['Rounding Off', `${roundingOff > 0 ? '+' : ''}${formatBDT(roundingOff)}`, false])
+  if ((invoice.paid_amount || 0) > 0) lines.push(['Paid', formatBDT(invoice.paid_amount || 0), false])
+  lines.push(['Amount Payable', formatBDT(due), true])
+
+  y = drawTotalsBlock(doc, y, lines) + 16
+  drawFooter(doc, y)
+
+  return doc
+}
+
 function buildCombinedInvoicePdf(
   invoices: PdfInvoice[],
   patient: PdfPatient,
@@ -434,7 +556,9 @@ export function buildInvoicePdf(
   options: BuildInvoicePdfOptions = {}
 ): jsPDF {
   if (invoices.length <= 1) {
-    return buildSingleInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
+    return options.format === 'receipt'
+      ? buildReceiptInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
+      : buildSingleInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
   }
   return buildCombinedInvoicePdf(invoices, patient, doctor, options, options.logoSrc)
 }
