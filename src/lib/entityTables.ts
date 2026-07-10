@@ -4,6 +4,7 @@ export type TrackedEntityType =
   | 'prescription'
   | 'invoice'
   | 'inventory_item'
+  | 'patient_visit'
 
 // Column allowlists per target table (must match Row types in
 // database.types.ts). Snapshots taken from list pages can embed joined
@@ -29,6 +30,10 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   inventory_item: {
     table: 'inventory_items',
     columns: ['id', 'name', 'category', 'description', 'quantity', 'unit', 'low_stock_threshold', 'supplier', 'cost', 'notes', 'expiry_date', 'created_at', 'updated_at'],
+  },
+  patient_visit: {
+    table: 'patient_visits',
+    columns: ['id', 'patient_id', 'visit_date', 'chief_complaint', 'examination_findings', 'diagnosis', 'treatment_plan', 'notes', 'created_at'],
   },
 }
 

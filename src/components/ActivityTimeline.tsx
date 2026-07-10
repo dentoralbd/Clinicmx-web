@@ -70,7 +70,7 @@ export function ActivityTimeline({ items, onNavigate, initialCount = 15 }: Activ
                     <Icon className={`h-4 w-4 ${meta.iconColor}`} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{item.title}</span>
+                    <span className="block line-clamp-2 break-words text-sm font-medium">{item.title}</span>
                     {item.subtitle && <span className="block truncate text-xs text-text-secondary">{item.subtitle}</span>}
                   </span>
                   {item.badge && (

@@ -80,7 +80,6 @@ type SectionId =
   | 'appointments'
   | 'prescriptions'
   | 'forms'
-  | 'bookings'
   | 'treatment'
   | 'operations'
   | 'visits'
@@ -97,7 +96,7 @@ const tabOptions: Array<{ id: TabId; label: string; shortLabel: string; icon: an
   { id: 'overview', label: 'Overview', shortLabel: 'Home', icon: User, sections: ['profile', 'communications', 'referrals'] },
   { id: 'clinical', label: 'Clinical', shortLabel: 'Clinical', icon: Stethoscope, sections: ['clinical', 'medical', 'visits', 'consultations', 'investigations'] },
   { id: 'prescriptions', label: 'Prescriptions', shortLabel: 'Rx', icon: Pill, sections: ['prescriptions'] },
-  { id: 'appointments', label: 'Appointments', shortLabel: 'Appts', icon: CalendarIcon, sections: ['appointments', 'bookings'] },
+  { id: 'appointments', label: 'Appointments', shortLabel: 'Appts', icon: CalendarIcon, sections: ['appointments'] },
   { id: 'files', label: 'Files & Forms', shortLabel: 'Files', icon: FolderOpen, sections: ['files', 'forms'] },
   { id: 'billing', label: 'Billing', shortLabel: 'Billing', icon: DollarSign, sections: ['billing', 'operations'] },
 ]
@@ -118,7 +117,6 @@ const sectionOptions: Array<{
   { id: 'appointments', label: 'Appointments', description: 'Full appointment history', icon: CalendarIcon },
   { id: 'prescriptions', label: 'Prescriptions', description: 'Medication plans and advice', icon: Pill },
   { id: 'forms', label: 'Forms', description: 'Intake documents and stored records', icon: FileText },
-  { id: 'bookings', label: 'Bookings', description: 'Upcoming reservations and scheduling', icon: CalendarIcon },
   { id: 'operations', label: 'Operations', description: 'Treatments, progress, and cost', icon: Activity },
   { id: 'visits', label: 'Visits', description: 'Consultation history and findings', icon: FileText },
   { id: 'investigations', label: 'Investigations', description: 'Requested tests and follow-up', icon: Activity },
@@ -243,6 +241,15 @@ export function PatientProfile() {
   const [visitTreatmentsDone, setVisitTreatmentsDone] = useState<VisitTreatmentEntry[]>([])
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
+  const [editingVisit, setEditingVisit] = useState<any | null>(null)
+  const [visitEditForm, setVisitEditForm] = useState({
+    visit_date: '',
+    chief_complaint: '',
+    examination_findings: '',
+    diagnosis: '',
+    treatment_plan: '',
+    notes: '',
+  })
 
   const [prescriptionForm, setPrescriptionForm] = useState({
     chief_complaint_entries: [createEmptyEntry()] as ClinicalEntry[],
@@ -499,12 +506,24 @@ export function PatientProfile() {
     const treatmentsTotal =
       doneEntries.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
       billableFromPlan.reduce((sum, { selection }) => sum + (parseFloat(selection.cost) || 0), 0)
-    if (paymentAmount > 0 && doneEntries.length === 0 && billableFromPlan.length === 0) {
-      alert('Add at least one unbilled Treatment Done entry before recording a payment')
+    // Selected plan items that were invoiced on a previous visit: a payment
+    // entered here goes toward their existing invoices' due balances.
+    const billedFromPlan = doneFromPlan.filter(({ treatment }) => treatment.is_invoiced || treatment.invoice_id)
+    const seenInvoiceIds = new Set<string>()
+    const existingInvoicesWithDue: any[] = []
+    for (const { treatment } of billedFromPlan) {
+      if (!treatment.invoice_id || seenInvoiceIds.has(treatment.invoice_id)) continue
+      seenInvoiceIds.add(treatment.invoice_id)
+      const invoice = invoices.find((inv) => inv.id === treatment.invoice_id)
+      if (invoice && getInvoiceDue(invoice) > 0) existingInvoicesWithDue.push(invoice)
+    }
+    const existingDueTotal = existingInvoicesWithDue.reduce((sum, inv) => sum + getInvoiceDue(inv), 0)
+    if (paymentAmount > 0 && doneEntries.length === 0 && billableFromPlan.length === 0 && existingInvoicesWithDue.length === 0) {
+      alert('Add a Treatment Done entry, or tick a billed plan item that still has a due balance, before recording a payment')
       return
     }
-    if (paymentAmount > treatmentsTotal) {
-      alert('Payment amount cannot be greater than the total treatment cost')
+    if (paymentAmount > treatmentsTotal + existingDueTotal) {
+      alert('Payment amount cannot be greater than the new treatment cost plus outstanding due on billed items')
       return
     }
 
@@ -560,8 +579,21 @@ export function PatientProfile() {
       }
 
       const billableTreatments = [...updatedPlanTreatments, ...insertedTreatments]
-      if (paymentAmount > 0 && billableTreatments.length > 0) {
-        await createVisitInvoiceWithPayment(billableTreatments, paymentAmount)
+      if (paymentAmount > 0) {
+        // New unbilled treatments get a new invoice first; any remainder pays
+        // down existing invoices of selected already-billed plan items.
+        let remaining = paymentAmount
+        if (billableTreatments.length > 0 && remaining > 0) {
+          const newInvoicePortion = Math.min(remaining, treatmentsTotal)
+          await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
+          remaining -= newInvoicePortion
+        }
+        for (const invoice of existingInvoicesWithDue) {
+          if (remaining <= 0) break
+          const applied = Math.min(remaining, getInvoiceDue(invoice))
+          await applyPaymentToExistingInvoice(invoice, applied)
+          remaining -= applied
+        }
       }
 
       setShowVisitForm(false)
@@ -658,6 +690,115 @@ export function PatientProfile() {
 
     if (!paymentStored && paymentSchemaError) {
       logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount: paymentAmount })
+    }
+  }
+
+  async function applyPaymentToExistingInvoice(invoice: any, amount: number) {
+    // Same fallback chain as createVisitInvoiceWithPayment for older payments schemas
+    const paymentDateIso = new Date().toISOString()
+    let paymentStored = false
+    let paymentSchemaError: unknown = null
+    const paymentPayloads: Array<{
+      invoice_id: string
+      amount: number
+      payment_method?: string
+      payment_date?: string
+      notes?: string | null
+    }> = [
+      { invoice_id: invoice.id, amount, payment_method: visitPayment.method, payment_date: paymentDateIso, notes: null },
+      { invoice_id: invoice.id, amount, payment_date: paymentDateIso },
+      { invoice_id: invoice.id, amount },
+    ]
+    for (const payload of paymentPayloads) {
+      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      if (!paymentError) {
+        paymentStored = true
+        paymentSchemaError = null
+        break
+      }
+      if (!isSchemaCompatibilityError(paymentError)) throw paymentError
+      paymentSchemaError = paymentError
+    }
+
+    const newPaid = (invoice.paid_amount || 0) + amount
+    const { error: statusError } = await supabase
+      .from('invoices')
+      .update({
+        paid_amount: newPaid,
+        status: newPaid >= (invoice.total_amount || 0) ? 'Paid' : 'Partial',
+      })
+      .eq('id', invoice.id)
+    if (statusError) throw statusError
+
+    await supabase.from('invoice_history').insert({
+      invoice_id: invoice.id,
+      event_type: 'payment_recorded',
+      event_data: { amount, payment_method: visitPayment.method, source: 'visit_form' },
+    }).then(() => {}, () => {})
+
+    if (!paymentStored && paymentSchemaError) {
+      logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount })
+    }
+  }
+
+  function openVisitEdit(visit: any) {
+    setVisitEditForm({
+      visit_date: visit.visit_date ? format(new Date(visit.visit_date), "yyyy-MM-dd'T'HH:mm") : '',
+      chief_complaint: visit.chief_complaint || '',
+      examination_findings: visit.examination_findings || '',
+      diagnosis: visit.diagnosis || '',
+      treatment_plan: visit.treatment_plan || '',
+      notes: visit.notes || '',
+    })
+    setEditingVisit(visit)
+  }
+
+  async function handleVisitEditSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingVisit) return
+    try {
+      await logEdit({
+        entityType: 'patient_visit',
+        entityId: editingVisit.id,
+        entityLabel: editingVisit.chief_complaint || 'Visit',
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        previousPayload: editingVisit,
+      })
+      const { error } = await supabase.from('patient_visits').update({
+        visit_date: visitEditForm.visit_date ? new Date(visitEditForm.visit_date).toISOString() : editingVisit.visit_date,
+        chief_complaint: visitEditForm.chief_complaint || null,
+        examination_findings: visitEditForm.examination_findings || null,
+        diagnosis: visitEditForm.diagnosis || null,
+        treatment_plan: visitEditForm.treatment_plan || null,
+        notes: visitEditForm.notes || null,
+      }).eq('id', editingVisit.id)
+      if (error) throw error
+      setEditingVisit(null)
+      loadPatientData()
+    } catch (error) {
+      console.error('Error updating visit:', error)
+      alert('Failed to update visit')
+    }
+  }
+
+  async function handleDeleteVisit(visit: any) {
+    if (!canDelete()) return
+    if (!confirm('Delete this visit record? Treatments and invoices from this visit are separate records and will NOT be deleted.')) return
+    try {
+      await logDeletion({
+        entityType: 'patient_visit',
+        entityId: visit.id,
+        entityLabel: visit.chief_complaint || 'Visit',
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        payload: visit,
+      })
+      await supabase.from('patient_visits').delete().eq('id', visit.id)
+      loadPatientData()
+    } catch (error) {
+      console.error('Error deleting visit:', error)
+      alert('Failed to delete visit')
     }
   }
 
@@ -1289,8 +1430,6 @@ export function PatientProfile() {
     switch (sectionId) {
       case 'appointments':
         return appointments.length
-      case 'bookings':
-        return upcomingAppointments.length
       case 'billing':
         return pendingInvoices.length
       case 'files':
@@ -1700,9 +1839,31 @@ export function PatientProfile() {
         <div className="divide-y divide-gray-200">
           {visits.map((visit) => (
             <div key={visit.id} className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <CalendarIcon className="w-4 h-4 text-text-secondary" />
-                <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-text-secondary" />
+                  <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => openVisitEdit(visit)}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                    title="Edit"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  {canDelete() && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVisit(visit)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
               {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
               {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
@@ -1962,78 +2123,49 @@ export function PatientProfile() {
     </div>
   )
 
-  const renderAppointmentsSection = () => (
-    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
-      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-        <h3 className="font-semibold">Appointment History</h3>
-        <Button onClick={() => setShowAppointmentForm(true)} size="sm">
-          <Plus className="w-4 h-4 mr-2" />
-          New Appointment
-        </Button>
-      </div>
-      {appointments.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
-      ) : (
-        <div className="divide-y divide-gray-200">
-          {appointments.map((appointment) => (
-            <div key={appointment.id} className="p-4 flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
-                <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
-                {appointment.notes && <div className="text-sm mt-1">{appointment.notes}</div>}
-              </div>
-              <span className={`px-2 py-1 text-xs rounded-full ${
-                appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                'bg-blue-100 text-blue-800'
-              }`}>
-                {appointment.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-
-  const renderBookingsSection = () => (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-gray-200 bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-semibold">Upcoming Bookings</h3>
-            <p className="mt-1 text-sm text-text-secondary">Manage the next patient visits and scheduling flow.</p>
-          </div>
+  const renderAppointmentsSection = () => {
+    const upcomingIds = new Set(upcomingAppointments.map((appointment) => appointment.id))
+    const pastAppointments = appointments.filter((appointment) => !upcomingIds.has(appointment.id))
+    const orderedAppointments = [...upcomingAppointments, ...pastAppointments]
+    return (
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="font-semibold">Appointments</h3>
           <Button onClick={() => setShowAppointmentForm(true)} size="sm">
             <Plus className="w-4 h-4 mr-2" />
-            Schedule Booking
+            New Appointment
           </Button>
         </div>
-      </div>
-
-      <InfoCard title="Next Visits">
-        {upcomingAppointments.length === 0 ? (
-          <EmptyState message="No future bookings are currently scheduled." />
+        {orderedAppointments.length === 0 ? (
+          <div className="p-8 text-center text-text-secondary">No appointments recorded</div>
         ) : (
-          <div className="space-y-3">
-            {upcomingAppointments.map((appointment) => (
-              <div key={appointment.id} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
-                    <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
-                  </div>
-                  <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-                    {appointment.status || 'Scheduled'}
+          <div className="divide-y divide-gray-200">
+            {orderedAppointments.map((appointment) => (
+              <div key={appointment.id} className="p-4 flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="font-medium">{formatDateValue(appointment.date_time, 'MMMM d, yyyy h:mm a')}</div>
+                  <div className="text-sm text-text-secondary">{appointment.type} • {appointment.duration} min</div>
+                  {appointment.notes && <div className="text-sm mt-1">{appointment.notes}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {upcomingIds.has(appointment.id) && (
+                    <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">Upcoming</span>
+                  )}
+                  <span className={`px-2 py-1 text-xs rounded-full ${
+                    appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                    appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                    'bg-blue-100 text-blue-800'
+                  }`}>
+                    {appointment.status}
                   </span>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </InfoCard>
-    </div>
-  )
+      </div>
+    )
+  }
 
   const renderFormsSection = () => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -2284,6 +2416,35 @@ export function PatientProfile() {
           ))}
         </div>
       )}
+      {prescriptions.length > 0 && (
+        <div className="mt-6">
+          <h4 className="font-semibold mb-3">Prescription Summaries</h4>
+          <div className="space-y-4">
+            {prescriptions.slice(0, 5).map((prescription) => {
+              const medicationNames = Array.isArray(prescription.medications)
+                ? prescription.medications.map((med: any) => med?.name).filter(Boolean).join(', ')
+                : ''
+              const medicationCount = Array.isArray(prescription.medications) ? prescription.medications.length : 0
+              return (
+                <div key={prescription.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="font-medium">{formatDateValue(prescription.prescribed_date, 'MMMM d, yyyy h:mm a')}</div>
+                    <span className="text-sm text-primary">{prescription.diagnosis || prescription.chief_complaint || 'Prescription'}</span>
+                  </div>
+                  {medicationNames && (
+                    <div className="mt-3 text-sm">
+                      <span className="font-medium text-text-secondary">Medications:</span> {medicationNames}
+                    </div>
+                  )}
+                  {medicationCount > 0 && (
+                    <div className="mt-2 text-xs text-text-secondary">{medicationCount} medication(s)</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -2436,8 +2597,6 @@ export function PatientProfile() {
         return renderPrescriptionsSection()
       case 'forms':
         return renderFormsSection()
-      case 'bookings':
-        return renderBookingsSection()
       case 'operations':
         return renderOperationsSection()
       case 'visits':
@@ -2669,6 +2828,76 @@ export function PatientProfile() {
           onSubmit={handleVisitSubmit}
           onClose={() => setShowVisitForm(false)}
         />
+      )}
+
+      {editingVisit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold">Edit Visit</h2>
+            </div>
+            <form onSubmit={handleVisitEditSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Visit Date & Time</label>
+                <input
+                  type="datetime-local"
+                  value={visitEditForm.visit_date}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, visit_date: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Chief Complaint</label>
+                <input
+                  type="text"
+                  value={visitEditForm.chief_complaint}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, chief_complaint: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Examination Findings</label>
+                <input
+                  type="text"
+                  value={visitEditForm.examination_findings}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, examination_findings: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Diagnosis</label>
+                <input
+                  type="text"
+                  value={visitEditForm.diagnosis}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, diagnosis: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Treatment Plan</label>
+                <input
+                  type="text"
+                  value={visitEditForm.treatment_plan}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, treatment_plan: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Notes</label>
+                <textarea
+                  rows={2}
+                  value={visitEditForm.notes}
+                  onChange={(e) => setVisitEditForm({ ...visitEditForm, notes: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <Button type="submit" className="flex-1">Save Changes</Button>
+                <Button type="button" variant="outline" onClick={() => setEditingVisit(null)} className="flex-1">Cancel</Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {showPrescriptionForm && (
@@ -2957,10 +3186,13 @@ function VisitFormModal({
 }: any) {
   const validTreatments = (treatmentsDone as VisitTreatmentEntry[]).filter((entry) => entry.description.trim())
   const selectedPlanned = (plannedTreatments as any[]).filter((t) => plannedSelections[t.id]?.selected)
+  // Only uninvoiced plan items go on the new invoice; billed ones route the
+  // payment to their existing invoice instead.
+  const selectedUnbilled = selectedPlanned.filter((t) => !t.is_invoiced && !t.invoice_id)
   // Ad-hoc entries create one treatment row per tooth, each at the entry's cost
   const treatmentsTotal =
     validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
-    selectedPlanned.reduce((sum, t) => sum + (parseFloat(plannedSelections[t.id]?.cost) || 0), 0)
+    selectedUnbilled.reduce((sum, t) => sum + (parseFloat(plannedSelections[t.id]?.cost) || 0), 0)
   const hasAnyDone = validTreatments.length > 0 || selectedPlanned.length > 0
 
   function updateTreatmentEntry(index: number, patch: Partial<VisitTreatmentEntry>) {
@@ -3062,6 +3294,9 @@ function VisitFormModal({
                           onChange={() => togglePlanned(t.id, String(t.cost ?? ''))}
                         />
                         {buildTreatmentLabel(t)}
+                        {(t.is_invoiced || t.invoice_id) && (
+                          <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">Billed</span>
+                        )}
                       </label>
                       {selection?.selected && (
                         <div className="flex flex-wrap items-center gap-2 pl-6">
@@ -3171,7 +3406,11 @@ function VisitFormModal({
                   <span className="text-xs text-text-secondary">Treatments total: {formatBDT(treatmentsTotal)}</span>
                 </div>
                 {(parseFloat(payment.amount) || 0) > 0 && (
-                  <p className="text-xs text-text-secondary">A new invoice will be generated for the treatments above.</p>
+                  <p className="text-xs text-text-secondary">
+                    {selectedUnbilled.length > 0 || validTreatments.length > 0
+                      ? 'A new invoice will be generated for the unbilled treatments above.'
+                      : 'This payment will be applied to the existing invoice of the billed item(s).'}
+                  </p>
                 )}
               </div>
             ) : (

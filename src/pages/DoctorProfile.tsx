@@ -119,6 +119,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   invoice: 'Invoice',
   patient_file: 'Patient File',
   inventory_item: 'Inventory Item',
+  patient_visit: 'Visit',
 }
 
 type HistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'patient_file' | 'inventory_item'
