@@ -1979,11 +1979,18 @@ export function PatientProfile() {
 
   const renderOperationsSection = () => {
     const planGroupCounts = new Map<string, number>()
+    const planGroupTeeth = new Map<string, number[]>()
     treatments.forEach((t) => {
       if (t.treatment_plan_group_id) {
         planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+        if (t.tooth_number != null) {
+          const teeth = planGroupTeeth.get(t.treatment_plan_group_id) || []
+          if (!teeth.includes(t.tooth_number)) teeth.push(t.tooth_number)
+          planGroupTeeth.set(t.treatment_plan_group_id, teeth)
+        }
       }
     })
+    planGroupTeeth.forEach((teeth) => teeth.sort((a, b) => a - b))
     return (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -2054,7 +2061,12 @@ export function PatientProfile() {
                     </div>
                     {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
                   </td>
-                  <td className="px-4 py-3 text-sm">{treatment.tooth_number || 'N/A'}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {treatment.tooth_number || 'N/A'}
+                    {treatment.tooth_number != null && treatment.treatment_plan_group_id && (planGroupTeeth.get(treatment.treatment_plan_group_id) || []).length > 1 && (
+                      <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(treatment.treatment_plan_group_id) || []).join(', ')})</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <select
                       value={treatment.status}
@@ -2719,7 +2731,7 @@ export function PatientProfile() {
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-6 page-fade-in">
+    <div className="space-y-6 pb-40 md:pb-6 page-fade-in">
       <div className="flex items-center gap-3">
         <Button variant="outline" size="sm" onClick={() => navigate('/patients')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
