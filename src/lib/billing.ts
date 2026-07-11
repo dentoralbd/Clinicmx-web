@@ -125,6 +125,55 @@ export function buildTreatmentLabel(treatment: PendingTreatmentLike) {
   return detail ? `${treatment.treatment_type}${tooth} – ${detail}` : `${treatment.treatment_type}${tooth}`
 }
 
+const TOOTH_TOKEN_PATTERN = /^(.+?)\s*\(T(\d+)\)(?:\s*–\s*(.*))?$/
+
+/**
+ * Display-only grouping for the receipt layout: merges lines that are identical
+ * apart from tooth number (same treatment name, same detail text, same unit price)
+ * into one line like "Filling (T23, T45)" with summed quantity. Variants that
+ * differ in name, detail, or price (e.g. GI vs Composite filling) stay separate.
+ */
+export function groupSimilarInvoiceItems(items: BillingLineItem[]): BillingLineItem[] {
+  const grouped = new Map<string, { base: string; detail: string; teeth: string[]; item: BillingLineItem }>()
+
+  for (const item of items) {
+    const description = item.description?.trim() || ''
+    const match = description.match(TOOTH_TOKEN_PATTERN)
+    const base = match ? match[1].trim() : description
+    const tooth = match ? match[2] : null
+    const detail = match ? (match[3]?.trim() || '') : ''
+    const unitPrice = getInvoiceItemUnitPrice(item)
+    const key = `${base}::${detail}::${unitPrice}`
+    const existing = grouped.get(key)
+
+    if (existing) {
+      if (tooth) existing.teeth.push(tooth)
+      const prev = existing.item
+      existing.item = {
+        ...prev,
+        quantity: String(getInvoiceItemQuantity(prev) + getInvoiceItemQuantity(item)),
+        line_total: roundCurrency(getInvoiceItemLineTotal(prev) + getInvoiceItemLineTotal(item)),
+        amount: roundCurrency(getInvoiceItemLineTotal(prev) + getInvoiceItemLineTotal(item)),
+        source_treatment_ids: [
+          ...(prev.source_treatment_ids || []),
+          ...(item.source_treatment_ids || (item.source_treatment_id ? [item.source_treatment_id] : [])),
+        ],
+      }
+      continue
+    }
+
+    grouped.set(key, { base, detail, teeth: tooth ? [tooth] : [], item: { ...item } })
+  }
+
+  if (grouped.size === items.length) return items
+
+  return Array.from(grouped.values()).map(({ base, detail, teeth, item }) => {
+    const toothPart = teeth.length > 0 ? ` (${teeth.map((t) => `T${t}`).join(', ')})` : ''
+    const detailPart = detail ? ` – ${detail}` : ''
+    return { ...item, description: `${base}${toothPart}${detailPart}` }
+  })
+}
+
 export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[]) {
   const groupedItems = new Map<string, BillingLineItem>()
 

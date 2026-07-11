@@ -6,6 +6,7 @@ import {
   getInvoiceItemQuantity,
   getInvoiceItemUnitPrice,
   getInvoiceItemSubtotal,
+  groupSimilarInvoiceItems,
   type BillingLineItem,
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
@@ -52,6 +53,8 @@ export interface BuildInvoicePdfOptions {
   logoSrc?: string
   /** Single-invoice only: matches the on-screen Detailed/Receipt toggle */
   format?: 'detailed' | 'receipt'
+  /** Receipt format only: merge lines identical apart from tooth number */
+  groupSimilar?: boolean
 }
 
 function invoiceLabel(invoice: PdfInvoice) {
@@ -279,7 +282,8 @@ function buildReceiptInvoicePdf(
   invoice: PdfInvoice,
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
-  logoSrc?: string
+  logoSrc?: string,
+  groupSimilar?: boolean
 ): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
@@ -343,7 +347,8 @@ function buildReceiptInvoicePdf(
   }
   y = Math.max(leftY, rightY) + 12
 
-  const items = Array.isArray(invoice.items) ? invoice.items : []
+  const rawItems = Array.isArray(invoice.items) ? invoice.items : []
+  const items = groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
   const rows =
     items.length > 0
       ? items.map((item, idx) => [
@@ -557,17 +562,22 @@ export function buildInvoicePdf(
 ): jsPDF {
   if (invoices.length <= 1) {
     return options.format === 'receipt'
-      ? buildReceiptInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
+      ? buildReceiptInvoicePdf(invoices[0], patient, doctor, options.logoSrc, options.groupSimilar)
       : buildSingleInvoicePdf(invoices[0], patient, doctor, options.logoSrc)
   }
   return buildCombinedInvoicePdf(invoices, patient, doctor, options, options.logoSrc)
 }
 
-export function invoicePdfFileName(invoices: PdfInvoice[], patient: PdfPatient): string {
+export function invoicePdfFileName(
+  invoices: PdfInvoice[],
+  patient: PdfPatient,
+  format?: 'detailed' | 'receipt'
+): string {
   const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
   if (invoices.length <= 1) {
     const idPart = invoices[0]?.invoice_number || invoices[0]?.id.slice(0, 8).toUpperCase() || 'Invoice'
-    return `Invoice_${namePart}_${idPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
+    const formatPart = format === 'receipt' ? '_Receipt' : format === 'detailed' ? '_Detailed' : ''
+    return `Invoice_${namePart}_${idPart}${formatPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
   }
   return `Statement_${namePart}_${invoices.length}invoices.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }

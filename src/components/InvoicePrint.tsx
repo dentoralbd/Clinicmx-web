@@ -6,6 +6,7 @@ import {
   getInvoiceItemQuantity,
   getInvoiceItemUnitPrice,
   getInvoiceItemSubtotal,
+  groupSimilarInvoiceItems,
   isSchemaCompatibilityError,
   logBillingError,
   type BillingLineItem,
@@ -151,12 +152,15 @@ function ReceiptStyleInvoice({
   invoice,
   patient,
   doctor,
+  groupSimilar,
 }: {
   invoice: PrintableInvoice
   patient: InvoicePrintProps['patient']
   doctor: DoctorProfileData | null
+  groupSimilar?: boolean
 }) {
-  const items = Array.isArray(invoice.items) ? invoice.items : []
+  const rawItems = Array.isArray(invoice.items) ? invoice.items : []
+  const items = groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
   const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
   const discountAmount = invoice.discount_amount || 0
   const roundingOff = roundCurrency((invoice.total_amount || 0) - (subtotal - discountAmount))
@@ -337,6 +341,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   const [showItems, setShowItems] = useState(true)
   const [showPayments, setShowPayments] = useState(true)
   const [format, setFormat] = useState<'detailed' | 'receipt'>('detailed')
+  const [groupSimilar, setGroupSimilar] = useState(false)
   const [payments, setPayments] = useState<StatementPaymentRow[]>([])
 
   const visibleInvoices = combined && dueOnly ? invoices.filter((invoice) => getInvoiceDue(invoice) > 0) : invoices
@@ -431,8 +436,9 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         ? 'Statement (Due)'
         : 'Combined Invoice'
       : invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : '')
+    const formatPart = combined ? '' : format === 'receipt' ? 'Receipt' : 'Detailed'
     document.title =
-      [namePart, idPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
+      [namePart, idPart, formatPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
       originalTitleRef.current
     window.print()
   }
@@ -466,8 +472,9 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
       payments: showPayments ? visiblePayments : [],
       logoSrc,
       format,
+      groupSimilar,
     })
-    const fileName = invoicePdfFileName(visibleInvoices, patient)
+    const fileName = invoicePdfFileName(visibleInvoices, patient, format)
     const subject = combined
       ? `${dueOnly ? 'Statement (Due)' : 'Combined Invoice'} - ${patient.first_name} ${patient.last_name}`
       : `Invoice ${invoices[0]?.invoice_number || invoices[0]?.id}`
@@ -566,6 +573,12 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
           >
             Receipt
           </button>
+          {format === 'receipt' && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pl-2 ml-1 border-l border-gray-200">
+              <input type="checkbox" checked={groupSimilar} onChange={(e) => setGroupSimilar(e.target.checked)} />
+              Group similar
+            </label>
+          )}
         </div>
       )}
 
@@ -668,7 +681,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         ) : format === 'receipt' ? (
           <div className="space-y-6">
             {invoices.map((invoice) => (
-              <ReceiptStyleInvoice key={invoice.id} invoice={invoice} patient={patient} doctor={doctor} />
+              <ReceiptStyleInvoice key={invoice.id} invoice={invoice} patient={patient} doctor={doctor} groupSimilar={groupSimilar} />
             ))}
           </div>
         ) : (
