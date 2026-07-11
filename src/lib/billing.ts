@@ -168,7 +168,8 @@ export function groupSimilarInvoiceItems(items: BillingLineItem[]): BillingLineI
   if (grouped.size === items.length) return items
 
   return Array.from(grouped.values()).map(({ base, detail, teeth, item }) => {
-    const toothPart = teeth.length > 0 ? ` (${teeth.map((t) => `T${t}`).join(', ')})` : ''
+    const sortedTeeth = [...teeth].sort((a, b) => Number(a) - Number(b))
+    const toothPart = sortedTeeth.length > 0 ? ` (${sortedTeeth.map((t) => `T${t}`).join(', ')})` : ''
     const detailPart = detail ? ` – ${detail}` : ''
     return { ...item, description: `${base}${toothPart}${detailPart}` }
   })

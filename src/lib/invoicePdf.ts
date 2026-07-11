@@ -51,7 +51,7 @@ export interface BuildInvoicePdfOptions {
   payments?: PdfPayment[]
   /** Clinic/doctor logo as a data URL — same source used by the on-screen letterhead */
   logoSrc?: string
-  /** Single-invoice only: matches the on-screen Detailed/Receipt toggle */
+  /** Matches the on-screen Detailed/Receipt toggle (applies to single invoices and combined statements) */
   format?: 'detailed' | 'receipt'
   /** Receipt format only: merge lines identical apart from tooth number */
   groupSimilar?: boolean
@@ -434,8 +434,11 @@ function buildCombinedInvoicePdf(
   doc.text(`Date: ${safeFormat(new Date().toISOString(), 'dd MMM yyyy')}`, pageWidth - marginX, y, { align: 'right' })
   y += 20
 
+  const receipt = options.format === 'receipt'
+
   for (const invoice of invoices) {
-    const items = Array.isArray(invoice.items) ? invoice.items : []
+    const rawItems = Array.isArray(invoice.items) ? invoice.items : []
+    const items = receipt && options.groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
     const adjustments: string[] = []
     if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount -${formatBDT(invoice.discount_amount || 0)}`)
     if ((invoice.tax_amount || 0) > 0) {
@@ -459,25 +462,49 @@ function buildCombinedInvoicePdf(
     y += 8
 
     if (showItems) {
-      const rows =
-        items.length > 0
-          ? items.map((item) => [
-              formatInvoiceItemLabel({ ...item, quantity: 1 }),
-              String(getInvoiceItemQuantity(item)),
-              formatBDT(getInvoiceItemUnitPrice(item)),
-              formatBDT(getInvoiceItemLineTotal(item)),
-            ])
-          : [['Invoice total', '', '', formatBDT(invoice.total_amount)]]
+      if (receipt) {
+        const rows =
+          items.length > 0
+            ? items.map((item, idx) => [
+                String(idx + 1),
+                formatInvoiceItemLabel({ ...item, quantity: 1 }),
+                String(getInvoiceItemQuantity(item)),
+                formatBDT(getInvoiceItemUnitPrice(item)),
+                formatBDT(0),
+                formatBDT(getInvoiceItemLineTotal(item)),
+              ])
+            : [['1', 'Invoice total', '', '', formatBDT(0), formatBDT(invoice.total_amount)]]
 
-      autoTable(doc, {
-        startY: y,
-        head: [['Description', 'Qty', 'Unit Price', 'Amount']],
-        body: rows,
-        margin: { left: marginX, right: marginX },
-        styles: { font: 'helvetica', fontSize: 8, cellPadding: 4 },
-        headStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], lineWidth: 0.5, lineColor: [30, 30, 30] },
-        columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-      })
+        autoTable(doc, {
+          startY: y,
+          head: [['Sl.', 'Product/Treatment', 'Qty', 'Price', 'Discount', 'Amount']],
+          body: rows,
+          margin: { left: marginX, right: marginX },
+          styles: { font: 'helvetica', fontSize: 8, cellPadding: 4 },
+          headStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], lineWidth: 0.5, lineColor: [30, 30, 30] },
+          columnStyles: { 2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+        })
+      } else {
+        const rows =
+          items.length > 0
+            ? items.map((item) => [
+                formatInvoiceItemLabel({ ...item, quantity: 1 }),
+                String(getInvoiceItemQuantity(item)),
+                formatBDT(getInvoiceItemUnitPrice(item)),
+                formatBDT(getInvoiceItemLineTotal(item)),
+              ])
+            : [['Invoice total', '', '', formatBDT(invoice.total_amount)]]
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Description', 'Qty', 'Unit Price', 'Amount']],
+          body: rows,
+          margin: { left: marginX, right: marginX },
+          styles: { font: 'helvetica', fontSize: 8, cellPadding: 4 },
+          headStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], lineWidth: 0.5, lineColor: [30, 30, 30] },
+          columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+        })
+      }
       y = lastAutoTableY(doc) + 6
     } else {
       y += 4
@@ -579,5 +606,6 @@ export function invoicePdfFileName(
     const formatPart = format === 'receipt' ? '_Receipt' : format === 'detailed' ? '_Detailed' : ''
     return `Invoice_${namePart}_${idPart}${formatPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
   }
-  return `Statement_${namePart}_${invoices.length}invoices.pdf`.replace(/[\\/:*?"<>|]/g, '-')
+  const formatPart = format === 'receipt' ? '_Receipt' : format === 'detailed' ? '_Detailed' : ''
+  return `Statement_${namePart}_${invoices.length}invoices${formatPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }

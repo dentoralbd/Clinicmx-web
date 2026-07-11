@@ -258,27 +258,54 @@ function ReceiptStyleInvoice({
   )
 }
 
-/** Combined mode: one compact table, one tbody per invoice (the page-break unit). */
-function StatementTable({ invoices, showItems }: { invoices: PrintableInvoice[]; showItems: boolean }) {
+/** Combined mode: one compact table, one tbody per invoice (the page-break unit). Mirrors the
+ * single-invoice Detailed/Receipt formats so combined statements stay consistent site-wide. */
+function StatementTable({
+  invoices,
+  showItems,
+  format,
+  groupSimilar,
+}: {
+  invoices: PrintableInvoice[]
+  showItems: boolean
+  format: 'detailed' | 'receipt'
+  groupSimilar: boolean
+}) {
+  const receipt = format === 'receipt'
+  const colCount = receipt ? 6 : 4
   return (
     <table className="w-full text-sm border-collapse">
       <thead>
         <tr className="border-b-2 border-gray-800 text-left">
-          <th className="py-1.5 pr-2 font-semibold">Description</th>
-          <th className="py-1.5 px-2 font-semibold text-center w-16">Qty</th>
-          <th className="py-1.5 px-2 font-semibold text-right w-28">Unit Price</th>
-          <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+          {receipt ? (
+            <>
+              <th className="py-1.5 pr-2 font-semibold w-10">Sl.</th>
+              <th className="py-1.5 px-2 font-semibold">Product/Treatment</th>
+              <th className="py-1.5 px-2 font-semibold text-center w-16">Qty</th>
+              <th className="py-1.5 px-2 font-semibold text-right w-24">Price</th>
+              <th className="py-1.5 px-2 font-semibold text-right w-24">Discount</th>
+              <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+            </>
+          ) : (
+            <>
+              <th className="py-1.5 pr-2 font-semibold">Description</th>
+              <th className="py-1.5 px-2 font-semibold text-center w-16">Qty</th>
+              <th className="py-1.5 px-2 font-semibold text-right w-28">Unit Price</th>
+              <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+            </>
+          )}
         </tr>
       </thead>
       {invoices.length === 0 ? (
         <tbody>
           <tr>
-            <td colSpan={4} className="py-3 text-center text-gray-500">No outstanding invoices.</td>
+            <td colSpan={colCount} className="py-3 text-center text-gray-500">No outstanding invoices.</td>
           </tr>
         </tbody>
       ) : (
         invoices.map((invoice) => {
-          const items = Array.isArray(invoice.items) ? invoice.items : []
+          const rawItems = Array.isArray(invoice.items) ? invoice.items : []
+          const items = receipt && groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
           const due = getInvoiceDue(invoice)
           const adjustments: string[] = []
           if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount −${formatBDT(invoice.discount_amount || 0)}`)
@@ -289,7 +316,7 @@ function StatementTable({ invoices, showItems }: { invoices: PrintableInvoice[];
           return (
             <tbody key={invoice.id} className="statement-invoice-block">
               <tr className="bg-gray-100">
-                <td colSpan={4} className="py-1.5 px-2">
+                <td colSpan={colCount} className="py-1.5 px-2">
                   <span className="font-bold">Invoice {invoiceLabel(invoice)}</span>
                   <span className="text-xs text-gray-600">
                     {' '}• {safeFormat(invoice.created_at, 'dd MMM yyyy')}
@@ -302,9 +329,20 @@ function StatementTable({ invoices, showItems }: { invoices: PrintableInvoice[];
               {showItems &&
                 (items.length === 0 ? (
                   <tr className="border-b border-gray-200">
-                    <td className="py-1.5 pr-2 text-gray-500" colSpan={3}>Invoice total</td>
+                    <td className="py-1.5 pr-2 text-gray-500" colSpan={colCount - 1}>Invoice total</td>
                     <td className="py-1.5 pl-2 text-right">{formatBDT(invoice.total_amount)}</td>
                   </tr>
+                ) : receipt ? (
+                  items.map((item, idx) => (
+                    <tr key={idx} className="border-b border-gray-200">
+                      <td className="py-1.5 pr-2">{idx + 1}</td>
+                      <td className="py-1.5 px-2">{formatInvoiceItemLabel({ ...item, quantity: 1 })}</td>
+                      <td className="py-1.5 px-2 text-center">{getInvoiceItemQuantity(item)}</td>
+                      <td className="py-1.5 px-2 text-right">{formatBDT(getInvoiceItemUnitPrice(item))}</td>
+                      <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
+                      <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item))}</td>
+                    </tr>
+                  ))
                 ) : (
                   items.map((item, idx) => (
                     <tr key={idx} className="border-b border-gray-200">
@@ -316,7 +354,7 @@ function StatementTable({ invoices, showItems }: { invoices: PrintableInvoice[];
                   ))
                 ))}
               <tr>
-                <td colSpan={4} className="py-1.5 px-2 text-right border-b border-gray-800">
+                <td colSpan={colCount} className="py-1.5 px-2 text-right border-b border-gray-800">
                   <span className="text-gray-600">Total</span>{' '}
                   <span className="font-semibold">{formatBDT(invoice.total_amount || 0)}</span>
                   <span className="text-gray-400"> · </span>
@@ -417,14 +455,12 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
 
   const originalTitleRef = useRef('')
 
+  // Keep the invoice-named title until the modal closes: Android fires
+  // 'afterprint' as soon as the print dialog opens, so restoring the title
+  // there makes the saved PDF pick up the app title instead of the invoice name.
   useEffect(() => {
     originalTitleRef.current = document.title
-    const restoreTitle = () => {
-      document.title = originalTitleRef.current
-    }
-    window.addEventListener('afterprint', restoreTitle)
     return () => {
-      window.removeEventListener('afterprint', restoreTitle)
       document.title = originalTitleRef.current
     }
   }, [])
@@ -436,7 +472,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         ? 'Statement (Due)'
         : 'Combined Invoice'
       : invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : '')
-    const formatPart = combined ? '' : format === 'receipt' ? 'Receipt' : 'Detailed'
+    const formatPart = format === 'receipt' ? 'Receipt' : 'Detailed'
     document.title =
       [namePart, idPart, formatPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
       originalTitleRef.current
@@ -558,9 +594,8 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         </div>
       )}
 
-      {/* Format options – single-invoice mode only, hidden on print */}
-      {!combined && (
-        <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 flex items-center gap-1">
+      {/* Format options – shown in both single and combined mode, hidden on print */}
+      <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 flex items-center gap-1" style={combined ? { top: '9.5rem' } : undefined}>
           <button
             onClick={() => setFormat('detailed')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${format === 'detailed' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -579,8 +614,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
               Group similar
             </label>
           )}
-        </div>
-      )}
+      </div>
 
       {/* Invoice document */}
       <div
@@ -677,7 +711,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
 
         {/* ── Invoice content: compact statement (combined) or full invoice (single) ── */}
         {combined ? (
-          <StatementTable invoices={visibleInvoices} showItems={showItems} />
+          <StatementTable invoices={visibleInvoices} showItems={showItems} format={format} groupSimilar={groupSimilar} />
         ) : format === 'receipt' ? (
           <div className="space-y-6">
             {invoices.map((invoice) => (

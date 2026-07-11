@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -222,6 +222,17 @@ export function PatientProfile() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [editingTreatment, setEditingTreatment] = useState<any | null>(null)
+  const [groupSimilarTreatments, setGroupSimilarTreatments] = useState(false)
+  const [expandedPlanGroups, setExpandedPlanGroups] = useState<Set<string>>(new Set())
+  const togglePlanGroup = (key: string) => {
+    setExpandedPlanGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
   const [showTreatmentPlanForm, setShowTreatmentPlanForm] = useState(false)
   const [treatmentPlanForm, setTreatmentPlanForm] = useState({
     items: [
@@ -469,6 +480,57 @@ export function PatientProfile() {
     } catch (error) {
       console.error('Error updating treatment status:', error)
       alert('Failed to update treatment status')
+    }
+  }
+
+  async function updateTreatmentFields(treatmentId: string, patch: {
+    treatment_type: string
+    tooth_number: number | null
+    description: string | null
+    cost: number
+    status: string
+    notes: string | null
+  }) {
+    try {
+      const previous = treatments.find((t) => t.id === treatmentId)
+      if (previous) {
+        await logEdit({
+          entityType: 'treatment',
+          entityId: treatmentId,
+          entityLabel: previous.treatment_type,
+          patientId: previous.patient_id,
+          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+          previousPayload: previous,
+        })
+      }
+      const { error } = await supabase.from('treatments').update(patch).eq('id', treatmentId)
+      if (error) throw error
+      setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, ...patch } : t)))
+      setEditingTreatment(null)
+    } catch (error) {
+      console.error('Error updating treatment:', error)
+      alert('Failed to update treatment')
+    }
+  }
+
+  async function deleteTreatmentRow(treatment: any) {
+    if (!canDelete()) return
+    if (!confirm('Delete this treatment?')) return
+    try {
+      await logDeletion({
+        entityType: 'treatment',
+        entityId: treatment.id,
+        entityLabel: treatment.treatment_type,
+        patientId: treatment.patient_id,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        payload: treatment,
+      })
+      const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
+      if (error) throw error
+      setTreatments((prev) => prev.filter((t) => t.id !== treatment.id))
+    } catch (error) {
+      console.error('Error deleting treatment:', error)
+      alert('Failed to delete treatment')
     }
   }
 
@@ -1991,6 +2053,163 @@ export function PatientProfile() {
       }
     })
     planGroupTeeth.forEach((teeth) => teeth.sort((a, b) => a - b))
+
+    const statusBadgeClass = (status: string) =>
+      status === 'Completed' ? 'bg-green-100 text-green-800' :
+      status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+      status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+      'bg-gray-100 text-gray-800'
+
+    const isTreatmentLinked = (treatment: any) =>
+      !!treatment.invoice_id || !!treatment.is_invoiced || linkedTreatmentIds.has(treatment.id)
+
+    // Opt-in grouping: only merges plan rows identical apart from tooth number
+    // (same type, description, cost) — variants like GI vs LC filling stay separate.
+    const planRowKey = (t: any) =>
+      t.treatment_plan_group_id
+        ? `${t.treatment_plan_group_id}::${t.treatment_type}::${(t.description || '').trim()}::${t.cost || 0}`
+        : null
+    const groupBuckets = new Map<string, any[]>()
+    if (groupSimilarTreatments) {
+      treatments.forEach((t) => {
+        const key = planRowKey(t)
+        if (!key) return
+        groupBuckets.set(key, [...(groupBuckets.get(key) || []), t])
+      })
+    }
+    const displayRows: Array<{ kind: 'single'; treatment: any } | { kind: 'group'; key: string; members: any[] }> = []
+    const emittedGroups = new Set<string>()
+    treatments.forEach((t) => {
+      const key = groupSimilarTreatments ? planRowKey(t) : null
+      const members = key ? groupBuckets.get(key) || [] : []
+      if (!key || members.length < 2) {
+        displayRows.push({ kind: 'single', treatment: t })
+      } else if (!emittedGroups.has(key)) {
+        emittedGroups.add(key)
+        displayRows.push({ kind: 'group', key, members })
+      }
+    })
+
+    const renderTreatmentRow = (treatment: any, child = false) => {
+      const isLinked = isTreatmentLinked(treatment)
+      return (
+        <tr key={treatment.id} className={child ? 'bg-blue-50/50 border-l-2 border-blue-200' : undefined}>
+          <td className={`px-4 py-3 text-sm ${child ? 'pl-8 text-text-secondary' : ''}`}>{formatDateValue(treatment.created_at)}</td>
+          <td className="px-4 py-3">
+            <div className={`flex items-center gap-2 ${child ? 'font-normal text-text-secondary' : 'font-medium'}`}>
+              {child && <span className="text-blue-300">&#8627;</span>}
+              {treatment.treatment_type}
+              {!child && treatment.treatment_plan_group_id && (planGroupCounts.get(treatment.treatment_plan_group_id) || 0) > 1 && (
+                <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                  Plan &middot; {planGroupCounts.get(treatment.treatment_plan_group_id)} items
+                </span>
+              )}
+            </div>
+            {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
+          </td>
+          <td className="px-4 py-3 text-sm">
+            {treatment.tooth_number || 'N/A'}
+            {!child && treatment.tooth_number != null && treatment.treatment_plan_group_id && (planGroupTeeth.get(treatment.treatment_plan_group_id) || []).length > 1 && (
+              <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(treatment.treatment_plan_group_id) || []).join(', ')})</span>
+            )}
+          </td>
+          <td className="px-4 py-3">
+            <select
+              value={treatment.status}
+              onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
+              className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
+                treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                treatment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}
+            >
+              <option value="Planned">Planned</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </td>
+          <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
+          <td className="px-4 py-3 text-sm">
+            <span className={`px-2 py-1 text-xs rounded-full ${isLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+              {isLinked ? 'Invoiced' : 'Ready to bill'}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-right">
+            <div className="flex items-center justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => setEditingTreatment(treatment)}
+                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
+                title="Edit"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              {canDelete() && (
+                <button
+                  type="button"
+                  onClick={() => deleteTreatmentRow(treatment)}
+                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </td>
+        </tr>
+      )
+    }
+
+    const renderGroupRow = (key: string, members: any[]) => {
+      const first = members[0]
+      const expanded = expandedPlanGroups.has(key)
+      const teeth = members
+        .map((m) => m.tooth_number)
+        .filter((n): n is number => n != null)
+        .sort((a, b) => a - b)
+      const statusCounts = new Map<string, number>()
+      members.forEach((m) => statusCounts.set(m.status, (statusCounts.get(m.status) || 0) + 1))
+      const totalCost = members.reduce((sum, m) => sum + (m.cost || 0), 0)
+      const linkedCount = members.filter(isTreatmentLinked).length
+      return (
+        <Fragment key={`group-${key}`}>
+          <tr className="cursor-pointer hover:bg-gray-50" onClick={() => togglePlanGroup(key)}>
+            <td className="px-4 py-3 text-sm">{formatDateValue(first.created_at)}</td>
+            <td className="px-4 py-3">
+              <div className="font-medium flex items-center gap-2">
+                {first.treatment_type}
+                <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                  Plan &middot; {members.length} items
+                </span>
+                {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+              </div>
+              {first.description && <div className="text-sm text-text-secondary">{first.description}</div>}
+            </td>
+            <td className="px-4 py-3 text-sm">{teeth.length > 0 ? teeth.join(', ') : 'N/A'}</td>
+            <td className="px-4 py-3">
+              <div className="flex flex-wrap gap-1">
+                {Array.from(statusCounts.entries()).map(([status, count]) => (
+                  <span key={status} className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${statusBadgeClass(status)}`}>
+                    {count} {status}
+                  </span>
+                ))}
+              </div>
+            </td>
+            <td className="px-4 py-3 text-sm">{formatCurrency(totalCost)}</td>
+            <td className="px-4 py-3 text-sm">
+              <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${linkedCount === members.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                {linkedCount === members.length ? 'Invoiced' : linkedCount === 0 ? 'Ready to bill' : `${linkedCount}/${members.length} invoiced`}
+              </span>
+            </td>
+            <td className="px-4 py-3 text-right text-xs text-gray-400">Expand to edit</td>
+          </tr>
+          {expanded && members.map((m) => renderTreatmentRow(m, true))}
+        </Fragment>
+      )
+    }
+
     return (
     <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -1998,7 +2217,15 @@ export function PatientProfile() {
           <h3 className="font-semibold">Treatment History</h3>
           <p className="text-sm text-text-secondary mt-1">{pendingBillableTreatments.length} treatment(s) ready to bill</p>
         </div>
-        <div className="flex flex-wrap gap-2 justify-end">
+        <div className="flex flex-wrap gap-2 justify-end items-center">
+          <label className="flex items-center gap-1.5 text-sm text-text-secondary cursor-pointer mr-1">
+            <input
+              type="checkbox"
+              checked={groupSimilarTreatments}
+              onChange={(e) => setGroupSimilarTreatments(e.target.checked)}
+            />
+            Group similar
+          </label>
           <Button size="sm" variant="outline" onClick={() => setShowInvoiceForm(true)} disabled={pendingBillableTreatments.length === 0}>
             Bill Pending Treatments
           </Button>
@@ -2041,59 +2268,13 @@ export function PatientProfile() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Billing</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {treatments.map((treatment) => (
-                (() => {
-                  const isLinked = !!treatment.invoice_id || !!treatment.is_invoiced || linkedTreatmentIds.has(treatment.id)
-                  return (
-                <tr key={treatment.id}>
-                  <td className="px-4 py-3 text-sm">{formatDateValue(treatment.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium flex items-center gap-2">
-                      {treatment.treatment_type}
-                      {treatment.treatment_plan_group_id && (planGroupCounts.get(treatment.treatment_plan_group_id) || 0) > 1 && (
-                        <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                          Plan &middot; {planGroupCounts.get(treatment.treatment_plan_group_id)} items
-                        </span>
-                      )}
-                    </div>
-                    {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {treatment.tooth_number || 'N/A'}
-                    {treatment.tooth_number != null && treatment.treatment_plan_group_id && (planGroupTeeth.get(treatment.treatment_plan_group_id) || []).length > 1 && (
-                      <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(treatment.treatment_plan_group_id) || []).join(', ')})</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={treatment.status}
-                      onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
-                      className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
-                        treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                        treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                        treatment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      <option value="Planned">Planned</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 text-xs rounded-full ${isLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {isLinked ? 'Invoiced' : 'Ready to bill'}
-                    </span>
-                  </td>
-                </tr>
-                  )
-                })()
-              ))}
+              {displayRows.map((row) =>
+                row.kind === 'group' ? renderGroupRow(row.key, row.members) : renderTreatmentRow(row.treatment)
+              )}
             </tbody>
           </table>
         </div>
@@ -3077,6 +3258,15 @@ export function PatientProfile() {
           onClose={() => setShowTreatmentPlanForm(false)}
           onAddItem={addTreatmentPlanItem}
           onRemoveItem={removeTreatmentPlanItem}
+        />
+      )}
+
+      {editingTreatment && (
+        <EditTreatmentModal
+          treatment={editingTreatment}
+          dentitionType={patientDentition}
+          onSave={updateTreatmentFields}
+          onClose={() => setEditingTreatment(null)}
         />
       )}
 
@@ -4405,6 +4595,147 @@ function PrescriptionFormModal({
               <CheckCircle className="w-4 h-4" />
               {isEditing ? 'Update Prescription' : 'Issue Prescription'}
             </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
+  treatment: any
+  dentitionType: any
+  onSave: (id: string, patch: {
+    treatment_type: string
+    tooth_number: number | null
+    description: string | null
+    cost: number
+    status: string
+    notes: string | null
+  }) => void
+  onClose: () => void
+}) {
+  const [form, setForm] = useState({
+    treatment_type: treatment.treatment_type || '',
+    tooth_number: treatment.tooth_number ?? null,
+    description: treatment.description || '',
+    cost: String(treatment.cost ?? ''),
+    status: treatment.status || 'Planned',
+    notes: treatment.notes || '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(treatment.id, {
+        treatment_type: form.treatment_type,
+        tooth_number: form.tooth_number,
+        description: form.description || null,
+        cost: parseFloat(form.cost) || 0,
+        status: form.status,
+        notes: form.notes || null,
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+          <h2 className="text-xl font-bold">Edit Treatment</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Treatment Type *</label>
+            <select
+              required
+              value={form.treatment_type}
+              onChange={(e) => setForm({ ...form, treatment_type: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Select...</option>
+              <option>Filling</option>
+              <option>Root Canal</option>
+              <option>Crown</option>
+              <option>Bridge</option>
+              <option>Extraction</option>
+              <option>Implant</option>
+              <option>Cleaning</option>
+              <option>Whitening</option>
+              <option>Braces</option>
+              <option>Dentures</option>
+              <option>Scaling</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Tooth</label>
+            <ToothSelector
+              selectedTeeth={form.tooth_number != null ? [form.tooth_number] : []}
+              onChange={(teeth: number[]) => setForm({ ...form, tooth_number: teeth.length > 0 ? teeth[teeth.length - 1] : null })}
+              dentitionType={dentitionType}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Description</label>
+            <textarea
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option>Planned</option>
+                <option>In Progress</option>
+                <option>Completed</option>
+                <option>Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Cost *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={form.cost}
+                onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes</label>
+            <textarea
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</Button>
           </div>
         </form>
       </div>

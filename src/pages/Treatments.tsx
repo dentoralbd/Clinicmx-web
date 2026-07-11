@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Activity, ChevronDown, X } from 'lucide-react'
+import { Plus, Search, Activity, ChevronDown, ChevronUp, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
@@ -24,6 +24,7 @@ interface Treatment {
   patients: {
     first_name: string
     last_name: string
+    date_of_birth?: string | null
   }
 }
 
@@ -32,6 +33,8 @@ export function Treatments() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [groupSimilarTreatments, setGroupSimilarTreatments] = useState(false)
+  const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(null)
 
   useEffect(() => {
     loadTreatments()
@@ -44,7 +47,7 @@ export function Treatments() {
         .from('treatments')
         .select(`
           *,
-          patients (first_name, last_name)
+          patients (first_name, last_name, date_of_birth)
         `)
         .order('created_at', { ascending: false })
 
@@ -108,6 +111,37 @@ export function Treatments() {
     }
   }
 
+  async function updateTreatmentFields(id: string, patch: {
+    treatment_type: string
+    tooth_number: number | null
+    description: string | null
+    cost: number
+    status: string
+    notes: string | null
+  }) {
+    try {
+      const previous = treatments.find((t) => t.id === id)
+      if (previous) {
+        const patientName = `${previous.patients?.first_name ?? ''} ${previous.patients?.last_name ?? ''}`.trim()
+        await logEdit({
+          entityType: 'treatment',
+          entityId: id,
+          entityLabel: previous.treatment_type,
+          patientId: previous.patient_id,
+          patientName: patientName || null,
+          previousPayload: previous,
+        })
+      }
+      const { error } = await supabase.from('treatments').update(patch).eq('id', id)
+      if (error) throw error
+      setTreatments((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+      setEditingTreatment(null)
+    } catch (error) {
+      console.error('Error updating treatment:', error)
+      alert('Failed to update treatment')
+    }
+  }
+
   const filteredTreatments = treatments.filter(
     (t) =>
       (t.patients?.first_name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -129,8 +163,8 @@ export function Treatments() {
       </div>
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
-          <div className="relative">
+        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
             <input
               type="text"
@@ -140,6 +174,14 @@ export function Treatments() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
+          <label className="flex items-center gap-1.5 text-sm text-text-secondary cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={groupSimilarTreatments}
+              onChange={(e) => setGroupSimilarTreatments(e.target.checked)}
+            />
+            Group similar
+          </label>
         </div>
 
         {loading ? (
@@ -158,8 +200,10 @@ export function Treatments() {
                 key={group.patientId}
                 patientName={group.patientName}
                 treatments={group.treatments}
+                groupSimilar={groupSimilarTreatments}
                 onDelete={deleteTreatment}
                 onStatusChange={updateTreatmentStatus}
+                onEdit={setEditingTreatment}
               />
             ))}
           </div>
@@ -170,6 +214,15 @@ export function Treatments() {
         <TreatmentModal
           onClose={() => setShowModal(false)}
           onSave={() => { loadTreatments(); setShowModal(false) }}
+        />
+      )}
+
+      {editingTreatment && (
+        <EditTreatmentModal
+          treatment={editingTreatment}
+          dentitionType={getDentitionTypeFromDOB(editingTreatment.patients?.date_of_birth)}
+          onSave={updateTreatmentFields}
+          onClose={() => setEditingTreatment(null)}
         />
       )}
     </div>
@@ -193,18 +246,56 @@ function groupTreatmentsByPatient(treatments: Treatment[]) {
   return order.map((patientId) => groups.get(patientId)!)
 }
 
-function PatientTreatmentGroup({ patientName, treatments, onDelete, onStatusChange }: {
+function PatientTreatmentGroup({ patientName, treatments, groupSimilar, onDelete, onStatusChange, onEdit }: {
   patientName: string
   treatments: Treatment[]
+  groupSimilar: boolean
   onDelete: (treatment: Treatment) => void
   onStatusChange: (id: string, status: string) => void
+  onEdit: (treatment: Treatment) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [expandedSubGroups, setExpandedSubGroups] = useState<Set<string>>(new Set())
+  const toggleSubGroup = (key: string) => {
+    setExpandedSubGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const planGroupCounts = new Map<string, number>()
   treatments.forEach((t) => {
     if (t.treatment_plan_group_id) {
       planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+    }
+  })
+
+  // Opt-in grouping: only merges rows identical apart from tooth number
+  // (same type, description, cost) — variants like GI vs LC filling stay separate.
+  const groupRowKey = (t: Treatment) =>
+    t.treatment_plan_group_id
+      ? `${t.treatment_plan_group_id}::${t.treatment_type}::${(t.description || '').trim()}::${t.cost || 0}`
+      : null
+  const buckets = new Map<string, Treatment[]>()
+  if (groupSimilar) {
+    treatments.forEach((t) => {
+      const key = groupRowKey(t)
+      if (!key) return
+      buckets.set(key, [...(buckets.get(key) || []), t])
+    })
+  }
+  const displayRows: Array<{ kind: 'single'; treatment: Treatment } | { kind: 'group'; key: string; members: Treatment[] }> = []
+  const emitted = new Set<string>()
+  treatments.forEach((t) => {
+    const key = groupSimilar ? groupRowKey(t) : null
+    const members = key ? buckets.get(key) || [] : []
+    if (!key || members.length < 2) {
+      displayRows.push({ kind: 'single', treatment: t })
+    } else if (!emitted.has(key)) {
+      emitted.add(key)
+      displayRows.push({ kind: 'group', key, members })
     }
   })
 
@@ -223,15 +314,28 @@ function PatientTreatmentGroup({ patientName, treatments, onDelete, onStatusChan
       </button>
       {expanded && (
         <div className="divide-y divide-gray-100 border-t border-gray-100">
-          {treatments.map((treatment) => (
-            <TreatmentRow
-              key={treatment.id}
-              treatment={treatment}
-              planItemCount={treatment.treatment_plan_group_id ? planGroupCounts.get(treatment.treatment_plan_group_id) || 0 : 0}
-              onDelete={() => onDelete(treatment)}
-              onStatusChange={(status) => onStatusChange(treatment.id, status)}
-            />
-          ))}
+          {displayRows.map((row) =>
+            row.kind === 'single' ? (
+              <TreatmentRow
+                key={row.treatment.id}
+                treatment={row.treatment}
+                planItemCount={row.treatment.treatment_plan_group_id ? planGroupCounts.get(row.treatment.treatment_plan_group_id) || 0 : 0}
+                onDelete={() => onDelete(row.treatment)}
+                onStatusChange={(status) => onStatusChange(row.treatment.id, status)}
+                onEdit={() => onEdit(row.treatment)}
+              />
+            ) : (
+              <GroupTreatmentRow
+                key={`group-${row.key}`}
+                members={row.members}
+                expanded={expandedSubGroups.has(row.key)}
+                onToggle={() => toggleSubGroup(row.key)}
+                onDelete={onDelete}
+                onStatusChange={onStatusChange}
+                onEdit={onEdit}
+              />
+            )
+          )}
         </div>
       )}
     </div>
@@ -243,19 +347,87 @@ const STATUS_TRANSITIONS: Record<string, string> = {
   'In Progress': 'Completed',
 }
 
-function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange }: {
+const statusColors: Record<string, string> = {
+  Planned: 'bg-blue-100 text-blue-700',
+  'In Progress': 'bg-yellow-100 text-yellow-700',
+  Completed: 'bg-green-100 text-green-700',
+  Cancelled: 'bg-red-100 text-red-700',
+}
+
+function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChange, onEdit }: {
+  members: Treatment[]
+  expanded: boolean
+  onToggle: () => void
+  onDelete: (treatment: Treatment) => void
+  onStatusChange: (id: string, status: string) => void
+  onEdit: (treatment: Treatment) => void
+}) {
+  const first = members[0]
+  const teeth = members
+    .map((m) => m.tooth_number)
+    .filter((n): n is number => n != null)
+    .sort((a, b) => a - b)
+  const statusCounts = new Map<string, number>()
+  members.forEach((m) => statusCounts.set(m.status, (statusCounts.get(m.status) || 0) + 1))
+  const totalCost = members.reduce((sum, m) => sum + (Number(m.cost) || 0), 0)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full p-4 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium">
+                {first.treatment_type}
+                {teeth.length > 0 && ` - Teeth #${teeth.join(', ')}`}
+              </p>
+              <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                Plan &middot; {members.length} items
+              </span>
+              {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </div>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {Array.from(statusCounts.entries()).map(([status, count]) => (
+                <span key={status} className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[status] || 'bg-gray-100'}`}>
+                  {count} {status}
+                </span>
+              ))}
+            </div>
+            {first.description && (
+              <p className="text-sm text-text-secondary mt-1">{first.description}</p>
+            )}
+            <p className="text-sm font-medium text-primary mt-2">{formatBDT(totalCost)}</p>
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-gray-100 border-t border-gray-100 bg-gray-50">
+          {members.map((treatment) => (
+            <TreatmentRow
+              key={treatment.id}
+              treatment={treatment}
+              onDelete={() => onDelete(treatment)}
+              onStatusChange={(status) => onStatusChange(treatment.id, status)}
+              onEdit={() => onEdit(treatment)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, onEdit }: {
   treatment: Treatment
   planItemCount?: number
   onDelete: () => void
   onStatusChange: (status: string) => void
+  onEdit: () => void
 }) {
-  const statusColors: Record<string, string> = {
-    Planned: 'bg-blue-100 text-blue-700',
-    'In Progress': 'bg-yellow-100 text-yellow-700',
-    Completed: 'bg-green-100 text-green-700',
-    Cancelled: 'bg-red-100 text-red-700',
-  }
-
   const nextStatus = STATUS_TRANSITIONS[treatment.status]
 
   return (
@@ -291,12 +463,160 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange }
               → {nextStatus}
             </button>
           )}
+          <button
+            onClick={onEdit}
+            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
+            title="Edit"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
           {canDelete() && (
             <Button variant="outline" size="sm" onClick={onDelete}>
               Delete
             </Button>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
+  treatment: Treatment
+  dentitionType: any
+  onSave: (id: string, patch: {
+    treatment_type: string
+    tooth_number: number | null
+    description: string | null
+    cost: number
+    status: string
+    notes: string | null
+  }) => void
+  onClose: () => void
+}) {
+  const [form, setForm] = useState({
+    treatment_type: treatment.treatment_type || '',
+    tooth_number: treatment.tooth_number ?? null,
+    description: treatment.description || '',
+    cost: String(treatment.cost ?? ''),
+    status: treatment.status || 'Planned',
+    notes: treatment.notes || '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(treatment.id, {
+        treatment_type: form.treatment_type,
+        tooth_number: form.tooth_number,
+        description: form.description || null,
+        cost: parseFloat(form.cost) || 0,
+        status: form.status,
+        notes: form.notes || null,
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+          <h2 className="text-xl font-bold">Edit Treatment</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Treatment Type *</label>
+            <select
+              required
+              value={form.treatment_type}
+              onChange={(e) => setForm({ ...form, treatment_type: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Select...</option>
+              <option>Filling</option>
+              <option>Root Canal</option>
+              <option>Crown</option>
+              <option>Bridge</option>
+              <option>Extraction</option>
+              <option>Implant</option>
+              <option>Cleaning</option>
+              <option>Whitening</option>
+              <option>Braces</option>
+              <option>Dentures</option>
+              <option>Scaling</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Tooth</label>
+            <ToothSelector
+              selectedTeeth={form.tooth_number != null ? [form.tooth_number] : []}
+              onChange={(teeth: number[]) => setForm({ ...form, tooth_number: teeth.length > 0 ? teeth[teeth.length - 1] : null })}
+              dentitionType={dentitionType}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Description</label>
+            <textarea
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option>Planned</option>
+                <option>In Progress</option>
+                <option>Completed</option>
+                <option>Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Cost *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={form.cost}
+                onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes</label>
+            <textarea
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</Button>
+          </div>
+        </form>
       </div>
     </div>
   )
