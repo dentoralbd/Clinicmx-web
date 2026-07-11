@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, User, Menu, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
-import { clearAppRole, getAppRole } from '@/lib/appSession'
+import { canDelete, canEditClinicProfile, canRevert, clearAppRole, clearAppUser, getAppRole, getAppUser } from '@/lib/appSession'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -15,7 +15,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const role = getAppRole()
-  const roleLabel = role === 'doctor' ? 'Doctor' : 'Operator'
+  const roleLabel = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
+  const userName = getAppUser()?.name
+  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete()
 
   useEffect(() => {
     if (!profileOpen) return
@@ -32,6 +34,7 @@ export function Header({ onMenuClick }: HeaderProps) {
     clearSecureStorageSession()
     localStorage.removeItem('clinicmx_auth')
     clearAppRole()
+    clearAppUser()
     navigate('/login')
   }
 
@@ -55,9 +58,9 @@ export function Header({ onMenuClick }: HeaderProps) {
           </span>
           <span
             className={`inline-flex px-2 py-1 text-xs font-medium rounded border ${
-              role === 'doctor'
-                ? 'bg-primary/10 text-primary border-primary/20'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
+              role === 'operator'
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-primary/10 text-primary border-primary/20'
             }`}
           >
             {roleLabel}
@@ -78,9 +81,22 @@ export function Header({ onMenuClick }: HeaderProps) {
               <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
                 <div className="px-4 py-2 border-b border-gray-100">
                   <p className="text-sm text-text-secondary">Logged in as</p>
-                  <p className="text-sm font-semibold text-gray-900">{roleLabel}</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {role !== 'admin' && userName ? `${userName} (${roleLabel})` : roleLabel}
+                  </p>
                 </div>
-                {role === 'doctor' && (
+                {role === 'admin' ? (
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false)
+                      navigate('/admin')
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <User className="w-4 h-4 text-text-secondary" />
+                    Admin
+                  </button>
+                ) : hasZoneAccess ? (
                   <button
                     onClick={() => {
                       setProfileOpen(false)
@@ -91,7 +107,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                     <User className="w-4 h-4 text-text-secondary" />
                     Doctor Zone
                   </button>
-                )}
+                ) : null}
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"

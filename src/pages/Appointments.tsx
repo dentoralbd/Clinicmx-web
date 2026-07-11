@@ -7,6 +7,7 @@ import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { RescheduleModal } from '@/components/RescheduleModal'
 import { getPatientDobOrAge } from '@/lib/utils'
+import { logActivity } from '@/lib/activityLog'
 
 interface Appointment {
   id: string
@@ -98,6 +99,18 @@ export function Appointments() {
         .update({ status: newStatus })
         .eq('id', id)
       if (error) throw error
+
+      const appt = appointments.find(a => a.id === id)
+      logActivity({
+        action: 'edit',
+        entityType: 'appointment',
+        entityId: id,
+        entityLabel: appt?.type ?? null,
+        patientId: appt?.patient_id ?? null,
+        patientName: appt?.patients ? `${appt.patients.first_name} ${appt.patients.last_name}` : null,
+        details: `Status → ${newStatus}`,
+      })
+
       setAppointments(prev =>
         prev.map(a => a.id === id ? { ...a, status: newStatus } : a)
       )

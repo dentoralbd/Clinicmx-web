@@ -1,20 +1,43 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Stethoscope, UserCog } from 'lucide-react'
+import { ShieldCheck, Stethoscope, UserCog } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { initializeSecureStorage } from '@/lib/secureLocalStorage'
-import { setAppRole, type AppRole } from '@/lib/appSession'
+import { clearAppUser, setAppRole, setAppUser, type AppRole } from '@/lib/appSession'
+import { findAppUserByIdentifier, touchLastLogin, verifyPassword } from '@/lib/appUsers'
+import { logLogin } from '@/lib/activityLog'
 
-const DOCTOR_PASSWORD = '6040'
-const OPERATOR_PASSWORD = '5555'
+const ADMIN_PASSWORD = '6040'
 
 export function Login() {
   const [role, setRole] = useState<AppRole | null>(null)
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [shake, setShake] = useState(false)
   const navigate = useNavigate()
+
+  function failLogin(message: string) {
+    setError(message)
+    setPassword('')
+    setLoading(false)
+    setShake(true)
+    setTimeout(() => setShake(false), 500)
+  }
+
+  async function completeLogin(loginRole: AppRole) {
+    // Always derive the secure-storage encryption key from the admin
+    // password, regardless of role, so previously-encrypted data (doctor
+    // profile, prescription memory) stays readable for every role.
+    await initializeSecureStorage(ADMIN_PASSWORD)
+    setAppRole(loginRole)
+    localStorage.setItem('clinicmx_auth', 'true')
+    // Fire-and-forget: records the login (with best-effort client IP) after the
+    // role/user are set so the actor is stamped with the right name.
+    logLogin()
+    navigate('/dashboard')
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -24,30 +47,43 @@ export function Login() {
     // brief delay for perceived security
     await new Promise((r) => setTimeout(r, 400))
 
-    const expectedPassword = role === 'doctor' ? DOCTOR_PASSWORD : OPERATOR_PASSWORD
+    if (role === 'admin') {
+      if (password === ADMIN_PASSWORD) {
+        clearAppUser()
+        await completeLogin('admin')
+      } else {
+        failLogin('Incorrect password')
+      }
+      return
+    }
 
-    if (password === expectedPassword) {
-      // Always derive the secure-storage encryption key from the doctor
-      // password, regardless of role, so previously-encrypted data (doctor
-      // profile, prescription memory) stays readable for both roles.
-      await initializeSecureStorage(DOCTOR_PASSWORD)
-      setAppRole(role)
-      localStorage.setItem('clinicmx_auth', 'true')
-      navigate('/dashboard')
-    } else {
-      setError('Incorrect password')
-      setPassword('')
-      setLoading(false)
-      setShake(true)
-      setTimeout(() => setShake(false), 500)
+    // Doctor / operator: account created by the admin in the Admin zone
+    try {
+      const account = await findAppUserByIdentifier(identifier, role)
+      if (!account || !(await verifyPassword(password, account.password_salt, account.password_hash))) {
+        failLogin('Incorrect email/phone or password')
+        return
+      }
+      if (!account.is_active) {
+        failLogin('This account is disabled. Contact the admin.')
+        return
+      }
+      setAppUser({ id: account.id, name: account.full_name, permissions: account.permissions })
+      touchLastLogin(account.id)
+      await completeLogin(role)
+    } catch (err) {
+      failLogin(err instanceof Error ? err.message : 'Login failed. Please try again.')
     }
   }
 
   function handleBack() {
     setRole(null)
+    setIdentifier('')
     setPassword('')
     setError('')
   }
+
+  const roleTitle = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center p-4">
@@ -68,10 +104,19 @@ export function Login() {
 
             <button
               type="button"
-              onClick={() => setRole('doctor')}
+              onClick={() => setRole('admin')}
               className="w-full flex items-center gap-4 px-5 py-4 border-2 border-primary/30 rounded-xl hover:border-primary hover:bg-primary/5 transition-colors text-left"
             >
-              <Stethoscope className="w-8 h-8 text-primary shrink-0" />
+              <ShieldCheck className="w-8 h-8 text-primary shrink-0" />
+              <span className="font-semibold text-gray-900">Admin Login</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRole('doctor')}
+              className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors text-left"
+            >
+              <Stethoscope className="w-8 h-8 text-gray-500 shrink-0" />
               <span className="font-semibold text-gray-900">Doctor Login</span>
             </button>
 
@@ -86,9 +131,30 @@ export function Login() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
+            {role !== 'admin' && (
+              <div>
+                <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 mb-2">
+                  Email or phone number
+                </label>
+                <input
+                  id="identifier"
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="Enter email or phone number"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                  autoFocus
+                  disabled={loading}
+                />
+              </div>
+            )}
+
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                {role === 'doctor' ? 'Doctor Password' : 'Operator Password'}
+                {roleTitle} Password
               </label>
               <input
                 id="password"
@@ -102,7 +168,7 @@ export function Login() {
                 className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
                   error ? 'border-red-400 bg-red-50' : 'border-gray-300'
                 }`}
-                autoFocus
+                autoFocus={role === 'admin'}
                 disabled={loading}
               />
               {error && (

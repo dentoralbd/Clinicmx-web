@@ -13,6 +13,7 @@ import {
 } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
+import { logActivity } from '@/lib/activityLog'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 
 interface AdvancedInvoiceModalProps {
@@ -109,6 +110,15 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
         .single()
 
       if (error) throw error
+
+      logActivity({
+        action: 'create',
+        entityType: 'invoice',
+        entityId: data?.id ?? null,
+        entityLabel: formData.invoice_number || null,
+        patientId: formData.patient_id,
+        details: `Total ${formatBDT(totalAmount)} (advanced)`,
+      })
 
       // payment_plans table is added by a later migration — ignore if missing
       const installments = Math.max(parseInt(formData.installment_count, 10) || 1, 1)

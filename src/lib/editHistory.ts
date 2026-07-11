@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type { Json } from './database.types'
-import { getAppRole } from './appSession'
+import { getAuditActor } from './appSession'
+import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
 
 export interface EditLogInput {
@@ -26,11 +27,19 @@ export async function logEdit(input: EditLogInput) {
     patient_id: input.patientId ?? null,
     patient_name: input.patientName ?? null,
     previous_payload: input.previousPayload as Json,
-    edited_by: getAppRole() ?? 'doctor',
+    edited_by: getAuditActor(),
   })
   if (error) {
     throw new Error(`Failed to record edit history: ${error.message}`)
   }
+  logActivity({
+    action: 'edit',
+    entityType: input.entityType,
+    entityId: input.entityId,
+    entityLabel: input.entityLabel,
+    patientId: input.patientId,
+    patientName: input.patientName,
+  })
 }
 
 export interface RevertibleEditEntry {
@@ -79,6 +88,8 @@ export async function revertEdit(entry: RevertibleEditEntry): Promise<{ ok: true
   if (markError) {
     console.error('Failed to mark edit_history entry as reverted:', markError)
   }
+
+  logActivity({ action: 'revert', entityType: entry.entity_type, entityId: entry.entity_id })
 
   return { ok: true }
 }

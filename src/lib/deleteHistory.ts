@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type { Json } from './database.types'
-import { getAppRole } from './appSession'
+import { getAuditActor } from './appSession'
+import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
 
 export type DeletedEntityType = TrackedEntityType | 'patient_file'
@@ -28,11 +29,19 @@ export async function logDeletion(input: DeletionLogInput) {
     patient_id: input.patientId ?? null,
     patient_name: input.patientName ?? null,
     payload: input.payload as Json,
-    deleted_by: getAppRole() ?? 'doctor',
+    deleted_by: getAuditActor(),
   })
   if (error) {
     throw new Error(`Failed to record delete history: ${error.message}`)
   }
+  logActivity({
+    action: 'delete',
+    entityType: input.entityType,
+    entityId: input.entityId,
+    entityLabel: input.entityLabel,
+    patientId: input.patientId,
+    patientName: input.patientName,
+  })
 }
 
 export interface RestorableEntry {
@@ -91,6 +100,8 @@ export async function restoreDeletion(entry: RestorableEntry): Promise<{ ok: tru
     // nothing fatal — the entry will simply still show a Restore button.
     console.error('Failed to mark delete_history entry as restored:', markError)
   }
+
+  logActivity({ action: 'restore', entityType: entry.entity_type, entityId: entry.entity_id })
 
   return { ok: true }
 }

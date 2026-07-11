@@ -22,14 +22,19 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  Users,
+  ScrollText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { UsersTab } from '@/components/admin/UsersTab'
+import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
-import { getAppRole } from '@/lib/appSession'
+import { canDelete, canEditClinicProfile, canRevert, formatAuditActor, getAppRole } from '@/lib/appSession'
 import { supabase } from '@/lib/supabase'
 import { restoreDeletion, isRestorableEntityType } from '@/lib/deleteHistory'
 import { revertEdit } from '@/lib/editHistory'
+import { logActivity } from '@/lib/activityLog'
 
 const DEFAULT_LOGO = '/logo.png'
 
@@ -138,10 +143,6 @@ function humanizeKey(key: string) {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function roleLabelOf(role: string) {
-  return role === 'doctor' ? 'Doctor' : role === 'operator' ? 'Operator' : role
-}
-
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/
 
 function isIdKey(key: string) {
@@ -229,6 +230,33 @@ function SnapshotDetails({ payload }: { payload: unknown }) {
   )
 }
 
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'logs'
+
+interface ZoneTabDef {
+  id: ZoneTab
+  label: string
+  icon: typeof Pencil
+}
+
+/** Tabs the current session may see — drives both the tab bar and the page guard. */
+function getAvailableTabs(): ZoneTabDef[] {
+  const tabs: ZoneTabDef[] = []
+  if (canEditClinicProfile()) tabs.push({ id: 'profile', label: 'Edit Profile', icon: Pencil })
+  if (canRevert()) tabs.push({ id: 'edits', label: 'Edit History', icon: RotateCcw })
+  if (canDelete()) tabs.push({ id: 'history', label: 'Delete History', icon: History })
+  if (getAppRole() === 'admin') tabs.push({ id: 'users', label: 'Users', icon: Users })
+  if (getAppRole() === 'admin') tabs.push({ id: 'logs', label: 'Activity Log', icon: ScrollText })
+  return tabs
+}
+
+const TAB_GRID_COLS: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+  4: 'grid-cols-2 sm:grid-cols-4',
+  5: 'grid-cols-2 sm:grid-cols-5',
+}
+
 export function DoctorProfile() {
   const [form, setForm] = useState<DoctorProfileData>(empty)
   const [loading, setLoading] = useState(true)
@@ -237,7 +265,8 @@ export function DoctorProfile() {
   const [defaultLogo, setDefaultLogo] = useState(DEFAULT_LOGO)
   const logoInputRef = useRef<HTMLInputElement>(null)
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'history' | 'edits'>('profile')
+  const availableTabs = getAvailableTabs()
+  const [activeTab, setActiveTab] = useState<ZoneTab>(() => getAvailableTabs()[0]?.id ?? 'profile')
   const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
@@ -393,6 +422,12 @@ export function DoctorProfile() {
       const cleaned: DoctorProfileData = { ...form, degrees: splitDegrees(form.degrees).join('\n') }
       const data = await saveDoctorProfile(cleaned)
       if (data) setForm(data)
+      logActivity({
+        action: 'edit',
+        entityType: 'doctor_profile',
+        entityLabel: 'Clinic profile',
+        details: cleaned.full_name || null,
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err: any) {
@@ -480,7 +515,7 @@ export function DoctorProfile() {
     )
   }
 
-  if (getAppRole() !== 'doctor') {
+  if (availableTabs.length === 0) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -539,45 +574,31 @@ export function DoctorProfile() {
         </div>
       </div>
 
-      {/* Main action tabs */}
-      <div className="grid grid-cols-3 gap-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab('profile')}
-          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
-            activeTab === 'profile'
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
-          }`}
-        >
-          <Pencil className="w-5 h-5" />
-          Edit Profile
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('edits')}
-          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
-            activeTab === 'edits'
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
-          }`}
-        >
-          <RotateCcw className="w-5 h-5" />
-          Edit History
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('history')}
-          className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
-            activeTab === 'history'
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
-          }`}
-        >
-          <History className="w-5 h-5" />
-          Delete History
-        </button>
+      {/* Main action tabs — which tabs exist depends on the session's permissions */}
+      <div className={`grid ${TAB_GRID_COLS[availableTabs.length] ?? 'grid-cols-3'} gap-3`}>
+        {availableTabs.map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
+                activeTab === tab.id
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
+
+      {activeTab === 'users' && <UsersTab />}
+
+      {activeTab === 'logs' && <ActivityLogTab />}
 
       {activeTab === 'profile' && (
       <form onSubmit={handleSave} className="space-y-6">
@@ -824,7 +845,7 @@ export function DoctorProfile() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                          {roleLabelOf(entry.deleted_by)}
+                          {formatAuditActor(entry.deleted_by)}
                         </span>
                         {entry.restored_at && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
@@ -945,7 +966,7 @@ export function DoctorProfile() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                          {roleLabelOf(entry.edited_by)}
+                          {formatAuditActor(entry.edited_by)}
                         </span>
                         {entry.reverted_at && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">

@@ -38,6 +38,7 @@ import { routeToBengali, frequencyToBengali, durationToBengali, instructionsToBe
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
+import { logActivity } from '@/lib/activityLog'
 
 // ─── RECENT ITEM HELPERS ──────────────────────────────
 function mergeRecentItem(items: any[], item: any) {
@@ -305,6 +306,23 @@ export function Prescriptions() {
         const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()
         prescriptionId = inserted?.id || null
 
+        const existingPatient = patients.find((p) => p.id === patientId)
+        const prescriptionPatientName =
+          patientMode === 'new'
+            ? `${newPatientData.first_name} ${newPatientData.last_name}`.trim()
+            : existingPatient
+              ? `${existingPatient.first_name} ${existingPatient.last_name}`
+              : null
+        logActivity({
+          action: 'create',
+          entityType: 'prescription',
+          entityId: prescriptionId,
+          entityLabel: payload.diagnosis || 'Prescription',
+          patientId,
+          patientName: prescriptionPatientName,
+          details: `${payload.medications.length} medication(s), prescribed ${formData.prescribed_date}`,
+        })
+
         setLocalMeds((items) =>
           formData.medications.reduce((nextItems, med) => mergeRecentItem(nextItems, med), items)
         )
@@ -344,6 +362,7 @@ export function Prescriptions() {
         }
 
         const idsToDelete: string[] = []
+        let treatmentRowsCreated = 0
 
         for (const entry of currentEntries) {
           const rowsForEntry = rowsByEntryId.get(entry.id) || []
@@ -364,6 +383,7 @@ export function Prescriptions() {
                 notes: 'Added from prescription treatment plan',
                 ...operation,
               }])
+              treatmentRowsCreated++
             }
           }
           idsToDelete.push(...reusableRows.slice(teethList.length).map((row) => row.id))
@@ -392,6 +412,22 @@ export function Prescriptions() {
             })
           }
           await supabase.from('treatments').delete().in('id', idsToDelete)
+        }
+
+        if (treatmentRowsCreated > 0) {
+          const treatmentPatient = patients.find((p) => p.id === patientId)
+          logActivity({
+            action: 'create',
+            entityType: 'treatment',
+            patientId,
+            patientName:
+              patientMode === 'new'
+                ? `${newPatientData.first_name} ${newPatientData.last_name}`.trim()
+                : treatmentPatient
+                  ? `${treatmentPatient.first_name} ${treatmentPatient.last_name}`
+                  : null,
+            details: `${treatmentRowsCreated} item(s) from prescription treatment plan`,
+          })
         }
       }
 

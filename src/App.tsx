@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DashboardLayout } from './components/layout/DashboardLayout'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { RequirePage } from './components/RequirePage'
 import { Login } from './pages/Login'
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })))
@@ -40,15 +41,16 @@ function App() {
             }>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
-              <Route path="patients" element={<Patients />} />
-              <Route path="patients/:id" element={<PatientProfile />} />
-              <Route path="appointments" element={<Appointments />} />
-              <Route path="treatments" element={<Treatments />} />
-              <Route path="prescriptions" element={<Prescriptions />} />
-              <Route path="billing" element={<Billing />} />
-              <Route path="inventory" element={<Inventory />} />
-              <Route path="qr-search" element={<QrSearch />} />
+              <Route path="patients" element={<RequirePage page="patients"><Patients /></RequirePage>} />
+              <Route path="patients/:id" element={<RequirePage page="patients"><PatientProfile /></RequirePage>} />
+              <Route path="appointments" element={<RequirePage page="appointments"><Appointments /></RequirePage>} />
+              <Route path="treatments" element={<RequirePage page="treatments"><Treatments /></RequirePage>} />
+              <Route path="prescriptions" element={<RequirePage page="prescriptions"><Prescriptions /></RequirePage>} />
+              <Route path="billing" element={<RequirePage page="billing"><Billing /></RequirePage>} />
+              <Route path="inventory" element={<RequirePage page="inventory"><Inventory /></RequirePage>} />
+              <Route path="qr-search" element={<RequirePage page="qr-search"><QrSearch /></RequirePage>} />
               <Route path="doctor-profile" element={<DoctorProfile />} />
+              <Route path="admin" element={<DoctorProfile />} />
             </Route>
           </Routes>
         </Suspense>

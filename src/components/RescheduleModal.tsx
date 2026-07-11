@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { logActivity } from '@/lib/activityLog'
 
 export function RescheduleModal({
   appointment,
@@ -71,6 +72,17 @@ export function RescheduleModal({
         .eq('id', appointment.id)
 
       if (error) throw error
+
+      logActivity({
+        action: 'edit',
+        entityType: 'appointment',
+        entityId: appointment.id,
+        patientName: appointment.patients
+          ? `${appointment.patients.first_name} ${appointment.patients.last_name}`
+          : null,
+        details: `Rescheduled to ${format(startDateTime, 'MMM d, yyyy h:mm a')}`,
+      })
+
       onSave()
     } catch (error) {
       console.error('Error rescheduling appointment:', error)

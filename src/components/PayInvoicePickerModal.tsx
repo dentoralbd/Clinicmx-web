@@ -9,6 +9,7 @@ import {
 } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
+import { logActivity } from '@/lib/activityLog'
 
 interface PendingInvoiceLike extends MergeableInvoice {
   status: string
@@ -44,6 +45,14 @@ export function PayInvoicePickerModal({ patientId, invoices, onClose, onChanged 
 
       const oldIds = invoices.map((invoice) => invoice.id)
       const newId = data.id as string
+
+      logActivity({
+        action: 'create',
+        entityType: 'invoice',
+        entityId: newId,
+        patientId,
+        details: `Merged from ${oldIds.length} invoices (pay all)`,
+      })
 
       const { error: treatmentsError } = await supabase
         .from('treatments')

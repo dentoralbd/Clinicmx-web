@@ -17,6 +17,7 @@ import {
 } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
+import { logActivity } from '@/lib/activityLog'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 
 interface InvoiceModalProps {
@@ -349,6 +350,17 @@ export function InvoiceModal({
       const { data, error } = insertResult
       if (error) throw error
 
+      const invoicePatient = patients.find((p) => p.id === formData.patient_id)
+      logActivity({
+        action: 'create',
+        entityType: 'invoice',
+        entityId: data?.id ?? null,
+        entityLabel: formData.invoice_number || null,
+        patientId: formData.patient_id,
+        patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null,
+        details: `Total ${formatBDT(totalAmount)}`,
+      })
+
       if (data?.id) {
         // invoice_history table is added by a later migration — ignore if missing
         await supabase.from('invoice_history').insert({
@@ -450,6 +462,17 @@ export function InvoiceModal({
       }
 
       paymentSchemaError = paymentError
+    }
+
+    if (paymentStored) {
+      const paymentPatient = patients.find((p) => p.id === formData.patient_id)
+      logActivity({
+        action: 'create',
+        entityType: 'payment',
+        patientId: formData.patient_id,
+        patientName: paymentPatient ? `${paymentPatient.first_name} ${paymentPatient.last_name}` : null,
+        details: `${formatBDT(amount)} (${paymentMethod}) on new invoice`,
+      })
     }
 
     const newStatus = amount >= totalAmount ? 'Paid' : 'Partial'

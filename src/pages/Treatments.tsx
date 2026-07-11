@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
+import { logActivity } from '@/lib/activityLog'
 import { ToothSelector } from '@/components/ToothSelector'
 import { getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { formatBDT } from '@/lib/utils'
@@ -369,6 +370,20 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
       const { error } = await supabase.from('treatments').insert(rows)
 
       if (error) throw error
+
+      const selectedPatient = patients.find((p) => p.id === formData.patient_id)
+      const totalCost = rows.reduce((sum, row) => sum + (row.cost || 0), 0)
+      logActivity({
+        action: 'create',
+        entityType: 'treatment',
+        entityLabel: formData.items.map((item) => item.treatment_type).filter(Boolean).join(', '),
+        patientId: formData.patient_id,
+        patientName: selectedPatient
+          ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+          : null,
+        details: `${rows.length} item(s), total ${formatBDT(totalCost)}`,
+      })
+
       onSave()
     } catch (error) {
       console.error('Error creating treatment:', error)

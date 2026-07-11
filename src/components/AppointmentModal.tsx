@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
+import { logActivity } from '@/lib/activityLog'
 import { deriveDateOfBirthFromAge } from '@/lib/ageTier'
 import { UserPlus, Users, Search } from 'lucide-react'
 
@@ -223,6 +224,23 @@ export function AppointmentModal({
       ])
 
       if (error) throw error
+
+      const matchedPatient = patients.find((patient) => patient.id === patientId)
+      const patientName =
+        patientMode === 'new'
+          ? `${newPatientData.first_name} ${newPatientData.last_name}`.trim()
+          : matchedPatient
+            ? `${matchedPatient.first_name || ''} ${matchedPatient.last_name || ''}`.trim()
+            : null
+      logActivity({
+        action: 'create',
+        entityType: 'appointment',
+        entityLabel: formData.type,
+        patientId,
+        patientName,
+        details: `${formData.type} — ${format(startDateTime, 'MMM d, yyyy h:mm a')} (${formData.duration} min)`,
+      })
+
       onSave()
     } catch (error) {
       console.error('Error creating appointment:', error)

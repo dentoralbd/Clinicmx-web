@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
+import { logActivity } from '@/lib/activityLog'
 
 interface PaymentEntryModalProps {
   invoiceId: string
@@ -95,6 +96,14 @@ export function PaymentEntryModal({
         }
 
         paymentSchemaError = paymentError
+      }
+
+      if (paymentStored) {
+        logActivity({
+          action: 'create',
+          entityType: 'payment',
+          details: `${parsedAmount.toFixed(2)} (${paymentMethod}) against invoice ${invoiceId.slice(0, 8).toUpperCase()}`,
+        })
       }
 
       const newPaidAmount = invoicePaid + parsedAmount

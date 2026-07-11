@@ -10,6 +10,7 @@ import { safeFormat } from '@/lib/utils'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
+import { logActivity } from '@/lib/activityLog'
 import { differenceInDays } from 'date-fns'
 
 type Category = 'Materials' | 'Instruments' | 'Others'
@@ -146,6 +147,13 @@ export function Inventory() {
           .select()
           .single()
         if (error) throw error
+        logActivity({
+          action: 'create',
+          entityType: 'inventory_item',
+          entityId: inserted?.id ?? null,
+          entityLabel: payload.name,
+          details: `qty ${payload.quantity} ${payload.unit}`,
+        })
         // Record initial stock movement
         if (payload.quantity > 0 && inserted) {
           await supabase.from('inventory_movements').insert({

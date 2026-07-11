@@ -1,4 +1,5 @@
 import { ensurePatientCode } from '@/lib/patientCode'
+import { logActivity } from '@/lib/activityLog'
 import { supabase } from '@/lib/supabase'
 
 interface CreatePatientPayload {
@@ -27,6 +28,17 @@ export async function createPatient(payload: CreatePatientPayload) {
 
   if (error) throw error
   if (!createdPatient?.id) throw new Error('Failed to create patient')
+
+  const fullName = `${payload.first_name} ${payload.last_name}`.trim()
+  logActivity({
+    action: 'create',
+    entityType: 'patient',
+    entityId: createdPatient.id,
+    entityLabel: fullName,
+    patientId: createdPatient.id,
+    patientName: fullName,
+    details: payload.phone ? `Phone ${payload.phone}` : null,
+  })
 
   let patientCode: string | null = null
 

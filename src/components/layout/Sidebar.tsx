@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, Sparkles, Activity, ChevronDown } from 'lucide-react'
-import { canDelete } from '@/lib/appSession'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, ChevronDown } from 'lucide-react'
+import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, type AppPageKey } from '@/lib/appSession'
 
 interface SidebarProps {
   isOpen: boolean
@@ -11,7 +11,15 @@ interface SidebarProps {
   onToggleDesignPreview: () => void
 }
 
-const menuGroups = [
+interface MenuItem {
+  icon: typeof LayoutDashboard
+  label: string
+  path: string
+  page?: AppPageKey
+  children?: MenuItem[]
+}
+
+const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
   {
     label: 'Overview',
     items: [
@@ -25,18 +33,19 @@ const menuGroups = [
         icon: Users,
         label: 'Patients',
         path: '/patients',
-        children: [{ icon: Activity, label: 'Treatments', path: '/treatments' }],
+        page: 'patients',
+        children: [{ icon: Activity, label: 'Treatments', path: '/treatments', page: 'treatments' }],
       },
-      { icon: Calendar, label: 'Appointments', path: '/appointments' },
-      { icon: FileText, label: 'Prescriptions', path: '/prescriptions' },
+      { icon: Calendar, label: 'Appointments', path: '/appointments', page: 'appointments' },
+      { icon: FileText, label: 'Prescriptions', path: '/prescriptions', page: 'prescriptions' },
     ],
   },
   {
     label: 'Practice',
     items: [
-      { icon: DollarSign, label: 'Billing', path: '/billing' },
-      { icon: Package, label: 'Inventory', path: '/inventory' },
-      { icon: QrCode, label: 'QR Search', path: '/qr-search' },
+      { icon: DollarSign, label: 'Billing', path: '/billing', page: 'billing' },
+      { icon: Package, label: 'Inventory', path: '/inventory', page: 'inventory' },
+      { icon: QrCode, label: 'QR Search', path: '/qr-search', page: 'qr-search' },
     ],
   },
 ]
@@ -63,6 +72,21 @@ function SectionLabel({ children }: { children: ReactNode }) {
 
 export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDesignPreview }: SidebarProps) {
   const location = useLocation()
+  const isAdmin = getAppRole() === 'admin'
+  // Non-admins see a Doctor Zone entry only if some zone tab is available to them
+  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete()
+  const visibleGroups = menuGroups
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .filter((item) => !item.page || hasPageAccess(item.page))
+        .map((item) =>
+          item.children
+            ? { ...item, children: item.children.filter((child) => !child.page || hasPageAccess(child.page)) }
+            : item
+        ),
+    }))
+    .filter((group) => group.items.length > 0)
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {}
     for (const group of menuGroups) {
@@ -114,12 +138,12 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
           </div>
 
           <nav className="flex-1 px-4 pb-4 space-y-1 overflow-y-auto">
-            {menuGroups.map((group) => (
+            {visibleGroups.map((group) => (
               <div key={group.label}>
                 <SectionLabel>{group.label}</SectionLabel>
                 <div className="space-y-1">
                   {group.items.map((item) =>
-                    item.children ? (
+                    item.children && item.children.length > 0 ? (
                       <div key={item.path}>
                         <div className="flex items-center gap-1">
                           <NavLink
@@ -190,8 +214,26 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
               </div>
             ))}
 
-            {/* Settings section — doctor only */}
-            {canDelete() && (
+            {/* Settings section — Admin zone for admins, Doctor Zone for permitted accounts */}
+            {isAdmin ? (
+              <div>
+                <SectionLabel>Settings</SectionLabel>
+                <NavLink
+                  to="/admin"
+                  onClick={onNavClick}
+                  className={navLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={iconChipClass(isActive)}>
+                        <ShieldCheck className="w-5 h-5" />
+                      </span>
+                      <span>Admin</span>
+                    </>
+                  )}
+                </NavLink>
+              </div>
+            ) : hasZoneAccess ? (
               <div>
                 <SectionLabel>Settings</SectionLabel>
                 <NavLink
@@ -209,7 +251,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                   )}
                 </NavLink>
               </div>
-            )}
+            ) : null}
           </nav>
 
           <div className="p-4 border-t border-gray-200 space-y-2">

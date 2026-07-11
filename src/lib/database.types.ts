@@ -9,6 +9,48 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      app_users: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          role: string
+          full_name: string
+          identifier: string
+          password_hash: string
+          password_salt: string
+          is_active: boolean
+          permissions: Json
+          last_login_at: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          role: string
+          full_name: string
+          identifier: string
+          password_hash: string
+          password_salt: string
+          is_active?: boolean
+          permissions?: Json
+          last_login_at?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          role?: string
+          full_name?: string
+          identifier?: string
+          password_hash?: string
+          password_salt?: string
+          is_active?: boolean
+          permissions?: Json
+          last_login_at?: string | null
+        }
+        Relationships: []
+      }
       patients: {
         Row: {
           id: string
@@ -849,6 +891,48 @@ export interface Database {
           payload?: Json
           deleted_by?: string
           restored_at?: string | null
+        }
+        Relationships: []
+      }
+      activity_log: {
+        Row: {
+          id: string
+          occurred_at: string
+          action: string
+          entity_type: string
+          entity_id: string | null
+          entity_label: string | null
+          patient_id: string | null
+          patient_name: string | null
+          details: string | null
+          ip: string | null
+          actor: string
+        }
+        Insert: {
+          id?: string
+          occurred_at?: string
+          action: string
+          entity_type: string
+          entity_id?: string | null
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          details?: string | null
+          ip?: string | null
+          actor: string
+        }
+        Update: {
+          id?: string
+          occurred_at?: string
+          action?: string
+          entity_type?: string
+          entity_id?: string | null
+          entity_label?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+          details?: string | null
+          ip?: string | null
+          actor?: string
         }
         Relationships: []
       }
