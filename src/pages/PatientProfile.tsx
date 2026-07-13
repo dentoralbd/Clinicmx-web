@@ -161,6 +161,38 @@ function splitVisitNotes(notes: string | null | undefined): {
   return { treatmentDone, payment, rest: rest.join('\n').trim() }
 }
 
+// Splits the "Treatment done: A — Completed; B — In Progress" line back into
+// individual chips for colored display in the Visits tab.
+function parseTreatmentDoneChips(text: string): Array<{ label: string; status: string }> {
+  return text
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^(.*)\s—\s(Completed|In Progress|Cancelled|Planned)$/)
+      return match ? { label: match[1].trim(), status: match[2] } : { label: part, status: '' }
+    })
+}
+
+// Splits the "Billed X · Paid Y (Method) · Z toward previous due" line into chips.
+function parsePaymentChips(text: string): string[] {
+  return text.split('·').map((part) => part.trim()).filter(Boolean)
+}
+
+function treatmentDoneChipClass(status: string): string {
+  if (status === 'Completed') return 'bg-green-50 text-green-800 border-green-200'
+  if (status === 'In Progress') return 'bg-blue-50 text-blue-800 border-blue-200'
+  if (status === 'Cancelled') return 'bg-red-50 text-red-700 border-red-200'
+  return 'bg-gray-50 text-gray-600 border-gray-200'
+}
+
+function paymentChipClass(chip: string): string {
+  if (chip.startsWith('Billed')) return 'bg-blue-50 text-blue-800 border-blue-200'
+  if (chip.startsWith('Paid')) return 'bg-green-50 text-green-800 border-green-200'
+  if (chip.endsWith('toward previous due')) return 'bg-amber-50 text-amber-800 border-amber-200'
+  return 'bg-gray-50 text-gray-600 border-gray-200'
+}
+
 type SectionId =
   | 'profile'
   | 'medical'
@@ -355,6 +387,13 @@ export function PatientProfile() {
     diagnosis: '',
     treatment_plan: '',
     notes: '',
+  })
+  // Treatment Done / Payment summary lines are generated once at Add Visit time
+  // and shown read-only in Edit Visit — kept out of visitEditForm.notes so the
+  // doctor can't accidentally edit or delete them.
+  const [editingVisitFixedSummary, setEditingVisitFixedSummary] = useState<{ treatmentDone: string | null; payment: string | null }>({
+    treatmentDone: null,
+    payment: null,
   })
 
   const [prescriptionForm, setPrescriptionForm] = useState({
@@ -1053,14 +1092,16 @@ export function PatientProfile() {
   }
 
   function openVisitEdit(visit: any) {
+    const parsedNotes = splitVisitNotes(visit.notes)
     setVisitEditForm({
       visit_date: visit.visit_date ? format(new Date(visit.visit_date), "yyyy-MM-dd'T'HH:mm") : '',
       chief_complaint: visit.chief_complaint || '',
       examination_findings: visit.examination_findings || '',
       diagnosis: visit.diagnosis || '',
       treatment_plan: visit.treatment_plan || '',
-      notes: visit.notes || '',
+      notes: parsedNotes.rest,
     })
+    setEditingVisitFixedSummary({ treatmentDone: parsedNotes.treatmentDone, payment: parsedNotes.payment })
     setEditingVisit(visit)
   }
 
@@ -1076,13 +1117,20 @@ export function PatientProfile() {
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         previousPayload: editingVisit,
       })
+      // Re-attach the fixed Treatment Done / Payment lines unchanged — they are
+      // display-only in this form and were never editable here.
+      const fixedLines = [
+        editingVisitFixedSummary.treatmentDone ? `${TREATMENT_LINE_PREFIX} ${editingVisitFixedSummary.treatmentDone}` : null,
+        editingVisitFixedSummary.payment ? `${PAYMENT_LINE_PREFIX} ${editingVisitFixedSummary.payment}` : null,
+      ].filter((line): line is string => !!line)
+      const notes = [visitEditForm.notes?.trim(), ...fixedLines].filter(Boolean).join('\n')
       const { error } = await supabase.from('patient_visits').update({
         visit_date: visitEditForm.visit_date ? new Date(visitEditForm.visit_date).toISOString() : editingVisit.visit_date,
         chief_complaint: visitEditForm.chief_complaint || null,
         examination_findings: visitEditForm.examination_findings || null,
         diagnosis: visitEditForm.diagnosis || null,
         treatment_plan: visitEditForm.treatment_plan || null,
-        notes: visitEditForm.notes || null,
+        notes: notes || null,
       }).eq('id', editingVisit.id)
       if (error) throw error
       setEditingVisit(null)
@@ -2277,17 +2325,17 @@ export function PatientProfile() {
         {visits.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No visits recorded</div>
         ) : (
-          <div className="divide-y divide-gray-200">
+          <div className="p-4 space-y-4">
             {visits.map((visit) => {
               const parsedNotes = splitVisitNotes(visit.notes)
               return (
-                <div key={visit.id} className="p-4">
-                  <div className="flex items-center justify-between gap-2 mb-2">
+                <div key={visit.id} className="rounded-2xl border border-gray-200 shadow-sm bg-white p-5">
+                  <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2">
-                      <CalendarIcon className="w-4 h-4 text-text-secondary" />
-                      <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
+                      <CalendarIcon className="w-4 h-4 text-text-secondary flex-shrink-0" />
+                      <span className="font-bold text-gray-800">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         type="button"
                         onClick={() => openVisitEdit(visit)}
@@ -2308,13 +2356,79 @@ export function PatientProfile() {
                       )}
                     </div>
                   </div>
-                  {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
-                  {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
-                  {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
-                  {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
-                  {parsedNotes.treatmentDone && <InfoRow label="Treatment Done" value={parsedNotes.treatmentDone} />}
-                  {parsedNotes.payment && <InfoRow label="Payment" value={parsedNotes.payment} />}
-                  {parsedNotes.rest && <InfoRow label="Notes" value={parsedNotes.rest} className="whitespace-pre-line" />}
+
+                  {(visit.chief_complaint || visit.examination_findings) && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {visit.chief_complaint && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-medium border border-amber-200">
+                          CC: {visit.chief_complaint}
+                        </span>
+                      )}
+                      {visit.examination_findings && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-50 text-purple-800 text-xs font-medium border border-purple-200">
+                          O/E: {visit.examination_findings}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {visit.diagnosis && (
+                    <div className="mb-3">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-sm font-medium">
+                        {visit.diagnosis}
+                      </span>
+                    </div>
+                  )}
+
+                  {visit.treatment_plan && (
+                    <div className="mb-3">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-800 text-xs font-medium border border-indigo-200">
+                        Plan: {visit.treatment_plan}
+                      </span>
+                    </div>
+                  )}
+
+                  {parsedNotes.treatmentDone && (
+                    <div className="mb-3">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                        <Activity className="w-3.5 h-3.5" /> Treatment Done
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {parseTreatmentDoneChips(parsedNotes.treatmentDone).map((chip, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${treatmentDoneChipClass(chip.status)}`}
+                          >
+                            {chip.label}{chip.status ? ` · ${chip.status}` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {parsedNotes.payment && (
+                    <div className="mb-3">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                        <DollarSign className="w-3.5 h-3.5" /> Payment
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {parsePaymentChips(parsedNotes.payment).map((chip, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {parsedNotes.rest && (
+                    <blockquote className="mt-3 border-l-4 border-primary/30 pl-3 text-sm text-gray-600 italic whitespace-pre-line">
+                      {parsedNotes.rest}
+                    </blockquote>
+                  )}
                 </div>
               )
             })}
@@ -3597,8 +3711,37 @@ export function PatientProfile() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
+              {(editingVisitFixedSummary.treatmentDone || editingVisitFixedSummary.payment) && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <p className="text-xs font-medium text-text-secondary">Recorded automatically at the visit — not editable</p>
+                  {editingVisitFixedSummary.treatmentDone && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {parseTreatmentDoneChips(editingVisitFixedSummary.treatmentDone).map((chip, i) => (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${treatmentDoneChipClass(chip.status)}`}
+                        >
+                          {chip.label}{chip.status ? ` · ${chip.status}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {editingVisitFixedSummary.payment && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {parsePaymentChips(editingVisitFixedSummary.payment).map((chip, i) => (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
-                <label className="block text-sm font-medium mb-1">Notes</label>
+                <label className="block text-sm font-medium mb-1">Notes (your own notes)</label>
                 <textarea
                   rows={2}
                   value={visitEditForm.notes}
