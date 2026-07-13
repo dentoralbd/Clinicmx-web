@@ -10,8 +10,11 @@ import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
+import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
+import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
@@ -201,6 +204,9 @@ export function PatientProfile() {
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [invoicePlanGroupId, setInvoicePlanGroupId] = useState<string | null>(null)
+  const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<any | null>(null)
+  const [estimateJob, setEstimateJob] = useState<{ treatments: any[] } | null>(null)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
   const [showPayPicker, setShowPayPicker] = useState(false)
   const [mergeMode, setMergeMode] = useState(false)
@@ -424,7 +430,8 @@ export function PatientProfile() {
           treatment_plan_group_id: planGroupId,
         }))
       })
-      await supabase.from('treatments').insert(rows)
+      const { error } = await supabase.from('treatments').insert(rows)
+      if (error) throw error
       logActivity({
         action: 'create',
         entityType: 'treatment',
@@ -438,6 +445,12 @@ export function PatientProfile() {
         items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' }],
       })
       loadPatientData()
+
+      const billable = rows.some((row) => (row.cost || 0) > 0 && row.status !== 'Cancelled')
+      if (billable && confirm('Treatment plan saved. Create an invoice for these treatments now?')) {
+        setInvoicePlanGroupId(planGroupId)
+        setShowInvoiceForm(true)
+      }
     } catch (error) {
       console.error('Error saving treatment plan:', error)
       alert('Failed to save treatment plan')
@@ -477,9 +490,46 @@ export function PatientProfile() {
       const { error } = await supabase.from('treatments').update({ status: newStatus }).eq('id', treatmentId)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, status: newStatus } : t)))
+
+      const unbilled = previous && !previous.invoice_id
+      if (newStatus === 'Completed' && previous?.status !== 'Completed' && unbilled && (previous.cost || 0) > 0) {
+        if (confirm('Treatment completed but not billed yet. Create the invoice now?')) {
+          setInvoicePlanGroupId(null)
+          setShowInvoiceForm(true)
+        }
+      }
     } catch (error) {
       console.error('Error updating treatment status:', error)
       alert('Failed to update treatment status')
+    }
+  }
+
+  /** Bulk status change for every treatment in a plan group at once. */
+  async function updateGroupTreatmentsStatus(members: any[], newStatus: string) {
+    try {
+      const ids = members.map((m) => m.id)
+      await Promise.all(members.map((m) => logEdit({
+        entityType: 'treatment',
+        entityId: m.id,
+        entityLabel: m.treatment_type,
+        patientId: m.patient_id,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        previousPayload: m,
+      })))
+      const { error } = await supabase.from('treatments').update({ status: newStatus }).in('id', ids)
+      if (error) throw error
+      setTreatments((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, status: newStatus } : t)))
+
+      if (newStatus === 'Completed') {
+        const unbilledCostly = members.filter((m) => m.status !== 'Completed' && !m.invoice_id && (m.cost || 0) > 0)
+        if (unbilledCostly.length > 0 && confirm(`${unbilledCostly.length} treatment(s) completed but not billed yet. Create the invoice now?`)) {
+          setInvoicePlanGroupId(members[0]?.treatment_plan_group_id || null)
+          setShowInvoiceForm(true)
+        }
+      }
+    } catch (error) {
+      console.error('Error updating treatment statuses:', error)
+      alert('Failed to update treatment statuses')
     }
   }
 
@@ -506,6 +556,15 @@ export function PatientProfile() {
       const { error } = await supabase.from('treatments').update(patch).eq('id', treatmentId)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, ...patch } : t)))
+      const billingFieldsChanged = previous && (
+        previous.treatment_type !== patch.treatment_type ||
+        (previous.tooth_number ?? null) !== (patch.tooth_number ?? null) ||
+        (previous.description ?? '') !== (patch.description ?? '') ||
+        Number(previous.cost ?? 0) !== Number(patch.cost ?? 0)
+      )
+      if (billingFieldsChanged) {
+        await handleInvoiceSyncForTreatment({ ...previous, ...patch, id: treatmentId }, 'edited')
+      }
       setEditingTreatment(null)
     } catch (error) {
       console.error('Error updating treatment:', error)
@@ -513,9 +572,39 @@ export function PatientProfile() {
     }
   }
 
+  /** After a linked treatment is edited or deleted, rebuild the invoice's
+   *  treatment-sourced items and totals. The treatment change is already
+   *  committed — failures here must not roll it back. */
+  async function handleInvoiceSyncForTreatment(treatment: any, change: 'edited' | 'deleted') {
+    try {
+      const result = await syncInvoiceForTreatmentChange(treatment, change, { knownInvoices: invoices })
+      if (!result) return
+
+      logActivity({
+        action: 'edit',
+        entityType: 'invoice',
+        entityId: result.invoiceId,
+        entityLabel: result.invoiceNumber,
+        patientId: id ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        details: `Recalculated after treatment ${change}`,
+      })
+
+      setInvoices((prev: any[]) => prev.map((inv) => (inv.id === result.invoiceId ? { ...inv, ...result.appliedPayload } : inv)))
+    } catch (error) {
+      logBillingError('Failed to sync invoice after treatment change', error, {
+        treatmentId: treatment.id,
+      })
+      alert(`The treatment was ${change === 'edited' ? 'saved' : 'deleted'}, but the linked invoice could not be updated: ${getFriendlySupabaseErrorMessage(error)}`)
+    }
+  }
+
   async function deleteTreatmentRow(treatment: any) {
     if (!canDelete()) return
-    if (!confirm('Delete this treatment?')) return
+    const linkedToInvoice = !!treatment.invoice_id
+    if (!confirm(linkedToInvoice
+      ? 'Delete this treatment? Its invoice will be updated to remove it.'
+      : 'Delete this treatment?')) return
     try {
       await logDeletion({
         entityType: 'treatment',
@@ -528,6 +617,7 @@ export function PatientProfile() {
       const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
       if (error) throw error
       setTreatments((prev) => prev.filter((t) => t.id !== treatment.id))
+      await handleInvoiceSyncForTreatment(treatment, 'deleted')
     } catch (error) {
       console.error('Error deleting treatment:', error)
       alert('Failed to delete treatment')
@@ -570,7 +660,7 @@ export function PatientProfile() {
     // Already-invoiced planned treatments can still be marked done, but only
     // uninvoiced ones go on the new invoice generated by Payment Received.
     const billableFromPlan = doneFromPlan.filter(
-      ({ treatment }) => !treatment.is_invoiced && !treatment.invoice_id
+      ({ treatment }) => !treatment.invoice_id
     )
     const paymentAmount = parseFloat(visitPayment.amount) || 0
     // Ad-hoc entries create one row per tooth, each at the entry's cost
@@ -579,7 +669,7 @@ export function PatientProfile() {
       billableFromPlan.reduce((sum, { selection }) => sum + (parseFloat(selection.cost) || 0), 0)
     // Selected plan items that were invoiced on a previous visit: a payment
     // entered here goes toward their existing invoices' due balances.
-    const billedFromPlan = doneFromPlan.filter(({ treatment }) => treatment.is_invoiced || treatment.invoice_id)
+    const billedFromPlan = doneFromPlan.filter(({ treatment }) => treatment.invoice_id)
     const seenInvoiceIds = new Set<string>()
     const existingInvoicesWithDue: any[] = []
     for (const { treatment } of billedFromPlan) {
@@ -1279,6 +1369,25 @@ export function PatientProfile() {
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: invoice || { id: invoiceId },
       })
+      // Free the invoiced treatments so they can be billed again. Must run before the
+      // delete: the FK ON DELETE SET NULL wipes treatments.invoice_id once the invoice
+      // row is gone. Two paths because linkage is dual (invoice_id column + items JSON);
+      // errors swallowed since is_invoiced/invoice_id may not exist on legacy schemas.
+      await supabase
+        .from('treatments')
+        .update({ is_invoiced: false, invoice_id: null })
+        .eq('invoice_id', invoiceId)
+        .then(() => {}, () => {})
+      const releasedIds = extractTreatmentIdsFromInvoiceItems(
+        Array.isArray(invoice?.items) ? invoice.items : []
+      )
+      if (releasedIds.size > 0) {
+        await supabase
+          .from('treatments')
+          .update({ is_invoiced: false, invoice_id: null })
+          .in('id', Array.from(releasedIds))
+          .then(() => {}, () => {})
+      }
       const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
       if (error) throw error
       loadPatientData()
@@ -1431,11 +1540,20 @@ export function PatientProfile() {
   const plannedTreatments = treatments.filter(
     (treatment) => treatment.status === 'Planned' || treatment.status === 'In Progress'
   )
+  // Retired 'Merged' source invoices keep their items JSON but must not pin treatments
   const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
-    invoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
+    invoices
+      .filter((invoice) => invoice.status !== 'Merged')
+      .flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
   )
+  // Trust invoice_id (FK ON DELETE SET NULL keeps it accurate) and actual items-JSON
+  // linkage over the is_invoiced flag, which can go stale (e.g. an invoice deleted by
+  // an older app version) and would otherwise strand a treatment as permanently "billed."
   const pendingBillableTreatments = treatments.filter(
-    (treatment) => !treatment.invoice_id && !treatment.is_invoiced && !linkedTreatmentIds.has(treatment.id)
+    (treatment) =>
+      treatment.status !== 'Cancelled' &&
+      !treatment.invoice_id &&
+      !linkedTreatmentIds.has(treatment.id)
   )
   const upcomingAppointments = [...appointments]
     .filter((appointment) => {
@@ -1655,8 +1773,8 @@ export function PatientProfile() {
 
         <div className="rounded-3xl bg-gradient-to-br from-primary via-primary/80 to-slate-900 p-4 sm:p-6 text-white shadow-sm">
           <p className="text-sm text-white/70">Financial dashboard</p>
-          <div className="mt-2 text-3xl font-bold">{formatCurrency(totalDue)}</div>
-          <p className="mt-1 text-sm text-white/80">Current balance due</p>
+          <div className="mt-2 text-3xl font-bold">{formatCurrency(Math.abs(totalDue))}</div>
+          <p className="mt-1 text-sm text-white/80">{totalDue < 0 ? 'Advance paid' : 'Current balance due'}</p>
           <div className="mt-5 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
               <div className="text-xs uppercase tracking-wide text-white/70">Paid</div>
@@ -2061,7 +2179,11 @@ export function PatientProfile() {
       'bg-gray-100 text-gray-800'
 
     const isTreatmentLinked = (treatment: any) =>
-      !!treatment.invoice_id || !!treatment.is_invoiced || linkedTreatmentIds.has(treatment.id)
+      !!treatment.invoice_id || linkedTreatmentIds.has(treatment.id)
+
+    const estimatableTreatments = pendingBillableTreatments.filter(
+      (t) => t.status === 'Planned' || t.status === 'In Progress'
+    )
 
     // Opt-in grouping: only merges plan rows identical apart from tooth number
     // (same type, description, cost) — variants like GI vs LC filling stay separate.
@@ -2132,9 +2254,13 @@ export function PatientProfile() {
           </td>
           <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
           <td className="px-4 py-3 text-sm">
-            <span className={`px-2 py-1 text-xs rounded-full ${isLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-              {isLinked ? 'Invoiced' : 'Ready to bill'}
-            </span>
+            {isLinked ? (
+              <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Invoiced</span>
+            ) : treatment.status === 'Cancelled' ? (
+              <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Not billable</span>
+            ) : (
+              <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">Ready to bill</span>
+            )}
           </td>
           <td className="px-4 py-3 text-right">
             <div className="flex items-center justify-end gap-1">
@@ -2189,13 +2315,30 @@ export function PatientProfile() {
             </td>
             <td className="px-4 py-3 text-sm">{teeth.length > 0 ? teeth.join(', ') : 'N/A'}</td>
             <td className="px-4 py-3">
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1 mb-1">
                 {Array.from(statusCounts.entries()).map(([status, count]) => (
                   <span key={status} className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${statusBadgeClass(status)}`}>
                     {count} {status}
                   </span>
                 ))}
               </div>
+              <select
+                value=""
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value) updateGroupTreatmentsStatus(members, value)
+                  e.target.value = ''
+                }}
+                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 cursor-pointer"
+                title="Change status for all items in this plan"
+              >
+                <option value="">Set all to…</option>
+                <option value="Planned">Planned</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
             </td>
             <td className="px-4 py-3 text-sm">{formatCurrency(totalCost)}</td>
             <td className="px-4 py-3 text-sm">
@@ -2203,7 +2346,23 @@ export function PatientProfile() {
                 {linkedCount === members.length ? 'Invoiced' : linkedCount === 0 ? 'Ready to bill' : `${linkedCount}/${members.length} invoiced`}
               </span>
             </td>
-            <td className="px-4 py-3 text-right text-xs text-gray-400">Expand to edit</td>
+            <td className="px-4 py-3 text-right">
+              <div className="flex items-center justify-end gap-2">
+                {linkedCount === 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEstimateJob({ treatments: members })
+                    }}
+                    className="text-xs text-primary hover:underline whitespace-nowrap"
+                  >
+                    Estimate
+                  </button>
+                )}
+                <span className="text-xs text-gray-400 whitespace-nowrap">Expand to edit</span>
+              </div>
+            </td>
           </tr>
           {expanded && members.map((m) => renderTreatmentRow(m, true))}
         </Fragment>
@@ -2226,6 +2385,14 @@ export function PatientProfile() {
             />
             Group similar
           </label>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEstimateJob({ treatments: estimatableTreatments })}
+            disabled={estimatableTreatments.length === 0}
+          >
+            Print estimate
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowInvoiceForm(true)} disabled={pendingBillableTreatments.length === 0}>
             Bill Pending Treatments
           </Button>
@@ -2752,25 +2919,34 @@ export function PatientProfile() {
           <div className="text-sm text-green-600 font-medium">Total Paid</div>
           <div className="mt-2 text-2xl font-bold text-green-900">{formatCurrency(totalPaid)}</div>
         </div>
-        <div className="rounded-3xl bg-red-50 border border-red-200 p-5">
-          <div className="text-sm text-red-600 font-medium">Balance Due</div>
-          <div className="mt-2 text-2xl font-bold text-red-900">{formatCurrency(totalDue)}</div>
-        </div>
+        {totalDue < 0 ? (
+          <div className="rounded-3xl bg-green-50 border border-green-200 p-5">
+            <div className="text-sm text-green-600 font-medium">Advance</div>
+            <div className="mt-2 text-2xl font-bold text-green-900">{formatCurrency(-totalDue)}</div>
+          </div>
+        ) : (
+          <div className="rounded-3xl bg-red-50 border border-red-200 p-5">
+            <div className="text-sm text-red-600 font-medium">Balance Due</div>
+            <div className="mt-2 text-2xl font-bold text-red-900">{formatCurrency(totalDue)}</div>
+          </div>
+        )}
       </div>
 
       {totalBilled > 0 && (
         <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-5">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">Payment progress</span>
-            <span className="text-text-secondary">{Math.round((totalPaid / totalBilled) * 100)}% collected</span>
+            <span className="text-text-secondary">{Math.min(Math.round((totalPaid / totalBilled) * 100), 100)}% collected</span>
           </div>
           <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-gray-100">
-            {totalPaid > 0 && <div className="bg-green-500" style={{ width: `${(totalPaid / totalBilled) * 100}%` }} />}
+            {totalPaid > 0 && <div className="bg-green-500" style={{ width: `${Math.min((totalPaid / totalBilled) * 100, 100)}%` }} />}
             {totalDue > 0 && <div className="bg-red-400" style={{ width: `${(totalDue / totalBilled) * 100}%` }} />}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary">
             <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500" />Paid {formatCurrency(totalPaid)}</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" />Due {formatCurrency(totalDue)}</span>
+            {totalDue < 0
+              ? <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500" />Advance {formatCurrency(-totalDue)}</span>
+              : <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" />Due {formatCurrency(totalDue)}</span>}
           </div>
         </div>
       )}
@@ -2853,8 +3029,14 @@ export function PatientProfile() {
               <PatientInvoiceRow
                 key={invoice.id}
                 invoice={invoice}
+                patient={patient}
                 onDelete={() => handleDeleteInvoice(invoice.id)}
+                onEdit={() => setEditingInvoiceRecord(invoice)}
                 onPaymentRecorded={loadPatientData}
+                onPaymentPrintChain={async (invoiceId) => {
+                  const { data } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
+                  if (data) setInvoicePrintJob({ invoices: [data] })
+                }}
                 mergeMode={mergeMode}
                 mergeSelected={selectedForMerge.has(invoice.id)}
                 onToggleMergeSelected={() => {
@@ -2927,7 +3109,7 @@ export function PatientProfile() {
         alerts={medicalAlerts}
         completeness={completeness}
         stats={[
-          { label: 'Balance', value: formatCurrency(totalDue) },
+          { label: totalDue < 0 ? 'Advance' : 'Balance', value: formatCurrency(Math.abs(totalDue)) },
           { label: 'Next visit', value: upcomingAppointments[0] ? formatDateValue(upcomingAppointments[0].date_time, 'MMM d') : 'Not set' },
           { label: 'Files', value: files.length.toString() },
         ]}
@@ -3295,11 +3477,50 @@ export function PatientProfile() {
         <InvoiceModal
           defaultPatientId={id}
           hidePatientSelect
-          onClose={() => setShowInvoiceForm(false)}
-          onSave={() => {
-            loadPatientData()
+          preferredPlanGroupId={invoicePlanGroupId}
+          onClose={() => {
             setShowInvoiceForm(false)
+            setInvoicePlanGroupId(null)
           }}
+          onSave={async (invoiceId) => {
+            await loadPatientData()
+            setShowInvoiceForm(false)
+            setInvoicePlanGroupId(null)
+            if (invoiceId) {
+              const { data } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
+              if (data && confirm('Invoice created. Print or share it now?')) {
+                setInvoicePrintJob({ invoices: [data] })
+              }
+            }
+          }}
+        />
+      )}
+
+      {editingInvoiceRecord && id && (
+        <InvoiceModal
+          defaultPatientId={id}
+          hidePatientSelect
+          editingInvoice={editingInvoiceRecord}
+          onClose={() => setEditingInvoiceRecord(null)}
+          onSave={async (invoiceId) => {
+            await loadPatientData()
+            setEditingInvoiceRecord(null)
+            if (invoiceId) {
+              const { data } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
+              if (data && confirm('Invoice updated. Print or share it now?')) {
+                setInvoicePrintJob({ invoices: [data] })
+              }
+            }
+          }}
+        />
+      )}
+
+      {estimateJob && patient && (
+        <TreatmentEstimatePrint
+          treatments={estimateJob.treatments}
+          patient={patient}
+          doctor={doctorProfile}
+          onClose={() => setEstimateJob(null)}
         />
       )}
 
@@ -3309,9 +3530,14 @@ export function PatientProfile() {
           invoiceTotal={payingInvoice.total_amount || 0}
           invoicePaid={payingInvoice.paid_amount || 0}
           onClose={() => setPayingInvoice(null)}
-          onSaved={() => {
+          onSaved={async () => {
+            const paidInvoiceId = payingInvoice.id
             setPayingInvoice(null)
-            loadPatientData()
+            await loadPatientData()
+            if (confirm('Payment recorded. Print the updated invoice?')) {
+              const { data } = await supabase.from('invoices').select('*').eq('id', paidInvoiceId).maybeSingle()
+              if (data) setInvoicePrintJob({ invoices: [data] })
+            }
           }}
         />
       )}
@@ -3428,7 +3654,7 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold">Tooth #{toothNumber}</h2>
         </div>
@@ -3490,7 +3716,7 @@ function VisitFormModal({
   const selectedPlanned = (plannedTreatments as any[]).filter((t) => plannedSelections[t.id]?.selected)
   // Only uninvoiced plan items go on the new invoice; billed ones route the
   // payment to their existing invoice instead.
-  const selectedUnbilled = selectedPlanned.filter((t) => !t.is_invoiced && !t.invoice_id)
+  const selectedUnbilled = selectedPlanned.filter((t) => !t.invoice_id)
   // Ad-hoc entries create one treatment row per tooth, each at the entry's cost
   const treatmentsTotal =
     validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
@@ -3596,7 +3822,7 @@ function VisitFormModal({
                           onChange={() => togglePlanned(t.id, String(t.cost ?? ''))}
                         />
                         {buildTreatmentLabel(t)}
-                        {(t.is_invoiced || t.invoice_id) && (
+                        {t.invoice_id && (
                           <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">Billed</span>
                         )}
                       </label>
@@ -4891,7 +5117,7 @@ function MedicalHistoryModal({ formData, setFormData, onSubmit, onClose }: any) 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">Medical History</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -4937,15 +5163,21 @@ function MedicalHistoryModal({ formData, setFormData, onSubmit, onClose }: any) 
 
 function PatientInvoiceRow({
   invoice,
+  patient,
   onDelete,
+  onEdit,
   onPaymentRecorded,
+  onPaymentPrintChain,
   mergeMode = false,
   mergeSelected = false,
   onToggleMergeSelected,
 }: {
   invoice: any
+  patient: any
   onDelete: () => void
+  onEdit: () => void
   onPaymentRecorded: () => void
+  onPaymentPrintChain: (invoiceId: string) => void
   mergeMode?: boolean
   mergeSelected?: boolean
   onToggleMergeSelected?: () => void
@@ -5016,6 +5248,11 @@ function PatientInvoiceRow({
                   Pay
                 </Button>
               )}
+              {!isMerged && (
+                <Button size="sm" variant="outline" onClick={onEdit} title="Add or remove items on this invoice">
+                  Edit
+                </Button>
+              )}
               {canDelete() && (
                 <Button size="sm" variant="outline" onClick={onDelete}>Delete</Button>
               )}
@@ -5070,7 +5307,11 @@ function PatientInvoiceRow({
           </div>
           <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 mt-3">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
-            <PaymentHistoryPanel invoiceId={invoice.id} />
+            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={patient} />
+          </div>
+
+          <div className="mt-3">
+            <InvoiceTimelinePanel invoiceId={invoice.id} />
           </div>
         </div>
       )}
@@ -5083,6 +5324,9 @@ function PatientInvoiceRow({
           onSaved={() => {
             setShowPaymentModal(false)
             onPaymentRecorded()
+            if (confirm('Payment recorded. Print the updated invoice?')) {
+              onPaymentPrintChain(invoice.id)
+            }
           }}
         />
       )}

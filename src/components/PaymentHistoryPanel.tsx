@@ -2,9 +2,24 @@ import { useEffect, useState } from 'react'
 import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
+import { PaymentReceiptPrint } from '@/components/PaymentReceiptPrint'
 
 interface PaymentHistoryPanelProps {
   invoiceId: string
+  /** Enables the per-payment "Print receipt" button — only rendered when both are provided */
+  invoice?: {
+    id: string
+    invoice_number?: string | null
+    total_amount: number
+    paid_amount: number
+    created_at: string
+  }
+  patient?: {
+    first_name: string
+    last_name: string
+    phone?: string | null
+    patient_code?: string | null
+  }
 }
 
 interface PaymentRow {
@@ -13,15 +28,19 @@ interface PaymentRow {
   payment_date: string
   payment_method: string | null
   notes: string | null
+  /** True insertion order — payment_date is a date-only picker, so same-day
+   *  payments tie on it; created_at is what actually orders the ledger. */
+  created_at: string
   payment_methods: {
     name: string
   } | null
 }
 
-export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
+export function PaymentHistoryPanel({ invoiceId, invoice, patient }: PaymentHistoryPanelProps) {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
+  const [receiptPayment, setReceiptPayment] = useState<PaymentRow | null>(null)
 
   useEffect(() => {
     loadPayments()
@@ -34,9 +53,9 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
     try {
       const primaryQuery = await supabase
         .from('payments')
-        .select('id, amount, payment_date, payment_method, notes, payment_methods(name)')
+        .select('id, amount, payment_date, payment_method, notes, created_at, payment_methods(name)')
         .eq('invoice_id', invoiceId)
-        .order('payment_date', { ascending: false })
+        .order('created_at', { ascending: false })
 
       if (primaryQuery.error && !isSchemaCompatibilityError(primaryQuery.error)) {
         throw primaryQuery.error
@@ -49,9 +68,9 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
 
       const fallbackQuery = await supabase
         .from('payments')
-        .select('id, amount, payment_date, payment_method, notes')
+        .select('id, amount, payment_date, payment_method, notes, created_at')
         .eq('invoice_id', invoiceId)
-        .order('payment_date', { ascending: false })
+        .order('created_at', { ascending: false })
 
       if (fallbackQuery.error) throw fallbackQuery.error
 
@@ -77,6 +96,28 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
     )
   }
 
+  // Replay the ledger oldest-first (by true insertion order, not the date-only
+  // payment_date picker which same-day payments tie on) to compute the running
+  // balance after each payment. The most recent payment uses the invoice's live
+  // due (exact even if older rows are missing on a legacy schema); earlier
+  // receipts show the replayed (approximate) figure.
+  const ascending = [...payments].sort((a, b) => {
+    const byCreated = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    return byCreated !== 0 ? byCreated : a.id.localeCompare(b.id)
+  })
+  const remainingAfterById = new Map<string, number>()
+  if (invoice) {
+    let cumulative = 0
+    ascending.forEach((payment, idx) => {
+      cumulative += payment.amount
+      const isLast = idx === ascending.length - 1
+      const remaining = isLast
+        ? Math.max((invoice.total_amount || 0) - (invoice.paid_amount || 0), 0)
+        : Math.max((invoice.total_amount || 0) - cumulative, 0)
+      remainingAfterById.set(payment.id, remaining)
+    })
+  }
+
   return (
     <div className="space-y-2">
       {payments.map((payment) => (
@@ -89,8 +130,26 @@ export function PaymentHistoryPanel({ invoiceId }: PaymentHistoryPanelProps) {
             Method: {payment.payment_method || payment.payment_methods?.name || 'Not specified'}
           </div>
           {payment.notes && <p className="text-xs mt-1">{payment.notes}</p>}
+          {invoice && patient && (
+            <button
+              onClick={() => setReceiptPayment(payment)}
+              className="text-xs text-primary hover:underline mt-1.5"
+            >
+              Print receipt
+            </button>
+          )}
         </div>
       ))}
+
+      {receiptPayment && invoice && patient && (
+        <PaymentReceiptPrint
+          payment={receiptPayment}
+          invoice={invoice}
+          patient={patient}
+          remainingAfter={remainingAfterById.get(receiptPayment.id) ?? 0}
+          onClose={() => setReceiptPayment(null)}
+        />
+      )}
     </div>
   )
 }

@@ -295,6 +295,79 @@ export function buildMergedInvoicePayload(patientId: string, invoices: Mergeable
   }
 }
 
+export interface RecalculableInvoice {
+  id: string
+  items: unknown
+  paid_amount?: number | null
+  discount_amount?: number | null
+  discount_type?: string | null
+  discount_value?: number | null
+  tax_rate?: number | null
+  tax_amount?: number | null
+  credit_amount?: number | null
+}
+
+/**
+ * Rebuilds an invoice after a linked treatment was edited or deleted.
+ * Treatment-sourced items are regenerated from the current treatment rows;
+ * manually-added items (no source_treatment_id/_ids) are preserved verbatim.
+ * Totals reuse the invoice's stored discount/tax/credit settings; paid_amount
+ * is a payment ledger and is never changed here.
+ */
+export function buildInvoiceRecalcPayload(
+  invoice: RecalculableInvoice,
+  currentTreatments: PendingTreatmentLike[]
+) {
+  const existingItems = Array.isArray(invoice.items) ? (invoice.items as BillingLineItem[]) : []
+  const manualItems = existingItems.filter(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      !item.source_treatment_id &&
+      !(Array.isArray(item.source_treatment_ids) && item.source_treatment_ids.length > 0)
+  )
+  const treatmentItems = normalizeInvoiceItems(buildTreatmentInvoiceItems(currentTreatments))
+  const items = [...treatmentItems, ...manualItems]
+
+  const subtotal = getInvoiceItemSubtotal(items)
+  const discountValue = parseCurrency(invoice.discount_value)
+  // Fixed discount_amount is the fallback for pre-008 rows and merged invoices,
+  // which store only the summed amount without a type/value.
+  const discountAmount =
+    invoice.discount_type === 'percentage' && discountValue > 0
+      ? roundCurrency(subtotal * (discountValue / 100))
+      : discountValue > 0
+        ? discountValue
+        : parseCurrency(invoice.discount_amount)
+  const taxRate = parseCurrency(invoice.tax_rate)
+  // Merged invoices carry a summed tax_amount with no tax_rate — keep it as a fixed value.
+  const taxAmount =
+    taxRate > 0
+      ? roundCurrency(Math.max(subtotal - discountAmount, 0) * (taxRate / 100))
+      : parseCurrency(invoice.tax_amount)
+  const creditAmount = parseCurrency(invoice.credit_amount)
+  const totalAmount = roundCurrency(Math.max(subtotal - discountAmount + taxAmount - creditAmount, 0))
+  const paidAmount = parseCurrency(invoice.paid_amount)
+  const status = paidAmount >= totalAmount && totalAmount > 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Pending'
+
+  return {
+    // Columns from the 001 base schema — safe to update everywhere
+    basePayload: {
+      items: items as unknown as Json,
+      total_amount: totalAmount,
+      status,
+    },
+    // Needs the 007/008 columns
+    extendedPayload: {
+      items: items as unknown as Json,
+      total_amount: totalAmount,
+      status,
+      discount_amount: discountAmount,
+      tax_amount: taxAmount,
+    },
+  }
+}
+
 export function getFriendlySupabaseErrorMessage(error: unknown) {
   if (error && typeof error === 'object') {
     const maybeError = error as { message?: string; details?: string; hint?: string }

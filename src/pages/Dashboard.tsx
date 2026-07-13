@@ -12,10 +12,6 @@ interface Stats {
   monthRevenue: number
 }
 
-interface Invoice {
-  total_amount: number
-}
-
 export function Dashboard() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<Stats>({
@@ -60,18 +56,18 @@ export function Dashboard() {
         .order('date_time')
         .limit(5)
 
-      const { count: pendingCount } = await supabase
+      // Pending Bills = any non-Merged invoice with a due balance (includes Partial);
+      // Revenue = paid_amount collected on this month's invoices (matches FinancialReportsPanel)
+      const { data: invoiceRows } = await supabase
         .from('invoices')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'Pending')
+        .select('total_amount, paid_amount, status, created_at')
+        .neq('status', 'Merged')
 
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select('total_amount')
-        .gte('created_at', monthStart)
-        .eq('status', 'Paid')
-
-      const revenue = (invoices as Invoice[] || []).reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+      const allInvoices = (invoiceRows as Array<{ total_amount: number | null; paid_amount: number | null; created_at: string }> | null) || []
+      const pendingCount = allInvoices.filter((inv) => (inv.total_amount || 0) - (inv.paid_amount || 0) > 0).length
+      const revenue = allInvoices
+        .filter((inv) => inv.created_at >= monthStart)
+        .reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
 
       const { data: patients } = await supabase
         .from('patients')
@@ -153,7 +149,7 @@ export function Dashboard() {
           value={stats.pendingInvoices.toString()}
           icon={<DollarSign className="w-6 h-6" />}
           color="orange"
-          onClick={() => navigate('/billing')}
+          onClick={() => navigate('/billing?filter=Due')}
         />
         <StatCard
           title="Revenue (Month)"

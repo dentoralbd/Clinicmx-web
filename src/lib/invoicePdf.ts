@@ -102,7 +102,7 @@ function drawLogo(doc: jsPDF, logoSrc?: string): void {
   }
 }
 
-function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null, logoSrc?: string): number {
+export function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null, logoSrc?: string): number {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
 
@@ -158,7 +158,7 @@ function drawLetterhead(doc: jsPDF, doctor: DoctorProfileData | null, logoSrc?: 
   return y + 26
 }
 
-function drawTotalsBlock(
+export function drawTotalsBlock(
   doc: jsPDF,
   y: number,
   lines: Array<[string, string, boolean]>,
@@ -180,7 +180,7 @@ function drawTotalsBlock(
   return cursor
 }
 
-function drawFooter(doc: jsPDF, y: number): void {
+export function drawFooter(doc: jsPDF, y: number): void {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
   doc.setDrawColor(190)

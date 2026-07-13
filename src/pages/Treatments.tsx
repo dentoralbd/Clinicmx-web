@@ -9,6 +9,11 @@ import { logActivity } from '@/lib/activityLog'
 import { ToothSelector } from '@/components/ToothSelector'
 import { getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { formatBDT } from '@/lib/utils'
+import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
+import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
+import { InvoiceModal } from '@/components/InvoiceModal'
+import { InvoicePrint } from '@/components/InvoicePrint'
+import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 
 interface Treatment {
   id: string
@@ -21,6 +26,8 @@ interface Treatment {
   notes: string | null
   created_at: string
   treatment_plan_group_id: string | null
+  is_invoiced?: boolean | null
+  invoice_id?: string | null
   patients: {
     first_name: string
     last_name: string
@@ -35,6 +42,13 @@ export function Treatments() {
   const [searchQuery, setSearchQuery] = useState('')
   const [groupSimilarTreatments, setGroupSimilarTreatments] = useState(false)
   const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(null)
+  const [invoiceContext, setInvoiceContext] = useState<{ patientId: string; planGroupId?: string } | null>(null)
+  const [printJob, setPrintJob] = useState<{ invoices: any[]; patient: any } | null>(null)
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
+
+  useEffect(() => {
+    loadDoctorProfile().then(setDoctorProfile, () => {})
+  }, [])
 
   useEffect(() => {
     loadTreatments()
@@ -60,9 +74,34 @@ export function Treatments() {
     }
   }
 
+  /** After a linked treatment changes, rebuild its invoice. The treatment change
+   *  is already committed — failures here must not roll it back. */
+  async function handleInvoiceSyncForTreatment(treatment: Treatment, change: 'edited' | 'deleted') {
+    try {
+      const result = await syncInvoiceForTreatmentChange(treatment, change)
+      if (!result) return
+      const patientName = `${treatment.patients?.first_name ?? ''} ${treatment.patients?.last_name ?? ''}`.trim()
+      logActivity({
+        action: 'edit',
+        entityType: 'invoice',
+        entityId: result.invoiceId,
+        entityLabel: result.invoiceNumber,
+        patientId: treatment.patient_id,
+        patientName: patientName || null,
+        details: `Recalculated after treatment ${change}`,
+      })
+    } catch (error) {
+      logBillingError('Failed to sync invoice after treatment change', error, { treatmentId: treatment.id })
+      alert(`The treatment was ${change === 'edited' ? 'saved' : 'deleted'}, but the linked invoice could not be updated: ${getFriendlySupabaseErrorMessage(error)}`)
+    }
+  }
+
   async function deleteTreatment(treatment: Treatment) {
     if (!canDelete()) return
-    if (!confirm('Delete this treatment?')) return
+    const linkedToInvoice = !!treatment.invoice_id
+    if (!confirm(linkedToInvoice
+      ? 'Delete this treatment? Its invoice will be updated to remove it.'
+      : 'Delete this treatment?')) return
 
     try {
       const patientName = `${treatment.patients?.first_name ?? ''} ${treatment.patients?.last_name ?? ''}`.trim()
@@ -77,6 +116,7 @@ export function Treatments() {
       const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
       if (error) throw error
       setTreatments(treatments.filter((t) => t.id !== treatment.id))
+      await handleInvoiceSyncForTreatment(treatment, 'deleted')
     } catch (error) {
       console.error('Error deleting treatment:', error)
       alert('Failed to delete treatment')
@@ -105,9 +145,47 @@ export function Treatments() {
       setTreatments(prev =>
         prev.map(t => t.id === id ? { ...t, status: newStatus } : t)
       )
+
+      const unbilled = previous && !previous.invoice_id
+      if (newStatus === 'Completed' && previous?.status !== 'Completed' && unbilled && (previous.cost || 0) > 0) {
+        if (confirm('Treatment completed but not billed yet. Create the invoice now?')) {
+          setInvoiceContext({ patientId: previous.patient_id })
+        }
+      }
     } catch (error) {
       console.error('Error updating treatment status:', error)
       alert('Failed to update treatment')
+    }
+  }
+
+  /** Bulk status change for every treatment in a plan group at once. */
+  async function updateGroupTreatmentsStatus(members: Treatment[], newStatus: string) {
+    try {
+      const ids = members.map((m) => m.id)
+      await Promise.all(members.map((m) => {
+        const patientName = `${m.patients?.first_name ?? ''} ${m.patients?.last_name ?? ''}`.trim()
+        return logEdit({
+          entityType: 'treatment',
+          entityId: m.id,
+          entityLabel: m.treatment_type,
+          patientId: m.patient_id,
+          patientName: patientName || null,
+          previousPayload: m,
+        })
+      }))
+      const { error } = await supabase.from('treatments').update({ status: newStatus }).in('id', ids)
+      if (error) throw error
+      setTreatments((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, status: newStatus } : t)))
+
+      if (newStatus === 'Completed') {
+        const unbilledCostly = members.filter((m) => m.status !== 'Completed' && !m.invoice_id && (Number(m.cost) || 0) > 0)
+        if (unbilledCostly.length > 0 && confirm(`${unbilledCostly.length} treatment(s) completed but not billed yet. Create the invoice now?`)) {
+          setInvoiceContext({ patientId: members[0].patient_id })
+        }
+      }
+    } catch (error) {
+      console.error('Error updating treatment statuses:', error)
+      alert('Failed to update treatment statuses')
     }
   }
 
@@ -135,6 +213,15 @@ export function Treatments() {
       const { error } = await supabase.from('treatments').update(patch).eq('id', id)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+      const billingFieldsChanged = previous && (
+        previous.treatment_type !== patch.treatment_type ||
+        (previous.tooth_number ?? null) !== (patch.tooth_number ?? null) ||
+        (previous.description ?? '') !== (patch.description ?? '') ||
+        Number(previous.cost ?? 0) !== Number(patch.cost ?? 0)
+      )
+      if (previous && billingFieldsChanged) {
+        await handleInvoiceSyncForTreatment({ ...previous, ...patch, id }, 'edited')
+      }
       setEditingTreatment(null)
     } catch (error) {
       console.error('Error updating treatment:', error)
@@ -203,7 +290,9 @@ export function Treatments() {
                 groupSimilar={groupSimilarTreatments}
                 onDelete={deleteTreatment}
                 onStatusChange={updateTreatmentStatus}
+                onGroupStatusChange={updateGroupTreatmentsStatus}
                 onEdit={setEditingTreatment}
+                onBill={(patientId) => setInvoiceContext({ patientId })}
               />
             ))}
           </div>
@@ -213,7 +302,43 @@ export function Treatments() {
       {showModal && (
         <TreatmentModal
           onClose={() => setShowModal(false)}
-          onSave={() => { loadTreatments(); setShowModal(false) }}
+          onSave={(billing) => {
+            loadTreatments()
+            setShowModal(false)
+            if (billing) setInvoiceContext(billing)
+          }}
+        />
+      )}
+
+      {invoiceContext && (
+        <InvoiceModal
+          defaultPatientId={invoiceContext.patientId}
+          hidePatientSelect
+          preferredPlanGroupId={invoiceContext.planGroupId ?? null}
+          onClose={() => setInvoiceContext(null)}
+          onSave={async (invoiceId) => {
+            const patientId = invoiceContext.patientId
+            setInvoiceContext(null)
+            loadTreatments()
+            if (invoiceId) {
+              const [{ data: invoice }, { data: patient }] = await Promise.all([
+                supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle(),
+                supabase.from('patients').select('first_name, last_name, phone, email, patient_code').eq('id', patientId).maybeSingle(),
+              ])
+              if (invoice && patient && confirm('Invoice created. Print or share it now?')) {
+                setPrintJob({ invoices: [invoice], patient })
+              }
+            }
+          }}
+        />
+      )}
+
+      {printJob && (
+        <InvoicePrint
+          invoices={printJob.invoices}
+          patient={printJob.patient}
+          doctor={doctorProfile}
+          onClose={() => setPrintJob(null)}
         />
       )}
 
@@ -246,13 +371,15 @@ function groupTreatmentsByPatient(treatments: Treatment[]) {
   return order.map((patientId) => groups.get(patientId)!)
 }
 
-function PatientTreatmentGroup({ patientName, treatments, groupSimilar, onDelete, onStatusChange, onEdit }: {
+function PatientTreatmentGroup({ patientName, treatments, groupSimilar, onDelete, onStatusChange, onGroupStatusChange, onEdit, onBill }: {
   patientName: string
   treatments: Treatment[]
   groupSimilar: boolean
   onDelete: (treatment: Treatment) => void
   onStatusChange: (id: string, status: string) => void
+  onGroupStatusChange: (members: Treatment[], status: string) => void
   onEdit: (treatment: Treatment) => void
+  onBill: (patientId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [expandedSubGroups, setExpandedSubGroups] = useState<Set<string>>(new Set())
@@ -323,6 +450,7 @@ function PatientTreatmentGroup({ patientName, treatments, groupSimilar, onDelete
                 onDelete={() => onDelete(row.treatment)}
                 onStatusChange={(status) => onStatusChange(row.treatment.id, status)}
                 onEdit={() => onEdit(row.treatment)}
+                onBill={() => onBill(row.treatment.patient_id)}
               />
             ) : (
               <GroupTreatmentRow
@@ -332,7 +460,9 @@ function PatientTreatmentGroup({ patientName, treatments, groupSimilar, onDelete
                 onToggle={() => toggleSubGroup(row.key)}
                 onDelete={onDelete}
                 onStatusChange={onStatusChange}
+                onGroupStatusChange={onGroupStatusChange}
                 onEdit={onEdit}
+                onBill={onBill}
               />
             )
           )}
@@ -354,13 +484,15 @@ const statusColors: Record<string, string> = {
   Cancelled: 'bg-red-100 text-red-700',
 }
 
-function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChange, onEdit }: {
+function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChange, onGroupStatusChange, onEdit, onBill }: {
   members: Treatment[]
   expanded: boolean
   onToggle: () => void
   onDelete: (treatment: Treatment) => void
   onStatusChange: (id: string, status: string) => void
+  onGroupStatusChange: (members: Treatment[], status: string) => void
   onEdit: (treatment: Treatment) => void
+  onBill: (patientId: string) => void
 }) {
   const first = members[0]
   const teeth = members
@@ -373,10 +505,12 @@ function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChan
 
   return (
     <div>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="w-full p-4 hover:bg-gray-50 transition-colors text-left"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle() }}
+        className="w-full p-4 hover:bg-gray-50 transition-colors text-left cursor-pointer"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
@@ -390,12 +524,29 @@ function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChan
               </span>
               {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
             </div>
-            <div className="flex flex-wrap gap-1 mt-1">
+            <div className="flex flex-wrap items-center gap-1 mt-1">
               {Array.from(statusCounts.entries()).map(([status, count]) => (
                 <span key={status} className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[status] || 'bg-gray-100'}`}>
                   {count} {status}
                 </span>
               ))}
+              <select
+                value=""
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value) onGroupStatusChange(members, value)
+                  e.target.value = ''
+                }}
+                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 cursor-pointer"
+                title="Change status for all items in this plan"
+              >
+                <option value="">Set all to…</option>
+                <option value="Planned">Planned</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
             </div>
             {first.description && (
               <p className="text-sm text-text-secondary mt-1">{first.description}</p>
@@ -403,7 +554,7 @@ function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChan
             <p className="text-sm font-medium text-primary mt-2">{formatBDT(totalCost)}</p>
           </div>
         </div>
-      </button>
+      </div>
       {expanded && (
         <div className="divide-y divide-gray-100 border-t border-gray-100 bg-gray-50">
           {members.map((treatment) => (
@@ -413,6 +564,7 @@ function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChan
               onDelete={() => onDelete(treatment)}
               onStatusChange={(status) => onStatusChange(treatment.id, status)}
               onEdit={() => onEdit(treatment)}
+              onBill={() => onBill(treatment.patient_id)}
             />
           ))}
         </div>
@@ -421,14 +573,17 @@ function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChan
   )
 }
 
-function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, onEdit }: {
+function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, onEdit, onBill }: {
   treatment: Treatment
   planItemCount?: number
   onDelete: () => void
   onStatusChange: (status: string) => void
   onEdit: () => void
+  onBill: () => void
 }) {
   const nextStatus = STATUS_TRANSITIONS[treatment.status]
+  const linked = !!treatment.invoice_id
+  const readyToBill = !linked && treatment.status !== 'Cancelled' && (Number(treatment.cost) || 0) > 0
 
   return (
     <div className="p-4 hover:bg-gray-50 transition-colors">
@@ -447,6 +602,11 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, 
                 Plan &middot; {planItemCount} items
               </span>
             )}
+            {linked ? (
+              <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Invoiced</span>
+            ) : readyToBill ? (
+              <span className="text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">Ready to bill</span>
+            ) : null}
           </div>
           {treatment.description && (
             <p className="text-sm text-text-secondary mt-1">{treatment.description}</p>
@@ -461,6 +621,15 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, 
               title={`Advance to ${nextStatus}`}
             >
               → {nextStatus}
+            </button>
+          )}
+          {readyToBill && (
+            <button
+              onClick={onBill}
+              className="px-2 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-colors"
+              title="Create an invoice for this patient"
+            >
+              Bill
             </button>
           )}
           <button
@@ -626,7 +795,10 @@ function emptyTreatmentItem() {
   return { teeth: [] as number[], treatment_type: '', description: '', status: 'Planned', cost: '', notes: '' }
 }
 
-function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
+function TreatmentModal({ onClose, onSave }: {
+  onClose: () => void
+  onSave: (billing?: { patientId: string; planGroupId: string }) => void
+}) {
   const [patients, setPatients] = useState<any[]>([])
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -704,7 +876,12 @@ function TreatmentModal({ onClose, onSave }: { onClose: () => void; onSave: () =
         details: `${rows.length} item(s), total ${formatBDT(totalCost)}`,
       })
 
-      onSave()
+      const billable = rows.some((row) => (row.cost || 0) > 0 && row.status !== 'Cancelled')
+      if (billable && confirm('Treatment plan saved. Create an invoice for these treatments now?')) {
+        onSave({ patientId: formData.patient_id, planGroupId })
+      } else {
+        onSave()
+      }
     } catch (error) {
       console.error('Error creating treatment:', error)
       alert('Failed to create treatment')

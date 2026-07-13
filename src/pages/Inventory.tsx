@@ -933,7 +933,7 @@ function ItemFormModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">{editing ? 'Edit Item' : `Add ${formData.category} Item`}</h2>
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${CATEGORY_COLORS[formData.category as Category]}`}>
@@ -1090,7 +1090,7 @@ function AdjustStockModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-5 border-b border-gray-200">
           <h2 className="text-lg font-bold">Adjust Stock — {item.name}</h2>
           <p className="text-sm text-text-secondary mt-1">

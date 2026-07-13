@@ -89,24 +89,22 @@
   animation: shake 0.4s ease-in-out;
 }
 
-/* ── Fade-in for page content ── */
+/* ── Fade-in for page content ──
+   Opacity-only on purpose: animating transform on a page/section wrapper turns it
+   into the containing block for every position:fixed descendant (modals, print
+   overlays, bottom nav), which shoves them below the fold while the animation is
+   active — permanently so in background tabs, where browsers pause animations. */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .page-fade-in {
   animation: fade-in 0.28s ease-out;
 }
 
 @keyframes section-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .section-fade-in {
   animation: section-fade-in 0.22s ease-out;

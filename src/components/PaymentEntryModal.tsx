@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
-import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
-import { supabase } from '@/lib/supabase'
+import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
+import { recordInvoicePayment } from '@/lib/payments'
 import { logActivity } from '@/lib/activityLog'
 
 interface PaymentEntryModalProps {
@@ -56,49 +56,17 @@ export function PaymentEntryModal({
 
     try {
       const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
-      let paymentStored = false
-      let paymentSchemaError: unknown = null
-      const paymentPayloads: Array<{
-        invoice_id: string
-        amount: number
-        payment_method?: string
-        payment_date?: string
-        notes?: string | null
-      }> = [
-        {
-          invoice_id: invoiceId,
-          amount: parsedAmount,
-          payment_method: paymentMethod,
-          payment_date: paymentDateIso,
-          notes: notes || null,
-        },
-        {
-          invoice_id: invoiceId,
-          amount: parsedAmount,
-          payment_date: paymentDateIso,
-        },
-        {
-          invoice_id: invoiceId,
-          amount: parsedAmount,
-        },
-      ]
+      const result = await recordInvoicePayment({
+        invoiceId,
+        amount: parsedAmount,
+        invoiceTotal,
+        invoicePaid,
+        method: paymentMethod,
+        paymentDateIso,
+        notes: notes || null,
+      })
 
-      for (const payload of paymentPayloads) {
-        const { error: paymentError } = await supabase.from('payments').insert(payload)
-        if (!paymentError) {
-          paymentStored = true
-          paymentSchemaError = null
-          break
-        }
-
-        if (!isSchemaCompatibilityError(paymentError)) {
-          throw paymentError
-        }
-
-        paymentSchemaError = paymentError
-      }
-
-      if (paymentStored) {
+      if (result.paymentStored) {
         logActivity({
           action: 'create',
           entityType: 'payment',
@@ -106,33 +74,7 @@ export function PaymentEntryModal({
         })
       }
 
-      const newPaidAmount = invoicePaid + parsedAmount
-      const newStatus = newPaidAmount >= invoiceTotal ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
-
-      const { error: invoiceError } = await supabase
-        .from('invoices')
-        .update({
-          paid_amount: newPaidAmount,
-          status: newStatus,
-        })
-        .eq('id', invoiceId)
-
-      if (invoiceError) throw invoiceError
-
-      await supabase.from('invoice_history').insert({
-        invoice_id: invoiceId,
-        event_type: 'payment_recorded',
-        event_data: {
-          amount: parsedAmount,
-          payment_method: paymentMethod,
-        },
-      }).then(() => {}, () => {})
-
-      if (!paymentStored && paymentSchemaError) {
-        logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId, amount: parsedAmount })
-      }
-
-      const warning = !paymentStored
+      const warning = !result.paymentStored
         ? ' Payment total was updated, but detailed payment history could not be stored on this database schema yet.'
         : ''
       alert(`Payment recorded. Remaining balance: ${remainingAfterPayment.toFixed(2)}.${warning}`)
@@ -147,7 +89,7 @@ export function PaymentEntryModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full my-4 sm:my-8">
+      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-3 sm:p-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold">Record Payment</h3>
           <p className="text-sm text-text-secondary">Remaining balance: {remaining.toFixed(2)}</p>

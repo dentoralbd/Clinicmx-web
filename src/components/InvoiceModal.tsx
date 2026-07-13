@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CheckSquare, ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import {
@@ -16,17 +16,42 @@ import {
   type BillingLineItem,
 } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
+import { recordInvoicePayment } from '@/lib/payments'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 
+export interface EditableInvoice {
+  id: string
+  items: BillingLineItem[] | null
+  total_amount: number
+  paid_amount: number
+  discount_amount?: number | null
+  discount_type?: string | null
+  discount_value?: number | null
+  tax_rate?: number | null
+  credit_amount?: number | null
+  notes?: string | null
+  payment_terms?: string | null
+  invoice_number?: string | null
+  due_date?: string | null
+  recurring_enabled?: boolean | null
+  recurring_frequency?: string | null
+}
+
 interface InvoiceModalProps {
   onClose: () => void
-  onSave: () => void
+  onSave: (invoiceId?: string) => void
   defaultPatientId?: string
   hidePatientSelect?: boolean
   invoiceType?: 'basic' | 'advanced'
   template?: InvoiceTemplateData | null
+  /** Preselect only this treatment plan's items (falls back to all pending if the group is empty) */
+  preferredPlanGroupId?: string | null
+  /** Edit an existing invoice instead of creating a new one — add/remove line
+   *  items and treatments on it directly ("re-write" an invoice after a
+   *  mistaken treatment deletion, rather than only being able to create a new one). */
+  editingInvoice?: EditableInvoice | null
 }
 
 interface PatientRow {
@@ -57,33 +82,49 @@ export function InvoiceModal({
   hidePatientSelect = false,
   invoiceType = 'basic',
   template = null,
+  preferredPlanGroupId = null,
+  editingInvoice = null,
 }: InvoiceModalProps) {
+  const isEditMode = !!editingInvoice
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [formData, setFormData] = useState({
     patient_id: defaultPatientId,
-    due_date: '',
+    due_date: editingInvoice?.due_date || '',
     status: 'Pending',
-    notes: '',
-    payment_terms: template?.payment_terms || '',
-    tax_rate: String(template?.tax_rate || 0),
-    recurring_enabled: false,
-    recurring_frequency: 'monthly',
-    discount_type: 'fixed' as 'fixed' | 'percentage',
-    credit_amount: '',
-    invoice_number: '',
+    notes: editingInvoice?.notes || '',
+    payment_terms: editingInvoice?.payment_terms || template?.payment_terms || '',
+    tax_rate: String(editingInvoice?.tax_rate ?? template?.tax_rate ?? 0),
+    recurring_enabled: editingInvoice?.recurring_enabled || false,
+    recurring_frequency: editingInvoice?.recurring_frequency || 'monthly',
+    discount_type: (editingInvoice?.discount_type as 'fixed' | 'percentage') || 'fixed',
+    credit_amount: editingInvoice?.credit_amount ? String(editingInvoice.credit_amount) : '',
+    invoice_number: editingInvoice?.invoice_number || '',
     installment_count: '1',
   })
   const [items, setItems] = useState<BillingLineItem[]>(
-    template?.items?.length
-      ? template.items.map((item) => ({
+    editingInvoice?.items?.length
+      ? editingInvoice.items.map((item) => ({
           description: item.description,
           quantity: String(item.quantity || 1),
           unit_price: String(item.unit_price ?? item.amount ?? ''),
           amount: String(item.line_total ?? item.amount ?? ''),
+          source_treatment_id: item.source_treatment_id,
+          source_treatment_ids: item.source_treatment_ids,
         }))
-      : [createInvoiceItem()]
+      : template?.items?.length
+        ? template.items.map((item) => ({
+            description: item.description,
+            quantity: String(item.quantity || 1),
+            unit_price: String(item.unit_price ?? item.amount ?? ''),
+            amount: String(item.line_total ?? item.amount ?? ''),
+          }))
+        : [createInvoiceItem()]
   )
-  const [discountValue, setDiscountValue] = useState(String(template?.discount_amount || ''))
+  const [discountValue, setDiscountValue] = useState(
+    editingInvoice
+      ? String((editingInvoice.discount_type === 'percentage' ? editingInvoice.discount_value : editingInvoice.discount_amount) || '')
+      : String(template?.discount_amount || '')
+  )
   const [saving, setSaving] = useState(false)
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
@@ -108,19 +149,48 @@ export function InvoiceModal({
     }
   }, [defaultPatientId, hidePatientSelect])
 
-  // Load uninvoiced treatments whenever patient changes, pre-select all and import as line items
+  // Auto invoice number from invoice_settings — legacy/missing settings leave the field blank as before
+  const autoNumberRef = useRef<{ prefix: string; next: number } | null>(null)
+  useEffect(() => {
+    if (isEditMode) return // editing keeps the invoice's existing number; never auto-assigned
+    supabase
+      .from('invoice_settings')
+      .select('invoice_prefix, next_invoice_number')
+      .eq('id', 1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        const next = Number(data?.next_invoice_number)
+        if (error || !data || !Number.isFinite(next) || next <= 0) return
+        autoNumberRef.current = { prefix: data.invoice_prefix || 'INV', next }
+        setFormData((prev) => prev.invoice_number
+          ? prev // never clobber a template/user-provided number
+          : { ...prev, invoice_number: `${autoNumberRef.current!.prefix}-${next}` })
+      }, () => {})
+  }, [])
+
+  // Load uninvoiced treatments whenever patient changes, pre-select all and import as line items.
+  // Edit mode never auto-selects/auto-imports — the form's items already come from the existing
+  // invoice; the pending-treatments list here is purely an "add more" affordance.
   useEffect(() => {
     const pid = formData.patient_id
     if (pid) {
       loadPendingTreatments(pid).then((loaded) => {
-        setSelectedTreatmentIds(new Set(loaded.map((t) => t.id)))
+        if (isEditMode) {
+          setSelectedTreatmentIds(new Set())
+          return
+        }
+        const preferred = preferredPlanGroupId
+          ? loaded.filter((t) => t.treatment_plan_group_id === preferredPlanGroupId)
+          : []
+        const initial = preferred.length > 0 ? preferred : loaded
+        setSelectedTreatmentIds(new Set(initial.map((t) => t.id)))
         if (template) return
         setItems((prev) => {
           const blank = !prev.some((item) => item.description.trim() || item.unit_price || item.amount)
           if (!blank && !autoImported) return prev
-          if (loaded.length > 0) {
+          if (initial.length > 0) {
             setAutoImported(true)
-            return buildTreatmentInvoiceItems(loaded)
+            return buildTreatmentInvoiceItems(initial)
           }
           setAutoImported(false)
           return blank ? prev : [createInvoiceItem()]
@@ -149,8 +219,11 @@ export function InvoiceModal({
         .order('created_at', { ascending: false })
       if (error) throw error
 
+      // invoice_id (not is_invoiced) is the source of truth — the FK's ON DELETE SET NULL
+      // keeps it accurate even if an invoice was deleted by an older app version that left
+      // is_invoiced stuck true.
       const safeTreatments = ((data as PendingTreatment[]) || []).filter(
-        (treatment) => !treatment.is_invoiced && !treatment.invoice_id
+        (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id
       )
       setPendingTreatments(safeTreatments)
       return safeTreatments
@@ -165,7 +238,8 @@ export function InvoiceModal({
           supabase
             .from('invoices')
             .select('items')
-            .eq('patient_id', patientId),
+            .eq('patient_id', patientId)
+            .neq('status', 'Merged'),
         ])
 
         if (treatmentsError) throw treatmentsError
@@ -176,7 +250,7 @@ export function InvoiceModal({
         )
 
         const fallbackTreatments = ((treatmentsData as PendingTreatment[]) || []).filter(
-          (treatment) => !linkedTreatmentIds.has(treatment.id)
+          (treatment) => treatment.status !== 'Cancelled' && !linkedTreatmentIds.has(treatment.id)
         )
         setPendingTreatments(fallbackTreatments)
         return fallbackTreatments
@@ -277,6 +351,73 @@ export function InvoiceModal({
     }
   }
 
+  async function handleEditSubmit(normalizedItems: BillingLineItem[]) {
+    if (!editingInvoice) return
+
+    const paidAmount = editingInvoice.paid_amount || 0
+    const status = paidAmount >= totalAmount && totalAmount > 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Pending'
+
+    const basePayload = buildLegacySafeInvoicePayload({
+      patientId: formData.patient_id,
+      items: normalizedItems,
+      totalAmount,
+      paidAmount,
+      status,
+      dueDate: formData.due_date,
+    })
+
+    const extendedPayload = {
+      ...basePayload,
+      notes: formData.notes || null,
+      payment_terms: formData.payment_terms || null,
+      tax_rate: taxRate,
+      tax_amount: taxAmount,
+      discount_amount: discountCalcAmount,
+      discount_type: formData.discount_type,
+      discount_value: discountValueNum,
+      credit_amount: creditAmount,
+      invoice_number: formData.invoice_number || null,
+    }
+
+    let updateResult = await supabase.from('invoices').update(extendedPayload).eq('id', editingInvoice.id)
+    if (updateResult.error && isSchemaCompatibilityError(updateResult.error)) {
+      updateResult = await supabase.from('invoices').update(basePayload).eq('id', editingInvoice.id)
+    }
+    if (updateResult.error) throw updateResult.error
+
+    // Reconcile treatment linkage: free any treatment removed from the items, link any newly added
+    const originalLinkedIds = extractTreatmentIdsFromInvoiceItems(editingInvoice.items || [])
+    const remainingLinkedIds = extractTreatmentIdsFromInvoiceItems(normalizedItems)
+    const idsToUnlink = [...originalLinkedIds].filter((id) => !remainingLinkedIds.has(id))
+    const idsToLink = Array.from(selectedTreatmentIds)
+
+    if (idsToUnlink.length > 0) {
+      await supabase.from('treatments').update({ is_invoiced: false, invoice_id: null }).in('id', idsToUnlink).then(() => {}, () => {})
+    }
+    if (idsToLink.length > 0) {
+      await supabase.from('treatments').update({ is_invoiced: true, invoice_id: editingInvoice.id }).in('id', idsToLink).then(() => {}, () => {})
+    }
+
+    await supabase.from('invoice_history').insert({
+      invoice_id: editingInvoice.id,
+      event_type: 'invoice_edited',
+      event_data: { added_treatment_ids: idsToLink, removed_treatment_ids: idsToUnlink },
+    }).then(() => {}, () => {})
+
+    const invoicePatient = patients.find((p) => p.id === formData.patient_id)
+    logActivity({
+      action: 'edit',
+      entityType: 'invoice',
+      entityId: editingInvoice.id,
+      entityLabel: formData.invoice_number || null,
+      patientId: formData.patient_id,
+      patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null,
+      details: `Updated total ${formatBDT(totalAmount)}`,
+    })
+
+    onSave(editingInvoice.id)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -287,6 +428,23 @@ export function InvoiceModal({
     }
     if (normalizedItems.length === 0) {
       alert('Please add at least one valid item')
+      return
+    }
+
+    if (isEditMode) {
+      setSaving(true)
+      try {
+        await handleEditSubmit(normalizedItems)
+      } catch (error) {
+        logBillingError('Failed to update invoice', error, {
+          invoiceId: editingInvoice?.id,
+          itemCount: normalizedItems.length,
+          totalAmount,
+        })
+        alert(`Failed to update invoice: ${getFriendlySupabaseErrorMessage(error)}`)
+      } finally {
+        setSaving(false)
+      }
       return
     }
 
@@ -333,13 +491,41 @@ export function InvoiceModal({
         recurring_frequency: formData.recurring_enabled ? formData.recurring_frequency : null,
       }
 
+      const isUniqueViolation = (error: unknown) =>
+        (error as { code?: string })?.code === '23505' ||
+        /duplicate key|unique constraint/i.test(getFriendlySupabaseErrorMessage(error))
+
+      let usedInvoiceNumber = formData.invoice_number || null
+      const auto = autoNumberRef.current
+      const autoValue = auto ? `${auto.prefix}-${auto.next}` : null
+
       let insertResult = await supabase
         .from('invoices')
         .insert([extendedPayload])
         .select('id')
         .single()
 
+      // Only auto-generated numbers retry on a duplicate; user-typed ones surface the error
+      if (insertResult.error && isUniqueViolation(insertResult.error) && auto && usedInvoiceNumber === autoValue) {
+        usedInvoiceNumber = `${auto.prefix}-${auto.next + 1}`
+        insertResult = await supabase
+          .from('invoices')
+          .insert([{ ...extendedPayload, invoice_number: usedInvoiceNumber }])
+          .select('id')
+          .single()
+
+        if (insertResult.error && isUniqueViolation(insertResult.error)) {
+          usedInvoiceNumber = null
+          insertResult = await supabase
+            .from('invoices')
+            .insert([{ ...extendedPayload, invoice_number: null }])
+            .select('id')
+            .single()
+        }
+      }
+
       if (insertResult.error && isSchemaCompatibilityError(insertResult.error)) {
+        usedInvoiceNumber = null
         insertResult = await supabase
           .from('invoices')
           .insert([basePayload])
@@ -350,12 +536,22 @@ export function InvoiceModal({
       const { data, error } = insertResult
       if (error) throw error
 
+      // Advance the counter only when the auto number (or its +1 retry) was actually used
+      if (auto && usedInvoiceNumber && (usedInvoiceNumber === autoValue || usedInvoiceNumber === `${auto.prefix}-${auto.next + 1}`)) {
+        const usedN = Number(usedInvoiceNumber.slice(auto.prefix.length + 1))
+        await supabase
+          .from('invoice_settings')
+          .update({ next_invoice_number: usedN + 1 })
+          .eq('id', 1)
+          .then(() => {}, () => {})
+      }
+
       const invoicePatient = patients.find((p) => p.id === formData.patient_id)
       logActivity({
         action: 'create',
         entityType: 'invoice',
         entityId: data?.id ?? null,
-        entityLabel: formData.invoice_number || null,
+        entityLabel: usedInvoiceNumber,
         patientId: formData.patient_id,
         patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null,
         details: `Total ${formatBDT(totalAmount)}`,
@@ -405,7 +601,7 @@ export function InvoiceModal({
         }
       }
 
-      onSave()
+      onSave(data?.id)
     } catch (error) {
       logBillingError('Failed to create invoice', error, {
         patientId: formData.patient_id,
@@ -422,49 +618,16 @@ export function InvoiceModal({
   /** Same fallback chain as PaymentEntryModal so older payments schemas keep working */
   async function recordImmediatePayment(invoiceId: string, amount: number) {
     const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
-    let paymentStored = false
-    let paymentSchemaError: unknown = null
-    const paymentPayloads: Array<{
-      invoice_id: string
-      amount: number
-      payment_method?: string
-      payment_date?: string
-      notes?: string | null
-    }> = [
-      {
-        invoice_id: invoiceId,
-        amount,
-        payment_method: paymentMethod,
-        payment_date: paymentDateIso,
-        notes: null,
-      },
-      {
-        invoice_id: invoiceId,
-        amount,
-        payment_date: paymentDateIso,
-      },
-      {
-        invoice_id: invoiceId,
-        amount,
-      },
-    ]
+    const result = await recordInvoicePayment({
+      invoiceId,
+      amount,
+      invoiceTotal: totalAmount,
+      invoicePaid: 0,
+      method: paymentMethod,
+      paymentDateIso,
+    })
 
-    for (const payload of paymentPayloads) {
-      const { error: paymentError } = await supabase.from('payments').insert(payload)
-      if (!paymentError) {
-        paymentStored = true
-        paymentSchemaError = null
-        break
-      }
-
-      if (!isSchemaCompatibilityError(paymentError)) {
-        throw paymentError
-      }
-
-      paymentSchemaError = paymentError
-    }
-
-    if (paymentStored) {
+    if (result.paymentStored) {
       const paymentPatient = patients.find((p) => p.id === formData.patient_id)
       logActivity({
         action: 'create',
@@ -474,37 +637,13 @@ export function InvoiceModal({
         details: `${formatBDT(amount)} (${paymentMethod}) on new invoice`,
       })
     }
-
-    const newStatus = amount >= totalAmount ? 'Paid' : 'Partial'
-    const { error: invoiceError } = await supabase
-      .from('invoices')
-      .update({
-        paid_amount: amount,
-        status: newStatus,
-      })
-      .eq('id', invoiceId)
-
-    if (invoiceError) throw invoiceError
-
-    await supabase.from('invoice_history').insert({
-      invoice_id: invoiceId,
-      event_type: 'payment_recorded',
-      event_data: {
-        amount,
-        payment_method: paymentMethod,
-      },
-    }).then(() => {}, () => {})
-
-    if (!paymentStored && paymentSchemaError) {
-      logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId, amount })
-    }
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full my-4 sm:my-8">
+      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-3 sm:p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold">New Invoice</h2>
+          <h2 className="text-xl font-bold">{isEditMode ? 'Edit Invoice' : 'New Invoice'}</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-4">
@@ -838,18 +977,20 @@ export function InvoiceModal({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Installments</label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={formData.installment_count}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, installment_count: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                      <p className="text-[11px] text-text-secondary mt-1">Needs a due date; creates a monthly payment plan.</p>
-                    </div>
+                    {!isEditMode && (
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Installments</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={formData.installment_count}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, installment_count: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <p className="text-[11px] text-text-secondary mt-1">Needs a due date; creates a monthly payment plan.</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -883,57 +1024,59 @@ export function InvoiceModal({
             </div>
           </div>
 
-          {/* ── Collect payment now ── */}
-          <div className="border border-green-200 rounded-lg overflow-hidden">
-            <label className="flex items-center gap-3 px-3 py-2 bg-green-50 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={collectPayment}
-                onChange={(e) => handleCollectPaymentToggle(e.target.checked)}
-              />
-              <span className="text-sm font-medium text-green-800">Collect payment now</span>
-            </label>
-            {collectPayment && (
-              <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1">Amount</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
+          {/* ── Collect payment now (create mode only — edit mode uses the dedicated Record Payment action) ── */}
+          {!isEditMode && (
+            <div className="border border-green-200 rounded-lg overflow-hidden">
+              <label className="flex items-center gap-3 px-3 py-2 bg-green-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={collectPayment}
+                  onChange={(e) => handleCollectPaymentToggle(e.target.checked)}
+                />
+                <span className="text-sm font-medium text-green-800">Collect payment now</span>
+              </label>
+              {collectPayment && (
+                <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Amount</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Method</label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      {PAYMENT_METHODS.map((method) => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Method</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {PAYMENT_METHODS.map((method) => (
-                      <option key={method} value={method}>{method}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col sm:flex-row gap-3 pt-4">
             <Button type="submit" disabled={saving} className="w-full sm:flex-1">
-              {saving ? 'Creating...' : 'Create Invoice'}
+              {saving ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save Changes' : 'Create Invoice')}
             </Button>
             <Button type="button" variant="outline" onClick={onClose} className="w-full sm:flex-1">
               Cancel

@@ -1,12 +1,15 @@
 import { useMemo, useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   buildInvoiceItemPreview,
   extractTreatmentIdsFromInvoiceItems,
   formatInvoiceItemLabel,
+  getFriendlySupabaseErrorMessage,
   getInvoiceItemLineTotal,
   getInvoiceItemSubtotal,
   type BillingLineItem,
 } from '@/lib/billing'
+import { recordInvoicePayment } from '@/lib/payments'
 import {
   Plus,
   DollarSign,
@@ -34,6 +37,8 @@ import { InvoiceTemplateSelector } from '@/components/InvoiceTemplateSelector'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
+import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { FinancialReportsPanel } from '@/components/FinancialReportsPanel'
 import { InvoiceSettingsModal } from '@/components/InvoiceSettingsModal'
 import { supabase } from '@/lib/supabase'
@@ -83,7 +88,11 @@ export function Billing() {
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showPendingPatients, setShowPendingPatients] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<InvoiceTemplateData | null>(null)
-  const [filter, setFilter] = useState<string>('all')
+  const [searchParams] = useSearchParams()
+  const [filter, setFilter] = useState<string>(() => {
+    const f = searchParams.get('filter')
+    return ['Due', 'Pending', 'Partial', 'Paid'].includes(f || '') ? f! : 'all'
+  })
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
   const [pendingPatients, setPendingPatients] = useState<Array<{ patient_id: string; name: string; count: number }>>([])
   const [preselectedPatientId, setPreselectedPatientId] = useState('')
@@ -95,6 +104,8 @@ export function Billing() {
   const [showListPrint, setShowListPrint] = useState(false)
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
   const [allPatients, setAllPatients] = useState<Array<{ id: string; name: string; phone: string | null; patient_code: string | null }>>([])
+  const [payPicker, setPayPicker] = useState<{ patientId: string; invoices: Invoice[] } | null>(null)
+  const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<Invoice | null>(null)
 
   useEffect(() => {
     loadInvoices()
@@ -188,21 +199,25 @@ export function Billing() {
     }
 
     try {
+      // invoice_id (not is_invoiced) is the source of truth — the FK's ON DELETE SET NULL
+      // keeps it accurate even if an invoice was deleted by an older app version that left
+      // is_invoiced stuck true.
       const { data, error } = await supabase
         .from('treatments')
         .select('id, patient_id, invoice_id, patients (first_name, last_name)')
-        .eq('is_invoiced', false)
+        .is('invoice_id', null)
+        .neq('status', 'Cancelled')
 
       if (error) throw error
 
-      setPendingPatients(groupByPatient(((data || []) as PendingTreatmentRow[]).filter((row) => !row.invoice_id)))
+      setPendingPatients(groupByPatient((data || []) as PendingTreatmentRow[]))
     } catch {
       // treatments.is_invoiced / invoice_id are added by a later migration —
       // fall back to cross-referencing treatment ids stored in invoice items
       try {
         const [{ data: treatmentsData, error: treatmentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
-          supabase.from('treatments').select('id, patient_id, patients (first_name, last_name)'),
-          supabase.from('invoices').select('items'),
+          supabase.from('treatments').select('id, patient_id, patients (first_name, last_name)').neq('status', 'Cancelled'),
+          supabase.from('invoices').select('items').neq('status', 'Merged'),
         ])
 
         if (treatmentsError) throw treatmentsError
@@ -221,40 +236,6 @@ export function Billing() {
     }
   }
 
-  async function markAsPaid(id: string, totalAmount: number) {
-    try {
-      const previousInvoice = invoices.find((inv) => inv.id === id)
-      if (previousInvoice) {
-        await logEdit({
-          entityType: 'invoice',
-          entityId: id,
-          entityLabel: (previousInvoice as any).invoice_number || 'Invoice',
-          patientId: (previousInvoice as any).patient_id ?? null,
-          patientName: `${(previousInvoice as any).patients?.first_name || ''} ${(previousInvoice as any).patients?.last_name || ''}`.trim() || null,
-          previousPayload: previousInvoice,
-        })
-      }
-      const { error } = await supabase
-        .from('invoices')
-        .update({
-          status: 'Paid',
-          paid_amount: totalAmount,
-        })
-        .eq('id', id)
-
-      if (error) throw error
-      await supabase.from('invoice_history').insert({
-        invoice_id: id,
-        event_type: 'status_updated',
-        event_data: { status: 'Paid' },
-      }).then(() => {}, () => {})
-      loadInvoices()
-    } catch (error) {
-      console.error('Error updating invoice:', error)
-      alert('Failed to update invoice')
-    }
-  }
-
   async function deleteInvoice(id: string) {
     if (!canDelete()) return
     if (!confirm('Delete this invoice?')) return
@@ -269,6 +250,25 @@ export function Billing() {
         patientName: invoice ? `${(invoice as any).patients?.first_name || ''} ${(invoice as any).patients?.last_name || ''}`.trim() || null : null,
         payload: invoice || { id },
       })
+      // Free the invoiced treatments so they can be billed again. Must run before the
+      // delete: the FK ON DELETE SET NULL wipes treatments.invoice_id once the invoice
+      // row is gone. Two paths because linkage is dual (invoice_id column + items JSON);
+      // errors swallowed since is_invoiced/invoice_id may not exist on legacy schemas.
+      await supabase
+        .from('treatments')
+        .update({ is_invoiced: false, invoice_id: null })
+        .eq('invoice_id', id)
+        .then(() => {}, () => {})
+      const releasedIds = extractTreatmentIdsFromInvoiceItems(
+        Array.isArray(invoice?.items) ? invoice.items : []
+      )
+      if (releasedIds.size > 0) {
+        await supabase
+          .from('treatments')
+          .update({ is_invoiced: false, invoice_id: null })
+          .in('id', Array.from(releasedIds))
+          .then(() => {}, () => {})
+      }
       const { error } = await supabase.from('invoices').delete().eq('id', id)
       if (error) throw error
       setInvoices((prev) => prev.filter((invoice) => invoice.id !== id))
@@ -282,32 +282,64 @@ export function Billing() {
   async function bulkUpdateStatus(status: 'Pending' | 'Paid') {
     if (selectedInvoices.length === 0) return
 
-    try {
-      const ids = [...selectedInvoices]
-      const updates = status === 'Paid'
-        ? filteredInvoices
-            .filter((invoice) => ids.includes(invoice.id))
-            .map((invoice) => ({ id: invoice.id, paid_amount: invoice.total_amount, status }))
-        : ids.map((id) => ({ id, status }))
+    const ids = [...selectedInvoices]
+    const targets = invoices.filter((invoice) => ids.includes(invoice.id) && invoice.status !== 'Merged')
 
-      for (const update of updates) {
-        const { id, ...payload } = update
-        const previousInvoice = invoices.find((inv) => inv.id === id)
-        if (previousInvoice) {
-          await logEdit({
-            entityType: 'invoice',
-            entityId: id,
-            entityLabel: (previousInvoice as any).invoice_number || 'Invoice',
-            patientId: (previousInvoice as any).patient_id ?? null,
-            patientName: `${(previousInvoice as any).patients?.first_name || ''} ${(previousInvoice as any).patients?.last_name || ''}`.trim() || null,
-            previousPayload: previousInvoice,
+    async function logInvoiceEdit(previousInvoice: Invoice) {
+      await logEdit({
+        entityType: 'invoice',
+        entityId: previousInvoice.id,
+        entityLabel: (previousInvoice as any).invoice_number || 'Invoice',
+        patientId: (previousInvoice as any).patient_id ?? null,
+        patientName: `${(previousInvoice as any).patients?.first_name || ''} ${(previousInvoice as any).patients?.last_name || ''}`.trim() || null,
+        previousPayload: previousInvoice,
+      })
+    }
+
+    if (status === 'Paid') {
+      // Route through the payments ledger — never flip status without a payment record
+      const dueTargets = targets.filter((invoice) => (invoice.total_amount || 0) - (invoice.paid_amount || 0) > 0)
+      if (dueTargets.length === 0) {
+        alert('No selected invoice has a due balance.')
+        return
+      }
+      if (!confirm(`Record full payment (Cash) on ${dueTargets.length} invoice(s) with a due balance?`)) return
+
+      try {
+        for (const invoice of dueTargets) {
+          await logInvoiceEdit(invoice)
+          await recordInvoicePayment({
+            invoiceId: invoice.id,
+            amount: (invoice.total_amount || 0) - (invoice.paid_amount || 0),
+            invoiceTotal: invoice.total_amount || 0,
+            invoicePaid: invoice.paid_amount || 0,
+            method: 'Cash',
+            notes: 'Bulk mark paid',
           })
         }
+        setSelectedInvoices([])
+        loadInvoices()
+      } catch (error) {
+        console.error('Error updating invoices:', error)
+        alert(`Failed to record payment on one of the selected invoices: ${getFriendlySupabaseErrorMessage(error)}`)
+        loadInvoices()
+      }
+      return
+    }
+
+    // 'Pending': recompute each status from its amounts instead of blindly
+    // overwriting — fixes drifted statuses without corrupting paid invoices.
+    try {
+      for (const invoice of targets) {
+        const paid = invoice.paid_amount || 0
+        const total = invoice.total_amount || 0
+        const correctStatus = paid >= total && total > 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Pending'
+        if (correctStatus === invoice.status) continue
+        await logInvoiceEdit(invoice)
         const { error } = await supabase
           .from('invoices')
-          .update(payload)
-          .eq('id', id)
-
+          .update({ status: correctStatus })
+          .eq('id', invoice.id)
         if (error) throw error
       }
 
@@ -376,6 +408,25 @@ export function Billing() {
         ? [invoice]
         : invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
     setPrintJob({ invoices: jobInvoices, patient, initialDueOnly: mode === 'due' })
+  }
+
+  async function printAfterPayment(invoiceId: string) {
+    await ensureDoctorProfile()
+    const { data } = await supabase
+      .from('invoices')
+      .select('*, patients (first_name, last_name, email, phone, patient_code)')
+      .eq('id', invoiceId)
+      .maybeSingle()
+    if (!data) return
+    const invoice = data as Invoice
+    const patient = invoice.patients || {
+      first_name: 'Unknown',
+      last_name: 'Patient',
+      email: null,
+      phone: null,
+      patient_code: null,
+    }
+    setPrintJob({ invoices: [invoice], patient })
   }
 
   async function shareInvoice(invoice: Invoice, channel: 'email' | 'whatsapp') {
@@ -447,7 +498,11 @@ export function Billing() {
         )
       })
     }
-    if (filter !== 'all') result = result.filter((invoice) => invoice.status === filter)
+    if (filter === 'Due') {
+      result = result.filter((invoice) => invoice.status !== 'Merged' && (invoice.total_amount || 0) - (invoice.paid_amount || 0) > 0)
+    } else if (filter !== 'all') {
+      result = result.filter((invoice) => invoice.status === filter)
+    }
     return result
   }, [filter, invoices, patientFilter, patientSearch])
 
@@ -676,7 +731,7 @@ export function Billing() {
 
         <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-2 justify-between">
           <div className="flex gap-2">
-            {['all', 'Pending', 'Partial', 'Paid'].map((status) => (
+            {['all', 'Due', 'Pending', 'Partial', 'Paid'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
@@ -769,6 +824,19 @@ export function Billing() {
                           Print due ({groupDueCount})
                         </Button>
                       )}
+                      {groupDueCount > 1 && (
+                        <Button
+                          size="sm"
+                          onClick={() => setPayPicker({
+                            patientId: group.patientId,
+                            invoices: group.invoices.filter(
+                              (inv) => inv.status !== 'Merged' && (inv.total_amount || 0) - (inv.paid_amount || 0) > 0
+                            ),
+                          })}
+                        >
+                          Pay all ({groupDueCount})
+                        </Button>
+                      )}
                       <button
                         className="p-1 text-text-secondary hover:text-text-primary transition-colors"
                         aria-label={isExpanded ? 'Collapse invoices' : 'Expand invoices'}
@@ -792,9 +860,10 @@ export function Billing() {
                               return prev.filter((id) => id !== invoice.id)
                             })
                           }}
-                          onMarkPaid={() => markAsPaid(invoice.id, invoice.total_amount)}
                           onDelete={() => deleteInvoice(invoice.id)}
+                          onEdit={() => setEditingInvoiceRecord(invoice)}
                           onPaymentRecorded={loadInvoices}
+                          onPaymentPrintChain={() => printAfterPayment(invoice.id)}
                           onPrint={(mode) => startPrint(invoice, mode)}
                           onShare={(mode) => shareInvoice(invoice, mode)}
                           patientInvoiceCount={invoices.filter((inv) => inv.patient_id === invoice.patient_id).length}
@@ -842,7 +911,36 @@ export function Billing() {
         />
       )}
 
+      {editingInvoiceRecord && (
+        <InvoiceModal
+          defaultPatientId={editingInvoiceRecord.patient_id}
+          hidePatientSelect
+          editingInvoice={editingInvoiceRecord}
+          onClose={() => setEditingInvoiceRecord(null)}
+          onSave={async (invoiceId) => {
+            setEditingInvoiceRecord(null)
+            loadInvoices()
+            loadPendingPatients()
+            if (invoiceId && confirm('Invoice updated. Print or share it now?')) {
+              await printAfterPayment(invoiceId)
+            }
+          }}
+        />
+      )}
+
       {showSettings && <InvoiceSettingsModal onClose={() => setShowSettings(false)} />}
+
+      {payPicker && (
+        <PayInvoicePickerModal
+          patientId={payPicker.patientId}
+          invoices={payPicker.invoices}
+          onClose={() => setPayPicker(null)}
+          onChanged={() => {
+            loadInvoices()
+            loadPendingPatients()
+          }}
+        />
+      )}
 
       {printJob && (
         <InvoicePrint
@@ -899,9 +997,10 @@ function InvoiceRow({
   hideName,
   checked,
   onSelect,
-  onMarkPaid,
   onDelete,
+  onEdit,
   onPaymentRecorded,
+  onPaymentPrintChain,
   onPrint,
   onShare,
   patientInvoiceCount,
@@ -911,9 +1010,10 @@ function InvoiceRow({
   hideName?: boolean
   checked: boolean
   onSelect: (checked: boolean) => void
-  onMarkPaid: () => void
   onDelete: () => void
+  onEdit: () => void
   onPaymentRecorded: () => void
+  onPaymentPrintChain: () => void
   onPrint: (mode: 'single' | 'all' | 'due') => void
   onShare: (channel: 'email' | 'whatsapp') => void
   patientInvoiceCount: number
@@ -1000,12 +1100,14 @@ function InvoiceRow({
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap sm:shrink-0" onClick={(e) => e.stopPropagation()}>
-            {invoice.status === 'Pending' && (
-              <Button variant="outline" size="sm" onClick={onMarkPaid}>Mark Paid</Button>
-            )}
             <Button variant="outline" size="sm" onClick={() => setShowPaymentModal(true)} disabled={remainingBalance <= 0}>
               <span className="hidden sm:inline">Record </span>Payment
             </Button>
+            {invoice.status !== 'Merged' && (
+              <Button variant="outline" size="sm" onClick={onEdit} title="Add or remove items on this invoice">
+                Edit
+              </Button>
+            )}
             <div className="relative">
               <Button
                 variant="outline"
@@ -1155,8 +1257,10 @@ function InvoiceRow({
 
           <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
-            <PaymentHistoryPanel invoiceId={invoice.id} />
+            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} />
           </div>
+
+          <InvoiceTimelinePanel invoiceId={invoice.id} />
         </div>
       )}
 
@@ -1169,6 +1273,9 @@ function InvoiceRow({
           onSaved={() => {
             setShowPaymentModal(false)
             onPaymentRecorded()
+            if (confirm('Payment recorded. Print the updated invoice?')) {
+              onPaymentPrintChain()
+            }
           }}
         />
       )}

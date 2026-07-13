@@ -387,7 +387,20 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   const grandPaid = visibleInvoices.reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0)
   const grandDue = Math.max(grandTotal - grandPaid, 0)
 
-  const invoiceIdsKey = combined ? invoices.map((invoice) => invoice.id).join(',') : ''
+  // Single-invoice status stamp — derived from amounts, never trusts the stored status string alone
+  const singleInvoice = !combined ? invoices[0] : null
+  const singleStamp = singleInvoice
+    ? (singleInvoice.paid_amount || 0) >= (singleInvoice.total_amount || 0) && (singleInvoice.total_amount || 0) > 0
+      ? { label: 'PAID', className: 'bg-green-100 text-green-800 border-green-300' }
+      : (singleInvoice.paid_amount || 0) > 0
+        ? { label: 'PARTIAL PAID', className: 'bg-amber-100 text-amber-800 border-amber-300' }
+        : { label: 'DUE', className: 'bg-red-100 text-red-800 border-red-300' }
+    : null
+
+  // Loaded for both combined statements and single invoices — a single invoice's
+  // payment history and PAID/PARTIAL PAID/DUE stamp are derived from these too.
+  const invoiceIdsKey = invoices.map((invoice) => invoice.id).join(',')
+  const [showSinglePayments, setShowSinglePayments] = useState(true)
 
   useEffect(() => {
     if (!invoiceIdsKey) return
@@ -433,6 +446,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
 
   const visibleInvoiceIds = new Set(visibleInvoices.map((invoice) => invoice.id))
   const visiblePayments = payments.filter((payment) => visibleInvoiceIds.has(payment.invoice_id))
+  const singleInvoicePayments = singleInvoice ? payments.filter((payment) => payment.invoice_id === singleInvoice.id) : []
   const invoiceLabelById = new Map(invoices.map((invoice) => [invoice.id, invoiceLabel(invoice)]))
 
   // Uploaded logos are cleaned at upload time; the bundled default needs its
@@ -594,8 +608,21 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         </div>
       )}
 
+      {/* Single-invoice payment history toggle, hidden on print */}
+      {!combined && singleInvoicePayments.length > 0 && (
+        <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={showSinglePayments} onChange={(e) => setShowSinglePayments(e.target.checked)} />
+            Payment history
+          </label>
+        </div>
+      )}
+
       {/* Format options – shown in both single and combined mode, hidden on print */}
-      <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 flex items-center gap-1" style={combined ? { top: '9.5rem' } : undefined}>
+      <div
+        className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 flex items-center gap-1"
+        style={combined ? { top: '9.5rem' } : singleInvoicePayments.length > 0 ? { top: '7.5rem' } : undefined}
+      >
           <button
             onClick={() => setFormat('detailed')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${format === 'detailed' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -675,8 +702,15 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
 
         {/* ── Title ── */}
         <div className="text-center mb-4">
-          <div className="text-lg font-bold tracking-wide uppercase">
-            {combined ? 'Combined Invoice / Statement' : 'Invoice'}
+          <div className="flex items-center justify-center gap-2">
+            <div className="text-lg font-bold tracking-wide uppercase">
+              {combined ? 'Combined Invoice / Statement' : 'Invoice'}
+            </div>
+            {singleStamp && (
+              <span className={`text-xs font-bold tracking-wide uppercase border rounded-full px-2 py-0.5 ${singleStamp.className}`}>
+                {singleStamp.label}
+              </span>
+            )}
           </div>
           {!combined && invoices[0]?.invoice_number && (
             <div className="text-sm text-gray-600">#{invoices[0].invoice_number}</div>
@@ -737,6 +771,30 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Payment history (single invoice) ── */}
+        {!combined && showSinglePayments && singleInvoicePayments.length > 0 && (
+          <div className="statement-payments mt-4">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b-2 border-gray-800 text-left">
+                  <th className="py-1.5 pr-2 font-semibold">Payment History</th>
+                  <th className="py-1.5 px-2 font-semibold w-40">Method</th>
+                  <th className="py-1.5 pl-2 font-semibold text-right w-28">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {singleInvoicePayments.map((payment) => (
+                  <tr key={payment.id} className="border-b border-gray-200">
+                    <td className="py-1.5 pr-2 w-32">{safeFormat(payment.payment_date, 'dd MMM yyyy')}</td>
+                    <td className="py-1.5 px-2">{payment.payment_method || payment.payment_methods?.name || '—'}</td>
+                    <td className="py-1.5 pl-2 text-right">{formatBDT(payment.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 

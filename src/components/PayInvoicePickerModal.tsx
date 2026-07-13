@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { InvoicePrint } from '@/components/InvoicePrint'
 import {
   buildMergedInvoicePayload,
   getFriendlySupabaseErrorMessage,
@@ -10,6 +11,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
+import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 
 interface PendingInvoiceLike extends MergeableInvoice {
   status: string
@@ -34,7 +36,19 @@ function invoiceLabel(invoice: PendingInvoiceLike) {
 export function PayInvoicePickerModal({ patientId, invoices, onClose, onChanged }: PayInvoicePickerModalProps) {
   const [payingInvoice, setPayingInvoice] = useState<PendingInvoiceLike | null>(null)
   const [merging, setMerging] = useState(false)
+  const [printJob, setPrintJob] = useState<{ invoices: any[]; patient: any; doctor: DoctorProfileData | null } | null>(null)
   const totalDue = invoices.reduce((sum, invoice) => sum + invoiceDue(invoice), 0)
+
+  async function printAfterPayment(invoiceId: string) {
+    const [{ data: invoice }, { data: patient }, doctor] = await Promise.all([
+      supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle(),
+      supabase.from('patients').select('first_name, last_name, phone, email, patient_code').eq('id', patientId).maybeSingle(),
+      loadDoctorProfile().catch(() => null),
+    ])
+    if (invoice && patient) {
+      setPrintJob({ invoices: [invoice], patient, doctor })
+    }
+  }
 
   async function mergeAndPayAll() {
     setMerging(true)
@@ -108,7 +122,7 @@ export function PayInvoicePickerModal({ patientId, invoices, onClose, onChanged 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full my-4 sm:my-8">
+      <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-3 sm:p-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold">Record Payment</h3>
           <p className="text-sm text-text-secondary">{invoices.length} invoices due — total {formatBDT(totalDue)}</p>
@@ -147,9 +161,26 @@ export function PayInvoicePickerModal({ patientId, invoices, onClose, onChanged 
           invoiceTotal={payingInvoice.total_amount || 0}
           invoicePaid={payingInvoice.paid_amount || 0}
           onClose={() => setPayingInvoice(null)}
-          onSaved={() => {
+          onSaved={async () => {
+            const paidId = payingInvoice.id
             setPayingInvoice(null)
             onChanged()
+            if (confirm('Payment recorded. Print the updated invoice?')) {
+              await printAfterPayment(paidId)
+            } else {
+              onClose()
+            }
+          }}
+        />
+      )}
+
+      {printJob && (
+        <InvoicePrint
+          invoices={printJob.invoices}
+          patient={printJob.patient}
+          doctor={printJob.doctor}
+          onClose={() => {
+            setPrintJob(null)
             onClose()
           }}
         />
