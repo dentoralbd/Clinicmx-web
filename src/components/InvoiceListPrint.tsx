@@ -50,14 +50,12 @@ export function InvoiceListPrint({ invoices, doctor, label, onClose }: InvoiceLi
 
   const originalTitleRef = useRef('')
 
+  // Keep the named title until the modal closes: Android fires 'afterprint' as
+  // soon as the print dialog opens, so restoring there makes the saved PDF pick
+  // up the app title instead of the intended filename.
   useEffect(() => {
     originalTitleRef.current = document.title
-    const restoreTitle = () => {
-      document.title = originalTitleRef.current
-    }
-    window.addEventListener('afterprint', restoreTitle)
     return () => {
-      window.removeEventListener('afterprint', restoreTitle)
       document.title = originalTitleRef.current
     }
   }, [])
@@ -72,29 +70,34 @@ export function InvoiceListPrint({ invoices, doctor, label, onClose }: InvoiceLi
   const grandDue = Math.max(grandTotal - grandPaid, 0)
 
   return (
-    <div className="invoice-list-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
-      {/* Action bar – hidden on print */}
-      <div className="print:hidden fixed top-4 right-4 flex gap-2 z-[101]">
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-        >
-          <Printer className="w-4 h-4" />
-          Print / Save as PDF
-        </button>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-        >
-          <X className="w-4 h-4" />
-          Close
-        </button>
+    <div className="invoice-list-print-overlay fixed inset-0 bg-black/70 z-[100] flex flex-col print:block print:bg-white">
+      {/* Toolbar – sticky, hidden on print */}
+      <div className="print:hidden sticky top-0 z-[101] bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 sm:px-4 sm:py-3">
+          <button
+            onClick={handlePrint}
+            aria-label="Print / Save as PDF"
+            className="flex items-center gap-2 bg-primary text-white px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            <Printer className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Print / Save as PDF</span>
+          </button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+          >
+            <X className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Close</span>
+          </button>
+        </div>
       </div>
 
-      {/* Document */}
+      {/* Scrollable body containing the document */}
+      <div className="flex-1 overflow-y-auto flex items-start justify-center p-4 print:p-0 print:block print:overflow-visible">
       <div
         id="invoice-list-print-root"
-        className="invoice-list-print-container bg-white w-full max-w-4xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
+        className="invoice-list-print-container bg-white w-full max-w-4xl my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* ── Letterhead ── */}
@@ -217,6 +220,7 @@ export function InvoiceListPrint({ invoices, doctor, label, onClose }: InvoiceLi
             </tr>
           </tfoot>
         </table>
+      </div>
       </div>
     </div>
   )

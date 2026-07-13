@@ -96,68 +96,75 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
   }
 
   return (
-    <div className="invoice-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
-      <div className="print:hidden fixed top-4 right-4 flex gap-2 z-[101]">
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-        >
-          <Printer className="w-4 h-4" />
-          Print / Save as PDF
-        </button>
-        <div className="relative">
+    <div className="invoice-print-overlay fixed inset-0 bg-black/70 z-[100] flex flex-col print:block print:bg-white">
+      {/* Toolbar – sticky, hidden on print */}
+      <div className="print:hidden sticky top-0 z-[101] bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 sm:px-4 sm:py-3">
           <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowShareMenu((v) => !v)
-            }}
-            aria-label="Email or WhatsApp estimate"
-            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+            onClick={handlePrint}
+            aria-label="Print / Save as PDF"
+            className="flex items-center gap-2 bg-primary text-white px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-primary/90 transition-colors text-sm font-medium"
           >
-            <Mail className="w-4 h-4" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600" />
-            <span>Share</span>
+            <Printer className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Print / Save as PDF</span>
           </button>
-          {showShareMenu && (
-            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-2rem)]">
-              <button
-                className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
-                onClick={() => {
-                  shareEstimate('email')
-                  setShowShareMenu(false)
-                }}
-              >
-                <Mail className="w-4 h-4" /> Email
-              </button>
-              <button
-                className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
-                onClick={() => {
-                  shareEstimate('whatsapp')
-                  setShowShareMenu(false)
-                }}
-              >
-                <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
-              </button>
-            </div>
-          )}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowShareMenu((v) => !v)
+              }}
+              aria-label="Email or WhatsApp estimate"
+              className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+            >
+              <Mail className="w-4 h-4 shrink-0" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600 shrink-0" />
+              <span className="hidden sm:inline">Share</span>
+            </button>
+            {showShareMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-1.5rem)]">
+                <button
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    shareEstimate('email')
+                    setShowShareMenu(false)
+                  }}
+                >
+                  <Mail className="w-4 h-4" /> Email
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    shareEstimate('whatsapp')
+                    setShowShareMenu(false)
+                  }}
+                >
+                  <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+          >
+            <X className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Close</span>
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-        >
-          <X className="w-4 h-4" />
-          Close
-        </button>
+
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 px-3 pb-2 sm:px-4 sm:pb-3 text-sm text-gray-700">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={groupSimilar} onChange={(e) => setGroupSimilar(e.target.checked)} />
+            Group similar
+          </label>
+        </div>
       </div>
 
-      <div className="print:hidden fixed top-16 right-4 z-[101] bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3">
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-          <input type="checkbox" checked={groupSimilar} onChange={(e) => setGroupSimilar(e.target.checked)} />
-          Group similar
-        </label>
-      </div>
-
+      {/* Scrollable body containing the estimate document */}
+      <div className="flex-1 overflow-y-auto flex items-start justify-center p-4 print:p-0 print:block print:overflow-visible">
       <div
-        className="invoice-print-container bg-white w-full max-w-3xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
+        className="invoice-print-container bg-white w-full max-w-3xl my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* ── Letterhead: doctor (left) · logo (center) · practice (right) ── */}
@@ -276,6 +283,7 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

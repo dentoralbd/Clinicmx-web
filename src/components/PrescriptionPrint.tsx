@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Printer, X } from 'lucide-react'
+import { Mail, MessageCircle, Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
 import { QRCodeSVG } from 'qrcode.react'
 import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { type ClinicalEntry, quadrantAbbr } from '@/lib/clinicalEntries'
 
 function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
@@ -58,6 +59,7 @@ interface PrescriptionPrintProps {
     date_of_birth?: string
     gender?: string
     phone?: string
+    email?: string | null
     patient_code?: string
     medical_history?: string | null
   }
@@ -121,14 +123,12 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
 
   const originalTitleRef = useRef('')
 
+  // Keep the prescription-named title until the modal closes: Android fires
+  // 'afterprint' as soon as the print dialog opens, so restoring the title
+  // there makes the saved PDF pick up the app title instead of the patient name.
   useEffect(() => {
     originalTitleRef.current = document.title
-    const restoreTitle = () => {
-      document.title = originalTitleRef.current
-    }
-    window.addEventListener('afterprint', restoreTitle)
     return () => {
-      window.removeEventListener('afterprint', restoreTitle)
       document.title = originalTitleRef.current
     }
   }, [])
@@ -142,30 +142,101 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
     window.print()
   }
 
+  const [showShareMenu, setShowShareMenu] = useState(false)
+
+  useEffect(() => {
+    if (!showShareMenu) return
+    const handler = () => setShowShareMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showShareMenu])
+
+  async function sharePrescription(channel: 'email' | 'whatsapp') {
+    const email = patient.email
+    const waNumber = patient.phone ? toWhatsAppNumber(patient.phone) : null
+
+    if (channel === 'email' && !email) {
+      alert('Patient email is not available')
+      return
+    }
+    if (channel === 'whatsapp' && !waNumber) {
+      alert('Patient phone number is not available')
+      return
+    }
+
+    const { buildPrescriptionPdf, prescriptionPdfFileName } = await import('@/lib/prescriptionPdf')
+    const pdf = buildPrescriptionPdf(prescription, patient, doctor, { logoSrc: logoSrc.startsWith('data:') ? logoSrc : undefined })
+    const fileName = prescriptionPdfFileName(prescription, patient)
+    const subject = `Prescription - ${patient.first_name} ${patient.last_name}`
+    const text = `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your prescription dated ${format(new Date(prescription.prescribed_date), 'dd MMM yyyy')}.`
+
+    await sharePdf(pdf, fileName, { channel, email, waNumber, subject, text, docLabel: 'Prescription' })
+  }
+
   return (
-    <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex items-start justify-center p-4 overflow-y-auto print:bg-white">
-      {/* Action bar – hidden on print */}
-      <div className="print:hidden fixed top-4 right-4 flex gap-2 z-[101]">
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-        >
-          <Printer className="w-4 h-4" />
-          Print / Save as PDF
-        </button>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-        >
-          <X className="w-4 h-4" />
-          Close
-        </button>
+    <div className="prescription-print-overlay fixed inset-0 bg-black/70 z-[100] flex flex-col print:block print:bg-white">
+      {/* Toolbar – sticky, hidden on print */}
+      <div className="print:hidden sticky top-0 z-[101] bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 sm:px-4 sm:py-3">
+          <button
+            onClick={handlePrint}
+            aria-label="Print / Save as PDF"
+            className="flex items-center gap-2 bg-primary text-white px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            <Printer className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Print / Save as PDF</span>
+          </button>
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowShareMenu((v) => !v)
+              }}
+              aria-label="Email or WhatsApp prescription"
+              className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+            >
+              <Mail className="w-4 h-4 shrink-0" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600 shrink-0" />
+              <span className="hidden sm:inline">Share</span>
+            </button>
+            {showShareMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-1.5rem)]">
+                <button
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    sharePrescription('email')
+                    setShowShareMenu(false)
+                  }}
+                >
+                  <Mail className="w-4 h-4" /> Email
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    sharePrescription('whatsapp')
+                    setShowShareMenu(false)
+                  }}
+                >
+                  <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+          >
+            <X className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Close</span>
+          </button>
+        </div>
       </div>
 
-      {/* Prescription document */}
+      {/* Scrollable body containing the prescription document */}
+      <div className="flex-1 overflow-y-auto flex items-start justify-center p-4 print:p-0 print:block print:overflow-visible">
       <div
         id="prescription-print-root"
-        className="prescription-print-container bg-white w-full max-w-3xl my-16 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
+        className="prescription-print-container bg-white w-full max-w-3xl my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* ── Letterhead: doctor (left) · logo (center) · practice (right) ── */}
@@ -393,6 +464,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

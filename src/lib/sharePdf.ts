@@ -15,6 +15,8 @@ export interface SharePdfInfo {
   waNumber?: string | null
   subject: string
   text: string
+  /** Noun used in the fallback download alert, e.g. "Invoice", "Prescription". Defaults to "Invoice". */
+  docLabel?: string
 }
 
 /**
@@ -44,11 +46,12 @@ export async function sharePdf(doc: jsPDF, fileName: string, info: SharePdfInfo)
   link.click()
   URL.revokeObjectURL(url)
 
+  const docLabel = info.docLabel || 'Invoice'
   if (info.channel === 'email') {
-    alert('Invoice PDF downloaded. Please attach it to the email before sending.')
+    alert(`${docLabel} PDF downloaded. Please attach it to the email before sending.`)
     window.location.href = `mailto:${info.email}?subject=${encodeURIComponent(info.subject)}&body=${encodeURIComponent(info.text)}`
   } else {
-    alert('Invoice PDF downloaded. Please attach it in WhatsApp before sending.')
+    alert(`${docLabel} PDF downloaded. Please attach it in WhatsApp before sending.`)
     window.open(`https://wa.me/${info.waNumber}?text=${encodeURIComponent(info.text)}`, '_blank')
   }
 }

@@ -64,21 +64,27 @@ export function ActivityTimeline({ items, onNavigate, initialCount = 15 }: Activ
                 <button
                   key={item.id}
                   onClick={() => onNavigate(item.sectionId)}
-                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
+                  className="flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
                 >
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${meta.dot}`}>
                     <Icon className={`h-4 w-4 ${meta.iconColor}`} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block line-clamp-2 break-words text-sm font-medium">{item.title}</span>
-                    {item.subtitle && <span className="block truncate text-xs text-text-secondary">{item.subtitle}</span>}
-                  </span>
-                  {item.badge && (
-                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-text-secondary">
-                      {item.badge}
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium">{item.title}</span>
+                      {item.amountLabel && <span className="shrink-0 text-sm font-semibold">{item.amountLabel}</span>}
                     </span>
-                  )}
-                  {item.amountLabel && <span className="shrink-0 text-sm font-semibold">{item.amountLabel}</span>}
+                    {(item.subtitle || item.badge) && (
+                      <span className="mt-0.5 flex items-center justify-between gap-2">
+                        {item.subtitle && <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">{item.subtitle}</span>}
+                        {item.badge && (
+                          <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-text-secondary">
+                            {item.badge}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </span>
                 </button>
               )
             })}

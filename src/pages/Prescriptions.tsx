@@ -1744,6 +1744,7 @@ export function Prescriptions() {
             date_of_birth: printingPatient?.date_of_birth,
             gender: printingPatient?.gender,
             phone: printingPatient?.phone,
+            email: printingPatient?.email,
             patient_code: printingPatient?.patient_code,
             medical_history: printingPatient?.medical_history,
           }}

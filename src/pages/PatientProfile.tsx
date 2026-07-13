@@ -3423,6 +3423,7 @@ export function PatientProfile() {
             date_of_birth: patient.date_of_birth,
             gender: patient.gender,
             phone: patient.phone,
+            email: patient.email,
             patient_code: patient.patient_code,
             medical_history: patient.medical_history,
           }}
