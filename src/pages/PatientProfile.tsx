@@ -25,6 +25,7 @@ import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
+import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
 import {
   getComplaintTemplates,
   getExaminationTemplates,
@@ -75,6 +76,89 @@ function createEmptyVisitTreatment(): VisitTreatmentEntry {
     cost: '',
     status: 'Completed',
   }
+}
+
+// Seed cost for a plan item ticked in the Add Visit modal. Prescription-derived
+// plan rows default to cost 0; if a sibling planned/in-progress row for the same
+// treatment type and tooth carries a price (entered on the Treatment Plan form),
+// borrow that price. Items that already have a cost keep it unchanged.
+function resolvePlannedCostSeed(target: any, plannedTreatments: any[]): string {
+  if ((Number(target.cost) || 0) > 0) return String(target.cost)
+  const match = plannedTreatments.find(
+    (t) =>
+      t.id !== target.id &&
+      (Number(t.cost) || 0) > 0 &&
+      (t.treatment_type || '').trim().toLowerCase() ===
+        (target.treatment_type || '').trim().toLowerCase() &&
+      (t.tooth_number ?? null) === (target.tooth_number ?? null)
+  )
+  return match ? String(match.cost) : String(target.cost ?? '')
+}
+
+// Prefixes are load-bearing: splitVisitNotes() parses them back out of the
+// visit's notes column so the Visits tab can render labeled rows.
+const TREATMENT_LINE_PREFIX = 'Treatment done:'
+const PAYMENT_LINE_PREFIX = 'Payment:'
+
+// Visits have no DB link to treatments/invoices, so the per-visit summary
+// (tooth numbers worked on, billed/paid amounts) is captured as plain text
+// inside the visit's notes at save time.
+function buildVisitSummaryLines(args: {
+  doneFromPlan: Array<{ treatment: any; selection: VisitPlannedSelection }>
+  doneEntries: VisitTreatmentEntry[]
+  newBilledTotal: number
+  paymentAmount: number
+  paymentMethod: string
+  towardPreviousDue: number
+}): string[] {
+  const lines: string[] = []
+
+  const parts = [
+    ...args.doneFromPlan.map(
+      ({ treatment, selection }) => `${buildTreatmentLabel(treatment)} — ${selection.status}`
+    ),
+    ...args.doneEntries.map((entry) => {
+      const teeth = entry.teeth.length > 0 ? ` (${entry.teeth.map((t) => `T${t}`).join(', ')})` : ''
+      return `${entry.description.trim()}${teeth} — ${entry.status}`
+    }),
+  ]
+  if (parts.length > 0) lines.push(`${TREATMENT_LINE_PREFIX} ${parts.join('; ')}`)
+
+  if (args.newBilledTotal > 0 || args.paymentAmount > 0) {
+    const paymentParts: string[] = []
+    if (args.newBilledTotal > 0) paymentParts.push(`Billed ${formatCurrency(args.newBilledTotal)}`)
+    if (args.paymentAmount > 0) {
+      paymentParts.push(`Paid ${formatCurrency(args.paymentAmount)} (${args.paymentMethod})`)
+      if (args.towardPreviousDue > 0) {
+        paymentParts.push(`${formatCurrency(args.towardPreviousDue)} toward previous due`)
+      }
+    } else {
+      paymentParts.push('No payment received')
+    }
+    lines.push(`${PAYMENT_LINE_PREFIX} ${paymentParts.join(' · ')}`)
+  }
+
+  return lines
+}
+
+function splitVisitNotes(notes: string | null | undefined): {
+  treatmentDone: string | null
+  payment: string | null
+  rest: string
+} {
+  let treatmentDone: string | null = null
+  let payment: string | null = null
+  const rest: string[] = []
+  for (const line of (notes || '').split('\n')) {
+    if (treatmentDone === null && line.startsWith(TREATMENT_LINE_PREFIX)) {
+      treatmentDone = line.slice(TREATMENT_LINE_PREFIX.length).trim()
+    } else if (payment === null && line.startsWith(PAYMENT_LINE_PREFIX)) {
+      payment = line.slice(PAYMENT_LINE_PREFIX.length).trim()
+    } else {
+      rest.push(line)
+    }
+  }
+  return { treatmentDone, payment, rest: rest.join('\n').trim() }
 }
 
 type SectionId =
@@ -260,6 +344,10 @@ export function PatientProfile() {
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
+  // Treatment plan cost confirmation: prescription submit is gated behind this
+  // dialog whenever the prescription has plan entries; the doctor enters costs or defers.
+  const [rxCostDialogEntries, setRxCostDialogEntries] = useState<ClinicalEntry[] | null>(null)
+  const [rxCostDialogInitial, setRxCostDialogInitial] = useState<Record<string, string>>({})
   const [visitEditForm, setVisitEditForm] = useState({
     visit_date: '',
     chief_complaint: '',
@@ -688,10 +776,28 @@ export function PatientProfile() {
       return
     }
 
+    // Capture what was done/billed/paid this visit as text inside notes, mirroring
+    // the payment routing below (new invoice first, remainder to previous due).
+    const hasNewBillable = doneEntries.length > 0 || billableFromPlan.length > 0
+    const newInvoicePortion = hasNewBillable ? Math.min(paymentAmount, treatmentsTotal) : 0
+    const towardPreviousDue = Math.min(paymentAmount - newInvoicePortion, existingDueTotal)
+    const summaryLines = buildVisitSummaryLines({
+      doneFromPlan,
+      doneEntries,
+      newBilledTotal: treatmentsTotal,
+      paymentAmount,
+      paymentMethod: visitPayment.method,
+      towardPreviousDue,
+    })
+    const notesWithSummary = [visitForm.notes?.trim(), ...summaryLines]
+      .filter(Boolean)
+      .join('\n')
+
     try {
       await supabase.from('patient_visits').insert([{
         patient_id: id,
         ...visitForm,
+        notes: notesWithSummary || null,
       }])
       logActivity({
         action: 'create',
@@ -1011,6 +1117,33 @@ export function PatientProfile() {
     e.preventDefault()
     if (!id) return
 
+    const planEntries = prescriptionForm.treatment_plan_entries.filter((entry) => entry.text.trim())
+    if (planEntries.length === 0) {
+      await savePrescriptionWithCosts({})
+      return
+    }
+
+    // Prefill the dialog with costs already stored on this prescription's plan rows
+    const initialCosts: Record<string, string> = {}
+    if (editingPrescriptionId) {
+      const { data: existingRows } = await supabase
+        .from('treatments')
+        .select('prescription_entry_id, cost')
+        .eq('prescription_id', editingPrescriptionId)
+      for (const row of existingRows || []) {
+        const key = row.prescription_entry_id
+        if (key && !(key in initialCosts) && (Number(row.cost) || 0) > 0) {
+          initialCosts[key] = String(row.cost)
+        }
+      }
+    }
+    setRxCostDialogInitial(initialCosts)
+    setRxCostDialogEntries(planEntries)
+  }
+
+  async function savePrescriptionWithCosts(entryCosts: Record<string, string>) {
+    if (!id) return
+
     try {
       const payload: any = {
         patient_id: id,
@@ -1135,11 +1268,15 @@ export function PatientProfile() {
           const reusableRows = rowsForEntry.filter((row) => !row.is_invoiced)
           const teethList = entry.teeth.length > 0 ? entry.teeth : [null]
 
+          // Cost from the confirmation dialog applies per tooth row; blank means
+          // "add later" — never overwrite a cost already set elsewhere with 0.
+          const enteredCost = entryCosts[entry.id]
+          const costPatch = enteredCost?.trim() ? { cost: parseFloat(enteredCost) || 0 } : {}
           for (let i = 0; i < teethList.length; i++) {
             const operation = mapEntryToOperation(entry, teethList[i])
             const reuseRow = reusableRows[i]
             if (reuseRow) {
-              await supabase.from('treatments').update(operation).eq('id', reuseRow.id)
+              await supabase.from('treatments').update({ ...operation, ...costPatch }).eq('id', reuseRow.id)
             } else {
               await supabase.from('treatments').insert([{
                 patient_id: id,
@@ -1148,6 +1285,7 @@ export function PatientProfile() {
                 status: 'Planned',
                 notes: 'Added from prescription treatment plan',
                 ...operation,
+                ...costPatch,
               }])
               treatmentRowsCreated++
             }
@@ -2105,68 +2243,103 @@ export function PatientProfile() {
   }
 
   const renderVisitsSection = () => (
-    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
-      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-        <h3 className="font-semibold">Visit History</h3>
-        <Button size="sm" onClick={() => setShowVisitForm(true)}>
-          <Plus className="w-4 h-4 mr-1" />
-          Add Visit
-        </Button>
-      </div>
-      {visits.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No visits recorded</div>
-      ) : (
-        <div className="divide-y divide-gray-200">
-          {visits.map((visit) => (
-            <div key={visit.id} className="p-4">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="w-4 h-4 text-text-secondary" />
-                  <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openVisitEdit(visit)}
-                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                    title="Edit"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  {canDelete() && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteVisit(visit)}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
-              {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
-              {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
-              {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
-              {visit.notes && <InfoRow label="Notes" value={visit.notes} />}
-            </div>
-          ))}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-3xl bg-blue-50 border border-blue-200 p-4">
+          <div className="text-sm text-blue-600 font-medium">Total Bill</div>
+          <div className="mt-1 text-xl font-bold text-blue-900">{formatCurrency(totalBilled)}</div>
         </div>
-      )}
+        <div className="rounded-3xl bg-green-50 border border-green-200 p-4">
+          <div className="text-sm text-green-600 font-medium">Total Paid</div>
+          <div className="mt-1 text-xl font-bold text-green-900">{formatCurrency(totalPaid)}</div>
+        </div>
+        {totalDue < 0 ? (
+          <div className="rounded-3xl bg-green-50 border border-green-200 p-4">
+            <div className="text-sm text-green-600 font-medium">Advance</div>
+            <div className="mt-1 text-xl font-bold text-green-900">{formatCurrency(-totalDue)}</div>
+          </div>
+        ) : (
+          <div className="rounded-3xl bg-red-50 border border-red-200 p-4">
+            <div className="text-sm text-red-600 font-medium">Total Due</div>
+            <div className="mt-1 text-xl font-bold text-red-900">{formatCurrency(totalDue)}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 className="font-semibold">Visit History</h3>
+          <Button size="sm" onClick={() => setShowVisitForm(true)}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add Visit
+          </Button>
+        </div>
+        {visits.length === 0 ? (
+          <div className="p-8 text-center text-text-secondary">No visits recorded</div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {visits.map((visit) => {
+              const parsedNotes = splitVisitNotes(visit.notes)
+              return (
+                <div key={visit.id} className="p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon className="w-4 h-4 text-text-secondary" />
+                      <span className="font-medium">{formatDateValue(visit.visit_date, 'MMMM d, yyyy h:mm a')}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openVisitEdit(visit)}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      {canDelete() && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVisit(visit)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {visit.chief_complaint && <InfoRow label="Chief Complaint" value={visit.chief_complaint} />}
+                  {visit.examination_findings && <InfoRow label="Examination" value={visit.examination_findings} />}
+                  {visit.diagnosis && <InfoRow label="Diagnosis" value={visit.diagnosis} />}
+                  {visit.treatment_plan && <InfoRow label="Treatment Plan" value={visit.treatment_plan} />}
+                  {parsedNotes.treatmentDone && <InfoRow label="Treatment Done" value={parsedNotes.treatmentDone} />}
+                  {parsedNotes.payment && <InfoRow label="Payment" value={parsedNotes.payment} />}
+                  {parsedNotes.rest && <InfoRow label="Notes" value={parsedNotes.rest} className="whitespace-pre-line" />}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 
   const renderOperationsSection = () => {
+    // Rows created together share an origin id: treatment_plan_group_id for the
+    // direct Treatment Plan form, prescription_entry_id for prescription-derived
+    // rows (one tagged entry split into one row per tooth). Either counts as "same plan".
+    const getTreatmentOriginId = (t: any): string | null => t.treatment_plan_group_id || t.prescription_entry_id || null
+
     const planGroupCounts = new Map<string, number>()
     const planGroupTeeth = new Map<string, number[]>()
     treatments.forEach((t) => {
-      if (t.treatment_plan_group_id) {
-        planGroupCounts.set(t.treatment_plan_group_id, (planGroupCounts.get(t.treatment_plan_group_id) || 0) + 1)
+      const originId = getTreatmentOriginId(t)
+      if (originId) {
+        planGroupCounts.set(originId, (planGroupCounts.get(originId) || 0) + 1)
         if (t.tooth_number != null) {
-          const teeth = planGroupTeeth.get(t.treatment_plan_group_id) || []
+          const teeth = planGroupTeeth.get(originId) || []
           if (!teeth.includes(t.tooth_number)) teeth.push(t.tooth_number)
-          planGroupTeeth.set(t.treatment_plan_group_id, teeth)
+          planGroupTeeth.set(originId, teeth)
         }
       }
     })
@@ -2181,16 +2354,27 @@ export function PatientProfile() {
     const isTreatmentLinked = (treatment: any) =>
       !!treatment.invoice_id || linkedTreatmentIds.has(treatment.id)
 
+    // Possible-duplicate detection: Planned/In Progress rows that share the same
+    // treatment type and tooth are very likely the same real-world item entered
+    // twice (e.g. once via a prescription, once via the direct Treatment Plan
+    // form). Flagged for manual review only — nothing here is deleted automatically.
+    const duplicateClusterMap = new Map<string, any[]>()
+    plannedTreatments.forEach((t) => {
+      const key = `${(t.treatment_type || '').trim().toLowerCase()}::${t.tooth_number ?? 'none'}`
+      duplicateClusterMap.set(key, [...(duplicateClusterMap.get(key) || []), t])
+    })
+    const duplicateClusters = [...duplicateClusterMap.values()].filter((members) => members.length > 1)
+
     const estimatableTreatments = pendingBillableTreatments.filter(
       (t) => t.status === 'Planned' || t.status === 'In Progress'
     )
 
     // Opt-in grouping: only merges plan rows identical apart from tooth number
     // (same type, description, cost) — variants like GI vs LC filling stay separate.
-    const planRowKey = (t: any) =>
-      t.treatment_plan_group_id
-        ? `${t.treatment_plan_group_id}::${t.treatment_type}::${(t.description || '').trim()}::${t.cost || 0}`
-        : null
+    const planRowKey = (t: any) => {
+      const originId = getTreatmentOriginId(t)
+      return originId ? `${originId}::${t.treatment_type}::${(t.description || '').trim()}::${t.cost || 0}` : null
+    }
     const groupBuckets = new Map<string, any[]>()
     if (groupSimilarTreatments) {
       treatments.forEach((t) => {
@@ -2221,9 +2405,9 @@ export function PatientProfile() {
             <div className={`flex items-center gap-2 ${child ? 'font-normal text-text-secondary' : 'font-medium'}`}>
               {child && <span className="text-blue-300">&#8627;</span>}
               {treatment.treatment_type}
-              {!child && treatment.treatment_plan_group_id && (planGroupCounts.get(treatment.treatment_plan_group_id) || 0) > 1 && (
+              {!child && getTreatmentOriginId(treatment) && (planGroupCounts.get(getTreatmentOriginId(treatment)!) || 0) > 1 && (
                 <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                  Plan &middot; {planGroupCounts.get(treatment.treatment_plan_group_id)} items
+                  Plan &middot; {planGroupCounts.get(getTreatmentOriginId(treatment)!)} items
                 </span>
               )}
             </div>
@@ -2231,8 +2415,8 @@ export function PatientProfile() {
           </td>
           <td className="px-4 py-3 text-sm">
             {treatment.tooth_number || 'N/A'}
-            {!child && treatment.tooth_number != null && treatment.treatment_plan_group_id && (planGroupTeeth.get(treatment.treatment_plan_group_id) || []).length > 1 && (
-              <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(treatment.treatment_plan_group_id) || []).join(', ')})</span>
+            {!child && treatment.tooth_number != null && getTreatmentOriginId(treatment) && (planGroupTeeth.get(getTreatmentOriginId(treatment)!) || []).length > 1 && (
+              <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(getTreatmentOriginId(treatment)!) || []).join(', ')})</span>
             )}
           </td>
           <td className="px-4 py-3">
@@ -2370,7 +2554,50 @@ export function PatientProfile() {
     }
 
     return (
-    <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
+    <div className="space-y-6">
+      {duplicateClusters.length > 0 && (
+        <div className="rounded-3xl bg-amber-50 border border-amber-200 p-4">
+          <h3 className="font-semibold text-amber-900">Possible Duplicates</h3>
+          <p className="text-xs text-amber-700 mt-1 mb-3">
+            These planned/in-progress items share the same treatment type and tooth — likely the same work entered twice. Delete the one that shouldn&apos;t be billed.
+          </p>
+          <div className="space-y-3">
+            {duplicateClusters.map((members, idx) => (
+              <div key={idx} className="rounded-lg border border-amber-200 bg-white p-3">
+                <div className="text-sm font-medium mb-2">
+                  {members[0].treatment_type}
+                  {members[0].tooth_number != null ? ` (T${members[0].tooth_number})` : ''}
+                </div>
+                <div className="space-y-1.5">
+                  {members.map((m) => {
+                    const invoiced = !!m.invoice_id || linkedTreatmentIds.has(m.id)
+                    return (
+                      <div key={m.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-text-secondary">
+                          {m.description || '—'} · {m.status} · {formatCurrency(m.cost || 0)}
+                        </span>
+                        {invoiced ? (
+                          <span className="text-xs text-gray-400 whitespace-nowrap">Invoiced — resolve in Billing</span>
+                        ) : canDelete() ? (
+                          <button
+                            type="button"
+                            onClick={() => deleteTreatmentRow(m)}
+                            className="text-xs text-red-600 hover:underline whitespace-nowrap"
+                          >
+                            Delete duplicate
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <div>
           <h3 className="font-semibold">Treatment History</h3>
@@ -2446,6 +2673,7 @@ export function PatientProfile() {
           </table>
         </div>
       )}
+      </div>
     </div>
     )
   }
@@ -3288,6 +3516,18 @@ export function PatientProfile() {
         />
       )}
 
+      {rxCostDialogEntries && (
+        <TreatmentPlanCostDialog
+          entries={rxCostDialogEntries}
+          initialCosts={rxCostDialogInitial}
+          onConfirm={async (costs) => {
+            setRxCostDialogEntries(null)
+            await savePrescriptionWithCosts(costs)
+          }}
+          onCancel={() => setRxCostDialogEntries(null)}
+        />
+      )}
+
       {showVisitForm && (
         <VisitFormModal
           formData={visitForm}
@@ -3437,6 +3677,7 @@ export function PatientProfile() {
           formData={treatmentPlanForm}
           setFormData={setTreatmentPlanForm}
           dentitionType={patientDentition}
+          existingPlanned={plannedTreatments}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
           onAddItem={addTreatmentPlanItem}
@@ -3820,7 +4061,7 @@ function VisitFormModal({
                         <input
                           type="checkbox"
                           checked={!!selection?.selected}
-                          onChange={() => togglePlanned(t.id, String(t.cost ?? ''))}
+                          onChange={() => togglePlanned(t.id, resolvePlannedCostSeed(t, plannedTreatments as any[]))}
                         />
                         {buildTreatmentLabel(t)}
                         {t.invoice_id && (
@@ -4970,12 +5211,14 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
   )
 }
 
-function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
+function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlanned, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
   function updateItem(index: number, patch: Record<string, any>) {
     const newItems = [...formData.items]
     newItems[index] = { ...newItems[index], ...patch }
     setFormData({ ...formData, items: newItems })
   }
+
+  const plannedList = (existingPlanned as any[]) || []
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -4986,6 +5229,26 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, onSubmit, on
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {plannedList.length > 0 && (
+          <div className="px-6 pt-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-medium text-amber-800 mb-1.5">
+                Already planned — check before adding a duplicate
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {plannedList.map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-full bg-white text-amber-900 border border-amber-200"
+                  >
+                    {buildTreatmentLabel(t)} · {t.status}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={onSubmit} className="p-6 space-y-4">
           <div className="space-y-3">

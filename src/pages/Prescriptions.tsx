@@ -30,6 +30,7 @@ import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medica
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
+import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
 import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
@@ -97,6 +98,10 @@ export function Prescriptions() {
   // Weight for this visit — kept separate from formData so it can never interact with
   // the patient_id select's onChange/selectPatientHistory wiring below.
   const [prescriptionWeight, setPrescriptionWeight] = useState('')
+  // Treatment plan cost confirmation: submit is gated behind this dialog whenever
+  // the prescription has plan entries; the doctor enters costs or defers.
+  const [costDialogEntries, setCostDialogEntries] = useState<ClinicalEntry[] | null>(null)
+  const [costDialogInitial, setCostDialogInitial] = useState<Record<string, string>>({})
   const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
 
   useEffect(() => {
@@ -234,6 +239,50 @@ export function Prescriptions() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // Same required-field checks as savePrescription, run before the cost dialog
+    // so the doctor isn't asked for costs on a submit that would fail anyway.
+    if (patientMode === 'new') {
+      if (!newPatientData.first_name || !newPatientData.last_name || !newPatientData.phone) {
+        alert('Please fill in all required patient fields')
+        return
+      }
+      const parsedAge = Number.parseInt(newPatientData.age, 10)
+      const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+      if (!newPatientData.date_of_birth && !hasValidAge) {
+        alert('Please provide Date of Birth or Age for the new patient')
+        return
+      }
+    } else if (!formData.patient_id) {
+      alert('Please select or create a patient')
+      return
+    }
+
+    const planEntries = formData.treatment_plan_entries.filter((entry) => entry.text.trim())
+    if (planEntries.length === 0) {
+      await savePrescription({})
+      return
+    }
+
+    // Prefill the dialog with costs already stored on this prescription's plan rows
+    const initialCosts: Record<string, string> = {}
+    if (editingId) {
+      const { data: existingRows } = await supabase
+        .from('treatments')
+        .select('prescription_entry_id, cost')
+        .eq('prescription_id', editingId)
+      for (const row of existingRows || []) {
+        const key = row.prescription_entry_id
+        if (key && !(key in initialCosts) && (Number(row.cost) || 0) > 0) {
+          initialCosts[key] = String(row.cost)
+        }
+      }
+    }
+    setCostDialogInitial(initialCosts)
+    setCostDialogEntries(planEntries)
+  }
+
+  async function savePrescription(entryCosts: Record<string, string>) {
     try {
       let patientId = formData.patient_id
 
@@ -369,11 +418,15 @@ export function Prescriptions() {
           const reusableRows = rowsForEntry.filter((row) => !row.is_invoiced)
           const teethList = entry.teeth.length > 0 ? entry.teeth : [null]
 
+          // Cost from the confirmation dialog applies per tooth row; blank means
+          // "add later" — never overwrite a cost already set elsewhere with 0.
+          const enteredCost = entryCosts[entry.id]
+          const costPatch = enteredCost?.trim() ? { cost: parseFloat(enteredCost) || 0 } : {}
           for (let i = 0; i < teethList.length; i++) {
             const operation = mapEntryToOperation(entry, teethList[i])
             const reuseRow = reusableRows[i]
             if (reuseRow) {
-              await supabase.from('treatments').update(operation).eq('id', reuseRow.id)
+              await supabase.from('treatments').update({ ...operation, ...costPatch }).eq('id', reuseRow.id)
             } else {
               await supabase.from('treatments').insert([{
                 patient_id: patientId,
@@ -382,6 +435,7 @@ export function Prescriptions() {
                 status: 'Planned',
                 notes: 'Added from prescription treatment plan',
                 ...operation,
+                ...costPatch,
               }])
               treatmentRowsCreated++
             }
@@ -1750,6 +1804,18 @@ export function Prescriptions() {
           }}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => { setPrintingPrescription(null); setPrintingPatient(null) }}
+        />
+      )}
+
+      {costDialogEntries && (
+        <TreatmentPlanCostDialog
+          entries={costDialogEntries}
+          initialCosts={costDialogInitial}
+          onConfirm={async (costs) => {
+            setCostDialogEntries(null)
+            await savePrescription(costs)
+          }}
+          onCancel={() => setCostDialogEntries(null)}
         />
       )}
     </div>
