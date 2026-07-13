@@ -164,9 +164,11 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       return
     }
 
-    const { buildPrescriptionPdf, prescriptionPdfFileName } = await import('@/lib/prescriptionPdf')
-    const pdf = buildPrescriptionPdf(prescription, patient, doctor, { logoSrc: logoSrc.startsWith('data:') ? logoSrc : undefined })
-    const fileName = prescriptionPdfFileName(prescription, patient)
+    const { buildPdfFromElement } = await import('@/lib/domToPdf')
+    const pdf = await buildPdfFromElement('prescription-print-root')
+    const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
+    const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : 'Prescription'
+    const fileName = `Prescription_${namePart}_${idPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
     const subject = `Prescription - ${patient.first_name} ${patient.last_name}`
     const text = `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your prescription dated ${format(new Date(prescription.prescribed_date), 'dd MMM yyyy')}.`
 
