@@ -1,6 +1,12 @@
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 
+// Matches the on-screen `max-w-3xl` (48rem) the print containers use — capturing at this
+// fixed desktop width keeps the shared PDF laid out like the real print/PDF output even when
+// the modal is open on a narrow phone viewport (otherwise the container gets squeezed down to
+// the device width, text wraps far more than intended, and the page renders unnaturally tall).
+const DESKTOP_CAPTURE_WIDTH = 768
+
 /**
  * Rasterizes a DOM element (via html2canvas) into a multi-page A4 jsPDF.
  * Used where jsPDF's text-drawing API can't be trusted to render the content faithfully —
@@ -18,9 +24,12 @@ export async function buildPdfFromElement(
     scale: 2,
     useCORS: true,
     backgroundColor: '#ffffff',
+    windowWidth: DESKTOP_CAPTURE_WIDTH + 64,
     onclone: (clonedDoc) => {
       const clonedElement = clonedDoc.getElementById(elementId)
       if (clonedElement instanceof HTMLElement) {
+        clonedElement.style.width = `${DESKTOP_CAPTURE_WIDTH}px`
+        clonedElement.style.maxWidth = `${DESKTOP_CAPTURE_WIDTH}px`
         clonedElement.style.boxShadow = 'none'
         clonedElement.style.borderRadius = '0'
         clonedElement.style.margin = '0'
