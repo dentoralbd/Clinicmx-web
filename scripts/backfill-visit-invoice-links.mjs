@@ -67,6 +67,7 @@ function amountsClose(a, b, tolerance = 1) {
 // Mirrors buildVisitSummaryLines' "Treatment done: X (T#) — Status; ..." format
 // and buildTreatmentLabel's "{treatment_type} (T#) – {detail}" shape.
 const TREATMENT_LINE_PREFIX = 'Treatment done:';
+const PAYMENT_LINE_PREFIX = 'Payment:';
 const SEGMENT_PATTERN = /^(.*)\s—\s(Completed|In Progress|Cancelled|Planned)$/;
 const LABEL_TOOTH_PATTERN = /^(.+?)\s*\(T(\d+)\)(?:\s*–\s*(.*))?$/;
 
@@ -122,11 +123,14 @@ async function main() {
       .map((h) => String(h.invoice_id))
   );
 
-  // Group unlinked, billed visits and candidate invoices by patient_id.
+  // Group unlinked visits with any payment activity (not just ones that billed
+  // something new — a visit that only pays down an existing invoice still needs
+  // linking so Visit History can show that invoice's live total/due) and
+  // candidate invoices by patient_id.
   const visitsByPatient = new Map();
   for (const v of visits) {
     if (v.invoice_id) continue;
-    if (extractBilledAmount(v.notes) === null) continue;
+    if (!v.notes || !v.notes.includes(PAYMENT_LINE_PREFIX)) continue;
     const key = String(v.patient_id);
     if (!visitsByPatient.has(key)) visitsByPatient.set(key, []);
     visitsByPatient.get(key).push(v);

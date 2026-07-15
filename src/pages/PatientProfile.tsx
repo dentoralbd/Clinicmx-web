@@ -194,20 +194,24 @@ function paymentChipClass(chip: string): string {
   return 'bg-gray-50 text-gray-600 border-gray-200'
 }
 
-// For visits linked to an invoice (invoice_id), the "Billed" figure and a "Due"
-// figure are recomputed live from the invoice so a discount applied after the
-// visit (which updates invoices.total_amount) is reflected here too. "Paid" stays
-// as the frozen text since it's a historical fact about what was paid at that visit.
+// For visits linked to an invoice (invoice_id), "Billed" and "Due" are recomputed
+// live from the invoice so a discount applied after the visit (which updates
+// invoices.total_amount), or payments made in other visits against the same
+// multi-visit invoice, are reflected here too. "Paid" stays as the frozen text
+// since it's a historical fact about what was paid at that specific visit — even
+// when the visit itself billed nothing new and only paid down an existing invoice
+// (e.g. installment payments on a treatment plan invoiced once up front).
 function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[]): string[] {
   const chips = paymentText ? parsePaymentChips(paymentText) : []
   if (!visit.invoice_id) return chips
   const invoice = invoices.find((inv) => inv.id === visit.invoice_id)
   if (!invoice) return chips
-  const hadBilledChip = chips.some((chip) => chip.startsWith('Billed'))
-  if (!hadBilledChip) return chips
   const billed = invoice.total_amount || 0
   const due = getInvoiceDue(invoice)
-  const result = chips.map((chip) => (chip.startsWith('Billed') ? `Billed ${formatCurrency(billed)}` : chip))
+  const hadBilledChip = chips.some((chip) => chip.startsWith('Billed'))
+  const result = hadBilledChip
+    ? chips.map((chip) => (chip.startsWith('Billed') ? `Billed ${formatCurrency(billed)}` : chip))
+    : [`Billed ${formatCurrency(billed)}`, ...chips]
   if (due > 0) result.push(`Due ${formatCurrency(due)}`)
   return result
 }
