@@ -28,12 +28,20 @@ async function writeLocalDoctorProfile(profile: DoctorProfileData) {
  await writeSecureJson(getScopedStorageKey(LOCAL_DOCTOR_PROFILE_KEY), profile)
 }
 
-async function getSupabaseUserId() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (session?.user?.id) return session.user.id
+// This app has no real Supabase Auth session (login is a local PIN gate
+// only), and it's single-clinic/single-doctor, so doctor_profiles is treated
+// as a singleton table — always the first row — rather than being scoped to
+// a user_id that would never match.
+async function getExistingDoctorProfileId() {
+  const { data, error } = await (supabase as any)
+    .from('doctor_profiles')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  return user?.id || null
+  if (error) throw error
+  return (data as { id: string } | null)?.id || null
 }
 
 export function isDoctorProfileAuthError(error: unknown) {
@@ -42,15 +50,13 @@ export function isDoctorProfileAuthError(error: unknown) {
 
 export async function loadDoctorProfile() {
   const localProfile = await readLocalDoctorProfile()
-  const userId = await getSupabaseUserId()
-
-  if (!userId) return localProfile
 
   try {
     const { data, error } = await (supabase as any)
       .from('doctor_profiles')
       .select('*')
-      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle()
 
     if (error) throw error
@@ -77,26 +83,25 @@ export async function saveDoctorProfile(profile: DoctorProfileData) {
     updated_at: new Date().toISOString(),
   }
 
-  const userId = await getSupabaseUserId()
-  if (!userId) {
+  const { id: _id, logo_data: _logo, ...payloadWithoutId } = nextProfile as any
+
+  try {
+    const existingId = await getExistingDoctorProfileId()
+
+    const { data, error } = await (supabase as any)
+      .from('doctor_profiles')
+      .upsert([existingId ? { id: existingId, ...payloadWithoutId } : payloadWithoutId], { onConflict: 'id' })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    const savedProfile: DoctorProfileData = { ...(data as DoctorProfileData), logo_data: nextProfile.logo_data }
+    await writeLocalDoctorProfile(savedProfile)
+    return savedProfile
+  } catch (error) {
+    console.error('Error saving doctor profile to Supabase:', error)
     await writeLocalDoctorProfile(nextProfile)
     return nextProfile
   }
-
-  const { id: _id, logo_data: _logo, ...payloadWithoutId } = {
-    ...nextProfile,
-    user_id: userId,
-  } as any
-
-  const { data, error } = await (supabase as any)
-    .from('doctor_profiles')
-    .upsert([payloadWithoutId], { onConflict: 'user_id' })
-    .select()
-    .single()
-
-  if (error) throw error
-
-  const savedProfile: DoctorProfileData = { ...(data as DoctorProfileData), logo_data: nextProfile.logo_data }
-  await writeLocalDoctorProfile(savedProfile)
-  return savedProfile
 }
