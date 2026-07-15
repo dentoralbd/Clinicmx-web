@@ -164,7 +164,7 @@ export function AppointmentModal({
           last_name: newPatientData.last_name,
           date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
-          phone: newPatientData.phone,
+          phone: newPatientData.phone.replace(/\D/g, ''),
         })
 
         patientId = newPatient.id

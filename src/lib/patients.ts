@@ -76,6 +76,17 @@ export async function createPatient(payload: CreatePatientPayload) {
     : createdPatient
 }
 
+// Strips formatting (dashes, spaces, parens) and a leading Bangladesh country
+// code (+880/880) so phone numbers can be compared regardless of how they
+// were typed or stored, e.g. "01999-497926" vs "+880 1999-497926".
+export function normalizePhoneForSearch(value: string): string {
+  let digits = value.replace(/\D/g, '')
+  if (digits.startsWith('880') && digits.length > 10) {
+    digits = `0${digits.slice(3)}`
+  }
+  return digits
+}
+
 export function matchesPatientSearch(
   candidate: { name: string; code?: string | null; phone?: string | null },
   query: string
@@ -83,9 +94,12 @@ export function matchesPatientSearch(
   const trimmed = query.trim()
   if (!trimmed) return false
   const lower = trimmed.toLowerCase()
+  const normalizedQuery = normalizePhoneForSearch(trimmed)
+  const normalizedPhone = normalizePhoneForSearch(candidate.phone || '')
   return (
     candidate.name.toLowerCase().includes(lower) ||
     (candidate.code || '').toLowerCase().includes(lower) ||
-    (candidate.phone || '').includes(trimmed)
+    (candidate.phone || '').includes(trimmed) ||
+    (normalizedQuery.length > 0 && normalizedPhone.includes(normalizedQuery))
   )
 }

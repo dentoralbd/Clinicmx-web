@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { createPatient, matchesPatientSearch } from '@/lib/patients'
+import { createPatient, matchesPatientSearch, normalizePhoneForSearch } from '@/lib/patients'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -302,7 +302,7 @@ export function Prescriptions() {
         const newPatient = await createPatient({
           first_name: newPatientData.first_name,
           last_name: newPatientData.last_name,
-          phone: newPatientData.phone,
+          phone: newPatientData.phone.replace(/\D/g, ''),
           date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
         })
@@ -730,11 +730,13 @@ export function Prescriptions() {
   const filteredPrescriptions = prescriptions.filter((p) => {
     const term = searchTerm.toLowerCase()
     const patientName = `${p.patients?.first_name} ${p.patients?.last_name}`.toLowerCase()
+    const normalizedTerm = normalizePhoneForSearch(searchTerm)
     return (
       patientName.includes(term) ||
       p.diagnosis?.toLowerCase().includes(term) ||
       p.patients?.patient_code?.toLowerCase().includes(term) ||
-      p.patients?.phone?.toLowerCase().includes(term)
+      p.patients?.phone?.toLowerCase().includes(term) ||
+      (normalizedTerm.length > 0 && normalizePhoneForSearch(p.patients?.phone || '').includes(normalizedTerm))
     )
   })
 
