@@ -74,7 +74,7 @@ function createEmptyVisitTreatment(): VisitTreatmentEntry {
     description: '',
     teeth: [],
     cost: '',
-    status: 'Completed',
+    status: 'In Progress',
   }
 }
 
@@ -4157,6 +4157,19 @@ function VisitFormModal({
   onSubmit,
   onClose,
 }: any) {
+  // Grouping is opt-in per plan-item type so visits with many planned treatments
+  // (e.g. a full-mouth plan) don't force a long scroll through one card each —
+  // mirrors the "Group similar" toggle on the Treatment History tab.
+  const [groupPlannedTreatments, setGroupPlannedTreatments] = useState(true)
+  const [expandedVisitGroups, setExpandedVisitGroups] = useState<Set<string>>(new Set())
+  const toggleVisitGroup = (key: string) =>
+    setExpandedVisitGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
   const validTreatments = (treatmentsDone as VisitTreatmentEntry[]).filter((entry) => entry.description.trim())
   const selectedPlanned = (plannedTreatments as any[]).filter((t) => plannedSelections[t.id]?.selected)
   // Only uninvoiced plan items go on the new invoice; billed ones route the
@@ -4179,7 +4192,7 @@ function VisitFormModal({
         const { [treatmentId]: _removed, ...rest } = prev
         return rest
       }
-      return { ...prev, [treatmentId]: { selected: true, status: 'Completed', cost } }
+      return { ...prev, [treatmentId]: { selected: true, status: 'In Progress', cost } }
     })
   }
 
@@ -4253,50 +4266,107 @@ function VisitFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Treatment Done</label>
 
-            {plannedTreatments.length > 0 && (
-              <div className="mb-3 space-y-2">
-                <p className="text-xs font-medium text-text-secondary">From Treatment Plan</p>
-                {(plannedTreatments as any[]).map((t) => {
-                  const selection = plannedSelections[t.id]
-                  return (
-                    <div key={t.id} className="rounded-lg border border-gray-200 p-3 space-y-2">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={!!selection?.selected}
-                          onChange={() => togglePlanned(t.id, resolvePlannedCostSeed(t, plannedTreatments as any[]))}
-                        />
-                        {buildTreatmentLabel(t)}
-                        {t.invoice_id && (
-                          <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">Billed</span>
-                        )}
-                      </label>
-                      {selection?.selected && (
-                        <div className="flex flex-wrap items-center gap-2 pl-6">
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            placeholder="Cost (BDT)"
-                            value={selection.cost}
-                            onChange={(e) => updatePlannedSelection(t.id, { cost: e.target.value })}
-                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                          <select
-                            value={selection.status}
-                            onChange={(e) => updatePlannedSelection(t.id, { status: e.target.value as 'In Progress' | 'Completed' })}
-                            className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                          >
-                            <option value="Completed">Completed</option>
-                            <option value="In Progress">In Progress</option>
-                          </select>
-                        </div>
+            {plannedTreatments.length > 0 && (() => {
+              const renderPlannedItem = (t: any) => {
+                const selection = plannedSelections[t.id]
+                return (
+                  <div key={t.id} className="rounded-lg border border-gray-200 p-3 space-y-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!!selection?.selected}
+                        onChange={() => togglePlanned(t.id, resolvePlannedCostSeed(t, plannedTreatments as any[]))}
+                      />
+                      {buildTreatmentLabel(t)}
+                      {t.invoice_id && (
+                        <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">Billed</span>
                       )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    </label>
+                    {selection?.selected && (
+                      <div className="flex flex-wrap items-center gap-2 pl-6">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="Cost (BDT)"
+                          value={selection.cost}
+                          onChange={(e) => updatePlannedSelection(t.id, { cost: e.target.value })}
+                          className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <select
+                          value={selection.status}
+                          onChange={(e) => updatePlannedSelection(t.id, { status: e.target.value as 'In Progress' | 'Completed' })}
+                          className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
+              // Group by treatment type so a full-mouth plan (many teeth, same
+              // procedure) collapses into one row instead of one card each.
+              const groupBuckets = new Map<string, any[]>()
+              ;(plannedTreatments as any[]).forEach((t) => {
+                const key = (t.treatment_type || 'Other').trim()
+                groupBuckets.set(key, [...(groupBuckets.get(key) || []), t])
+              })
+
+              return (
+                <div className="mb-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-text-secondary">From Treatment Plan</p>
+                    <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={groupPlannedTreatments}
+                        onChange={(e) => setGroupPlannedTreatments(e.target.checked)}
+                      />
+                      Group similar
+                    </label>
+                  </div>
+                  {[...groupBuckets.entries()].map(([key, members]) => {
+                    if (!groupPlannedTreatments || members.length < 2) {
+                      return members.map((t) => renderPlannedItem(t))
+                    }
+                    const expanded = expandedVisitGroups.has(key)
+                    const selectedCount = members.filter((t) => plannedSelections[t.id]?.selected).length
+                    const allSelected = selectedCount === members.length
+                    return (
+                      <div key={`group-${key}`} className="rounded-lg border border-gray-200 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={() => {
+                                members.forEach((t) => {
+                                  const isSelected = !!plannedSelections[t.id]?.selected
+                                  if (allSelected ? isSelected : !isSelected) {
+                                    togglePlanned(t.id, resolvePlannedCostSeed(t, plannedTreatments as any[]))
+                                  }
+                                })
+                              }}
+                            />
+                            {key}
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+                              {members.length} items{selectedCount > 0 ? ` · ${selectedCount} selected` : ''}
+                            </span>
+                          </label>
+                          <button type="button" onClick={() => toggleVisitGroup(key)} className="text-gray-400 hover:text-gray-600">
+                            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {expanded && <div className="space-y-2 pl-2">{members.map((t) => renderPlannedItem(t))}</div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
 
             <p className="text-xs font-medium text-text-secondary mb-1">{plannedTreatments.length > 0 ? 'Other treatment done' : ''}</p>
             <div className="space-y-2">
@@ -4335,8 +4405,8 @@ function VisitFormModal({
                       onChange={(e) => updateTreatmentEntry(index, { status: e.target.value as VisitTreatmentEntry['status'] })}
                       className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     >
-                      <option value="Completed">Completed</option>
                       <option value="In Progress">In Progress</option>
+                      <option value="Completed">Completed</option>
                     </select>
                   </div>
                 </div>

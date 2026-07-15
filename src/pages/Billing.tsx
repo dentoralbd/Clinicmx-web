@@ -406,7 +406,10 @@ export function Billing() {
     const jobInvoices =
       mode === 'single'
         ? [invoice]
-        : invoices.filter((inv) => inv.patient_id === invoice.patient_id).slice().reverse()
+        : invoices
+            .filter((inv) => inv.patient_id === invoice.patient_id && inv.status !== 'Merged')
+            .slice()
+            .reverse()
     setPrintJob({ invoices: jobInvoices, patient, initialDueOnly: mode === 'due' })
   }
 
@@ -519,10 +522,15 @@ export function Billing() {
     return order.map((patientId) => ({ patientId, invoices: map.get(patientId)! }))
   }, [filteredInvoices])
 
+  // 'Merged' invoices are retired source rows kept only for audit trail (see
+  // handleMergeSelectedInvoices in PatientProfile.tsx) — their amounts already
+  // live on the invoice that absorbed them, so they must be excluded from every
+  // money total or merges double-count. Same activeInvoices filter PatientProfile uses.
+  const activeInvoices = invoices.filter((invoice) => invoice.status !== 'Merged')
   const stats = {
-    total: invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
-    paid: invoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
-    pending: invoices
+    total: activeInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
+    paid: activeInvoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
+    pending: activeInvoices
       .filter((invoice) => (invoice.total_amount || 0) > (invoice.paid_amount || 0))
       .reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),
   }
@@ -777,11 +785,13 @@ export function Billing() {
             {groupedInvoices.map((group) => {
               const firstInvoice = group.invoices[0]
               const isExpanded = expandedPatients.has(group.patientId) || groupedInvoices.length === 1
-              const groupDueCount = group.invoices.filter(
+              // Money figures must ignore retired 'Merged' rows — see activeInvoices above.
+              const activeGroupInvoices = group.invoices.filter((inv) => inv.status !== 'Merged')
+              const groupDueCount = activeGroupInvoices.filter(
                 (inv) => (inv.total_amount || 0) > (inv.paid_amount || 0)
               ).length
-              const groupTotal = group.invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
-              const groupDue = group.invoices.reduce(
+              const groupTotal = activeGroupInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+              const groupDue = activeGroupInvoices.reduce(
                 (sum, inv) => sum + Math.max((inv.total_amount || 0) - (inv.paid_amount || 0), 0),
                 0
               )
@@ -817,7 +827,7 @@ export function Billing() {
                         {groupDue > 0 ? `Due ${formatBDT(groupDue)}` : 'Paid up'}
                       </span>
                       <Button size="sm" variant="outline" onClick={() => startPrint(firstInvoice, 'all')}>
-                        Print all ({group.invoices.length})
+                        Print all ({activeGroupInvoices.length})
                       </Button>
                       {groupDueCount > 0 && (
                         <Button size="sm" variant="outline" onClick={() => startPrint(firstInvoice, 'due')}>
