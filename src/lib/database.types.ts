@@ -637,6 +637,7 @@ export interface Database {
           diagnosis: string | null
           treatment_plan: string | null
           notes: string | null
+          invoice_id: string | null
           created_at: string
         }
         Insert: {
@@ -648,6 +649,7 @@ export interface Database {
           diagnosis?: string | null
           treatment_plan?: string | null
           notes?: string | null
+          invoice_id?: string | null
           created_at?: string
         }
         Update: {
@@ -659,6 +661,7 @@ export interface Database {
           diagnosis?: string | null
           treatment_plan?: string | null
           notes?: string | null
+          invoice_id?: string | null
           created_at?: string
         }
         Relationships: [
@@ -667,6 +670,13 @@ export interface Database {
             columns: ['patient_id']
             isOneToOne: false
             referencedRelation: 'patients'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'patient_visits_invoice_id_fkey'
+            columns: ['invoice_id']
+            isOneToOne: false
+            referencedRelation: 'invoices'
             referencedColumns: ['id']
           }
         ]

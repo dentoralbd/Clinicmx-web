@@ -189,8 +189,27 @@ function treatmentDoneChipClass(status: string): string {
 function paymentChipClass(chip: string): string {
   if (chip.startsWith('Billed')) return 'bg-blue-50 text-blue-800 border-blue-200'
   if (chip.startsWith('Paid')) return 'bg-green-50 text-green-800 border-green-200'
+  if (chip.startsWith('Due')) return 'bg-red-50 text-red-700 border-red-200'
   if (chip.endsWith('toward previous due')) return 'bg-amber-50 text-amber-800 border-amber-200'
   return 'bg-gray-50 text-gray-600 border-gray-200'
+}
+
+// For visits linked to an invoice (invoice_id), the "Billed" figure and a "Due"
+// figure are recomputed live from the invoice so a discount applied after the
+// visit (which updates invoices.total_amount) is reflected here too. "Paid" stays
+// as the frozen text since it's a historical fact about what was paid at that visit.
+function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[]): string[] {
+  const chips = paymentText ? parsePaymentChips(paymentText) : []
+  if (!visit.invoice_id) return chips
+  const invoice = invoices.find((inv) => inv.id === visit.invoice_id)
+  if (!invoice) return chips
+  const hadBilledChip = chips.some((chip) => chip.startsWith('Billed'))
+  if (!hadBilledChip) return chips
+  const billed = invoice.total_amount || 0
+  const due = getInvoiceDue(invoice)
+  const result = chips.map((chip) => (chip.startsWith('Billed') ? `Billed ${formatCurrency(billed)}` : chip))
+  if (due > 0) result.push(`Due ${formatCurrency(due)}`)
+  return result
 }
 
 type SectionId =
@@ -833,11 +852,16 @@ export function PatientProfile() {
       .join('\n')
 
     try {
-      await supabase.from('patient_visits').insert([{
-        patient_id: id,
-        ...visitForm,
-        notes: notesWithSummary || null,
-      }])
+      const { data: insertedVisit, error: visitInsertError } = await supabase
+        .from('patient_visits')
+        .insert([{
+          patient_id: id,
+          ...visitForm,
+          notes: notesWithSummary || null,
+        }])
+        .select('id')
+        .single()
+      if (visitInsertError) throw visitInsertError
       logActivity({
         action: 'create',
         entityType: 'patient_visit',
@@ -906,7 +930,10 @@ export function PatientProfile() {
         let remaining = paymentAmount
         if (billableTreatments.length > 0 && remaining > 0) {
           const newInvoicePortion = Math.min(remaining, treatmentsTotal)
-          await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
+          const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
+          if (newInvoiceId && insertedVisit?.id) {
+            await supabase.from('patient_visits').update({ invoice_id: newInvoiceId }).eq('id', insertedVisit.id)
+          }
           remaining -= newInvoicePortion
         }
         for (const invoice of existingInvoicesWithDue) {
@@ -935,8 +962,8 @@ export function PatientProfile() {
     }
   }
 
-  async function createVisitInvoiceWithPayment(insertedTreatments: any[], paymentAmount: number) {
-    if (!id) return
+  async function createVisitInvoiceWithPayment(insertedTreatments: any[], paymentAmount: number): Promise<string | null> {
+    if (!id) return null
 
     const items = buildTreatmentInvoiceItems(insertedTreatments)
     const totalAmount = getInvoiceItemSubtotal(items)
@@ -953,7 +980,7 @@ export function PatientProfile() {
       .select('id')
       .single()
     if (invoiceError) throw invoiceError
-    if (!invoice?.id) return
+    if (!invoice?.id) return null
 
     logActivity({
       action: 'create',
@@ -1031,6 +1058,8 @@ export function PatientProfile() {
     if (!paymentStored && paymentSchemaError) {
       logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount: paymentAmount })
     }
+
+    return invoice.id as string
   }
 
   async function applyPaymentToExistingInvoice(invoice: any, amount: number) {
@@ -1511,6 +1540,13 @@ export function PatientProfile() {
         .update({ invoice_id: newId })
         .in('invoice_id', oldIds)
       if (paymentsError) throw paymentsError
+
+      // Keep any visit's live-amount link pointing at the surviving invoice
+      const { error: visitsError } = await supabase
+        .from('patient_visits')
+        .update({ invoice_id: newId })
+        .in('invoice_id', oldIds)
+      if (visitsError) throw visitsError
 
       const { error: mergeError } = await supabase
         .from('invoices')
@@ -2412,7 +2448,7 @@ export function PatientProfile() {
                         <DollarSign className="w-3.5 h-3.5" /> Payment
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {parsePaymentChips(parsedNotes.payment).map((chip, i) => (
+                        {buildVisitPaymentChips(visit, parsedNotes.payment, invoices).map((chip, i) => (
                           <span
                             key={i}
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
@@ -3728,7 +3764,7 @@ export function PatientProfile() {
                   )}
                   {editingVisitFixedSummary.payment && (
                     <div className="flex flex-wrap gap-1.5">
-                      {parsePaymentChips(editingVisitFixedSummary.payment).map((chip, i) => (
+                      {buildVisitPaymentChips(editingVisit, editingVisitFixedSummary.payment, invoices).map((chip, i) => (
                         <span
                           key={i}
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}

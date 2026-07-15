@@ -33,7 +33,7 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   },
   patient_visit: {
     table: 'patient_visits',
-    columns: ['id', 'patient_id', 'visit_date', 'chief_complaint', 'examination_findings', 'diagnosis', 'treatment_plan', 'notes', 'created_at'],
+    columns: ['id', 'patient_id', 'visit_date', 'chief_complaint', 'examination_findings', 'diagnosis', 'treatment_plan', 'notes', 'invoice_id', 'created_at'],
   },
 }
 

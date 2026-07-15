@@ -97,6 +97,7 @@ export function Patients() {
 
     const { age: _age, ...patientPayload } = {
       ...formData,
+      phone: formData.phone.replace(/\D/g, ''),
       date_of_birth: dateOfBirth,
       weight: parsedWeight,
     }
