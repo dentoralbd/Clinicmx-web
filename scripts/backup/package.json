@@ -1,0 +1,18 @@
+{
+  "name": "clinicmx-backup",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Daily Supabase -> Google Drive backup and restore tooling for ClinicMx",
+  "scripts": {
+    "authorize": "node authorize.mjs",
+    "backup": "node backup.mjs",
+    "restore": "node restore.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "adm-zip": "^0.5.10",
+    "archiver": "^6.0.1",
+    "googleapis": "^140.0.0"
+  }
+}
