@@ -78,6 +78,31 @@ interface Invoice {
   } | null
 }
 
+const PATIENT_ACCENTS = [
+  { bar: 'bg-rose-400', avatar: 'bg-rose-100 text-rose-700', ring: 'ring-rose-100', chip: 'bg-rose-50 text-rose-700 border-rose-200' },
+  { bar: 'bg-orange-400', avatar: 'bg-orange-100 text-orange-700', ring: 'ring-orange-100', chip: 'bg-orange-50 text-orange-700 border-orange-200' },
+  { bar: 'bg-amber-400', avatar: 'bg-amber-100 text-amber-700', ring: 'ring-amber-100', chip: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { bar: 'bg-emerald-400', avatar: 'bg-emerald-100 text-emerald-700', ring: 'ring-emerald-100', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { bar: 'bg-teal-400', avatar: 'bg-teal-100 text-teal-700', ring: 'ring-teal-100', chip: 'bg-teal-50 text-teal-700 border-teal-200' },
+  { bar: 'bg-sky-400', avatar: 'bg-sky-100 text-sky-700', ring: 'ring-sky-100', chip: 'bg-sky-50 text-sky-700 border-sky-200' },
+  { bar: 'bg-indigo-400', avatar: 'bg-indigo-100 text-indigo-700', ring: 'ring-indigo-100', chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  { bar: 'bg-violet-400', avatar: 'bg-violet-100 text-violet-700', ring: 'ring-violet-100', chip: 'bg-violet-50 text-violet-700 border-violet-200' },
+  { bar: 'bg-fuchsia-400', avatar: 'bg-fuchsia-100 text-fuchsia-700', ring: 'ring-fuchsia-100', chip: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' },
+  { bar: 'bg-pink-400', avatar: 'bg-pink-100 text-pink-700', ring: 'ring-pink-100', chip: 'bg-pink-50 text-pink-700 border-pink-200' },
+]
+
+function getPatientAccent(patientId: string) {
+  let hash = 0
+  for (let i = 0; i < patientId.length; i++) hash = (hash * 31 + patientId.charCodeAt(i)) >>> 0
+  return PATIENT_ACCENTS[hash % PATIENT_ACCENTS.length]
+}
+
+function getPatientInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
+}
+
 export function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -804,26 +829,37 @@ export function Billing() {
                 })
               }
 
+              const patientName = firstInvoice.patients
+                ? `${firstInvoice.patients.first_name} ${firstInvoice.patients.last_name}`
+                : 'Unknown Patient'
+              const accent = getPatientAccent(group.patientId)
+
               return (
-                <div key={group.patientId}>
+                <div key={group.patientId} className="relative">
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${accent.bar}`} />
                   <div
-                    className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none hover:bg-gray-50 transition-colors"
+                    className="pl-5 pr-4 py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none hover:bg-gray-50/80 transition-colors"
                     onClick={togglePatient}
                   >
-                    <div className="min-w-0">
-                      <p className="font-semibold truncate">
-                        {firstInvoice.patients
-                          ? `${firstInvoice.patients.first_name} ${firstInvoice.patients.last_name}`
-                          : 'Unknown Patient'}
-                      </p>
-                      <p className="text-xs text-text-secondary mt-0.5">
-                        {group.invoices.length} invoice{group.invoices.length !== 1 ? 's' : ''}
-                        {firstInvoice.patients?.patient_code && ` • ${firstInvoice.patients.patient_code}`}
-                        {` • Billed ${formatBDT(groupTotal)}`}
-                      </p>
+                    <div className="min-w-0 flex items-center gap-3">
+                      <div className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold ring-4 ${accent.avatar} ${accent.ring}`}>
+                        {getPatientInitials(patientName)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{patientName}</p>
+                        <p className="text-xs text-text-secondary mt-0.5">
+                          {group.invoices.length} invoice{group.invoices.length !== 1 ? 's' : ''}
+                          {firstInvoice.patients?.patient_code && ` • ${firstInvoice.patients.patient_code}`}
+                          {` • Billed ${formatBDT(groupTotal)}`}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      <span className={`text-sm font-semibold ${groupDue > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    <div className="flex items-center gap-2 flex-wrap sm:pl-0 pl-12" onClick={(e) => e.stopPropagation()}>
+                      <span
+                        className={`text-sm font-semibold px-2.5 py-1 rounded-full ${
+                          groupDue > 0 ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'
+                        }`}
+                      >
                         {groupDue > 0 ? `Due ${formatBDT(groupDue)}` : 'Paid up'}
                       </span>
                       <Button size="sm" variant="outline" onClick={() => startPrint(firstInvoice, 'all')}>
@@ -857,12 +893,13 @@ export function Billing() {
                     </div>
                   </div>
                   {isExpanded && (
-                    <div className="divide-y divide-gray-200 border-t border-gray-200">
+                    <div className="bg-gray-50/60 border-t border-gray-200 pl-5 pr-3 py-3 space-y-2.5">
                       {group.invoices.map((invoice) => (
                         <InvoiceRow
                           key={invoice.id}
                           invoice={invoice}
                           hideName
+                          accent={accent}
                           checked={selectedInvoices.includes(invoice.id)}
                           onSelect={(checked) => {
                             setSelectedInvoices((prev) => {
@@ -1005,6 +1042,7 @@ function SummaryCard({ title, value, icon, color }: { title: string; value: stri
 function InvoiceRow({
   invoice,
   hideName,
+  accent,
   checked,
   onSelect,
   onDelete,
@@ -1018,6 +1056,7 @@ function InvoiceRow({
 }: {
   invoice: Invoice
   hideName?: boolean
+  accent?: { bar: string; avatar: string; ring: string; chip: string }
   checked: boolean
   onSelect: (checked: boolean) => void
   onDelete: () => void
@@ -1064,9 +1103,10 @@ function InvoiceRow({
     ? Math.max(Math.floor((Date.now() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24)), 0)
     : 0
   const lateInterest = overdueDays > 0 ? (remainingBalance * 0.01 * Math.ceil(overdueDays / 30)) : 0
+  const chipClass = accent?.chip || 'bg-gray-50 text-text-secondary border-gray-200'
 
   return (
-    <div className="hover:bg-gray-50 transition-colors">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
       <div className="p-4 cursor-pointer select-none" onClick={() => setExpanded((prev) => !prev)}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="flex items-start gap-3 min-w-0">
@@ -1079,19 +1119,16 @@ function InvoiceRow({
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="font-medium">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${chipClass}`}>
                   {hideName
-                    ? `Invoice ${invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.id.slice(0, 8).toUpperCase()}`
+                    ? `#${invoice.invoice_number || invoice.id.slice(0, 8).toUpperCase()}`
                     : `${invoice.patients?.first_name} ${invoice.patients?.last_name}`}
-                </p>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100'}`}>
                   {invoice.status}
                 </span>
-                {!hideName && invoice.invoice_number && (
-                  <span className="text-xs text-text-secondary">#{invoice.invoice_number}</span>
-                )}
               </div>
-              <p className="text-sm text-text-secondary mt-1">
+              <p className="text-sm text-text-secondary mt-1.5">
                 {safeFormat(invoice.created_at, 'MMM d, yyyy')}
                 {invoice.due_date && ` • Due: ${safeFormat(invoice.due_date, 'MMM d, yyyy')}`}
                 {items.length > 0 && ` • ${items.length} item${items.length !== 1 ? 's' : ''}`}
@@ -1100,7 +1137,7 @@ function InvoiceRow({
               {itemPreview && (
                 <p className="text-sm text-text-secondary mt-1 truncate">{itemPreview}</p>
               )}
-              <p className="text-lg font-bold text-primary mt-1">{formatBDT(invoice.total_amount)}</p>
+              <p className="text-xl font-bold text-primary mt-1.5">{formatBDT(invoice.total_amount)}</p>
               {overdueDays > 0 && (
                 <p className="text-xs text-red-600 mt-1">
                   Overdue by {overdueDays} day(s) • Est. late interest: {formatBDT(lateInterest)}
