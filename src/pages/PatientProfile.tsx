@@ -926,21 +926,27 @@ export function PatientProfile() {
       const billableTreatments = [...updatedPlanTreatments, ...insertedTreatments]
       if (paymentAmount > 0) {
         // New unbilled treatments get a new invoice first; any remainder pays
-        // down existing invoices of selected already-billed plan items.
+        // down existing invoices of selected already-billed plan items. Either
+        // way, link the visit to whichever invoice its payment actually went
+        // toward, so Visit History can show that invoice's live billed/due
+        // amounts (prefer a newly-created invoice as the visit's "own" bill).
         let remaining = paymentAmount
+        let linkedInvoiceId: string | null = null
         if (billableTreatments.length > 0 && remaining > 0) {
           const newInvoicePortion = Math.min(remaining, treatmentsTotal)
           const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
-          if (newInvoiceId && insertedVisit?.id) {
-            await supabase.from('patient_visits').update({ invoice_id: newInvoiceId }).eq('id', insertedVisit.id)
-          }
+          if (newInvoiceId) linkedInvoiceId = newInvoiceId
           remaining -= newInvoicePortion
         }
         for (const invoice of existingInvoicesWithDue) {
           if (remaining <= 0) break
           const applied = Math.min(remaining, getInvoiceDue(invoice))
           await applyPaymentToExistingInvoice(invoice, applied)
+          if (!linkedInvoiceId) linkedInvoiceId = invoice.id
           remaining -= applied
+        }
+        if (linkedInvoiceId && insertedVisit?.id) {
+          await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
         }
       }
 
