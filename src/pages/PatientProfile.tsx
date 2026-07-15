@@ -194,14 +194,15 @@ function paymentChipClass(chip: string): string {
   return 'bg-gray-50 text-gray-600 border-gray-200'
 }
 
-// For visits linked to an invoice (invoice_id), "Billed" and "Due" are recomputed
-// live from the invoice so a discount applied after the visit (which updates
-// invoices.total_amount), or payments made in other visits against the same
-// multi-visit invoice, are reflected here too. "Paid" stays as the frozen text
-// since it's a historical fact about what was paid at that specific visit — even
-// when the visit itself billed nothing new and only paid down an existing invoice
-// (e.g. installment payments on a treatment plan invoiced once up front).
-function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[]): string[] {
+// For visits linked to an invoice (invoice_id), "Billed" is recomputed live from
+// the invoice so a discount applied after the visit (which updates
+// invoices.total_amount) is reflected here too. "Due" is the running balance
+// right after this visit's payment — invoice total minus every payment on that
+// invoice up to and including this visit's timestamp — not the invoice's current
+// (final) due, so each visit in a multi-visit installment plan shows its own
+// balance rather than all showing the same end-state number. "Paid" stays as the
+// frozen text since it's a historical fact about what was paid at that visit.
+function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[], payments: any[]): string[] {
   const chips = (paymentText ? parsePaymentChips(paymentText) : []).filter(
     (chip) => !chip.endsWith('toward previous due')
   )
@@ -209,7 +210,11 @@ function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices
   const invoice = invoices.find((inv) => inv.id === visit.invoice_id)
   if (!invoice) return chips
   const billed = invoice.total_amount || 0
-  const due = getInvoiceDue(invoice)
+  const visitTime = new Date(visit.created_at).getTime() + 2000 // tolerate clock skew with same-transaction payment rows
+  const paidThroughVisit = payments
+    .filter((p) => p.invoice_id === visit.invoice_id && new Date(p.payment_date).getTime() <= visitTime)
+    .reduce((sum, p) => sum + (p.amount || 0), 0)
+  const due = Math.max(billed - paidThroughVisit, 0)
   const hadBilledChip = chips.some((chip) => chip.startsWith('Billed'))
   const result = hadBilledChip
     ? chips.map((chip) => (chip.startsWith('Billed') ? `Billed ${formatCurrency(billed)}` : chip))
@@ -341,6 +346,7 @@ export function PatientProfile() {
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [appointments, setAppointments] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
   const [files, setFiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
@@ -495,6 +501,11 @@ export function PatientProfile() {
           .order('created_at', { ascending: false }),
       ])
 
+      const invoiceIds = (invoicesData || []).map((inv: any) => inv.id)
+      const { data: paymentsData } = invoiceIds.length
+        ? await supabase.from('payments').select('*').in('invoice_id', invoiceIds)
+        : { data: [] }
+
       setPatient(patientData)
       setVisits(visitsData || [])
       setDentalRecords(dentalData || [])
@@ -502,6 +513,7 @@ export function PatientProfile() {
       setPrescriptions(prescriptionsData || [])
       setAppointments(appointmentsData || [])
       setInvoices(invoicesData || [])
+      setPayments(paymentsData || [])
       setFiles(filesData || [])
     } catch (error) {
       console.error('Error loading patient:', error)
@@ -2460,7 +2472,7 @@ export function PatientProfile() {
                         <DollarSign className="w-3.5 h-3.5" /> Payment
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {buildVisitPaymentChips(visit, parsedNotes.payment, invoices).map((chip, i) => (
+                        {buildVisitPaymentChips(visit, parsedNotes.payment, invoices, payments).map((chip, i) => (
                           <span
                             key={i}
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
@@ -3776,7 +3788,7 @@ export function PatientProfile() {
                   )}
                   {editingVisitFixedSummary.payment && (
                     <div className="flex flex-wrap gap-1.5">
-                      {buildVisitPaymentChips(editingVisit, editingVisitFixedSummary.payment, invoices).map((chip, i) => (
+                      {buildVisitPaymentChips(editingVisit, editingVisitFixedSummary.payment, invoices, payments).map((chip, i) => (
                         <span
                           key={i}
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
