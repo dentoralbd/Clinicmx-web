@@ -7,7 +7,7 @@ function extractPatientCodeNumber(patientCode?: string | null) {
 }
 
 function formatPatientCode(value: number) {
-  return `PT-${String(value).padStart(5, '0')}`
+  return `PT-${String(value).padStart(6, '0')}`
 }
 
 async function getHighestPatientCodeNumber() {
