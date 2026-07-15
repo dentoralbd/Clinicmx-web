@@ -202,7 +202,9 @@ function paymentChipClass(chip: string): string {
 // when the visit itself billed nothing new and only paid down an existing invoice
 // (e.g. installment payments on a treatment plan invoiced once up front).
 function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[]): string[] {
-  const chips = paymentText ? parsePaymentChips(paymentText) : []
+  const chips = (paymentText ? parsePaymentChips(paymentText) : []).filter(
+    (chip) => !chip.endsWith('toward previous due')
+  )
   if (!visit.invoice_id) return chips
   const invoice = invoices.find((inv) => inv.id === visit.invoice_id)
   if (!invoice) return chips
