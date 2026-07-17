@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { BackupReminderBanner } from '@/components/BackupReminderBanner'
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -36,6 +37,7 @@ export function DashboardLayout() {
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header onMenuClick={() => setSidebarOpen(true)} />
+        <BackupReminderBanner />
         {designPreview ? (
           <iframe
             src="/design-preview/ClinicMx.dc.html"
