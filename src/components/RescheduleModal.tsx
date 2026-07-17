@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLog'
@@ -95,14 +96,19 @@ export function RescheduleModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white">
-          <h2 className="text-xl font-bold">Reschedule Appointment</h2>
-          <p className="text-sm text-text-secondary mt-1">
-            {appointment.patients
-              ? `${appointment.patients.first_name} ${appointment.patients.last_name} • `
-              : ''}
-            Currently {format(currentDate, 'MMMM d, yyyy')} at {format(currentDate, 'h:mm a')}
-          </p>
+        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold">Reschedule Appointment</h2>
+            <p className="text-sm text-text-secondary mt-1">
+              {appointment.patients
+                ? `${appointment.patients.first_name} ${appointment.patients.last_name} • `
+                : ''}
+              Currently {format(currentDate, 'MMMM d, yyyy')} at {format(currentDate, 'h:mm a')}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">

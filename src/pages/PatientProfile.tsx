@@ -3802,8 +3802,11 @@ export function PatientProfile() {
       {editingVisit && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-xl font-bold">Edit Visit</h2>
+              <button type="button" onClick={() => setEditingVisit(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <form onSubmit={handleVisitEditSubmit} className="p-6 space-y-4">
               <div>
@@ -4180,8 +4183,11 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">Tooth #{toothNumber}</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -4298,8 +4304,11 @@ function VisitFormModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10 flex items-center justify-between">
           <h2 className="text-xl font-bold">Add Visit</h2>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-4">

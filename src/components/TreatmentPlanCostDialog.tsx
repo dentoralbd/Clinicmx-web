@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { ClinicalEntry } from '@/lib/clinicalEntries'
 
@@ -35,12 +36,17 @@ export function TreatmentPlanCostDialog({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-3 sm:p-4 overflow-y-auto">
       <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
-        <div className="p-3 sm:p-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold">Treatment Plan Costs</h3>
-          <p className="text-sm text-text-secondary">
-            Set the cost for each planned treatment (per tooth), or add/update it later from the
-            patient&apos;s Treatment Plan or at Add Visit.
-          </p>
+        <div className="p-3 sm:p-4 border-b border-gray-200 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Treatment Plan Costs</h3>
+            <p className="text-sm text-text-secondary">
+              Set the cost for each planned treatment (per tooth), or add/update it later from the
+              patient&apos;s Treatment Plan or at Add Visit.
+            </p>
+          </div>
+          <button type="button" onClick={onCancel} className="p-1.5 hover:bg-gray-100 rounded-lg shrink-0">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-3 sm:p-4 space-y-3">

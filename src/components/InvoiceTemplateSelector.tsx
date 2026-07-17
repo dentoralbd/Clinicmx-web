@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/Button'
+import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 
@@ -62,7 +62,9 @@ export function InvoiceTemplateSelector({
             <h3 className="text-lg font-semibold">Invoice Templates</h3>
             <p className="text-sm text-text-secondary">Select a {invoiceType} template for quick invoice creation</p>
           </div>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="p-4 overflow-y-auto max-h-[calc(85vh-80px)]">

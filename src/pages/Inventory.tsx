@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Plus, Search, Edit, Trash2, Package, AlertTriangle,
   Calendar, RefreshCw, TrendingDown,
-  Clock, CheckCircle, BarChart2, ArrowUpCircle, ArrowDownCircle,
+  Clock, CheckCircle, BarChart2, ArrowUpCircle, ArrowDownCircle, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
@@ -936,9 +936,14 @@ function ItemFormModal({
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">{editing ? 'Edit Item' : `Add ${formData.category} Item`}</h2>
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${CATEGORY_COLORS[formData.category as Category]}`}>
-            {formData.category}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${CATEGORY_COLORS[formData.category as Category]}`}>
+              {formData.category}
+            </span>
+            <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-4">
@@ -1091,11 +1096,16 @@ function AdjustStockModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-5 border-b border-gray-200">
-          <h2 className="text-lg font-bold">Adjust Stock — {item.name}</h2>
-          <p className="text-sm text-text-secondary mt-1">
-            Current: <span className="font-semibold">{item.quantity} {item.unit}</span>
-          </p>
+        <div className="p-5 border-b border-gray-200 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold">Adjust Stock — {item.name}</h2>
+            <p className="text-sm text-text-secondary mt-1">
+              Current: <span className="font-semibold">{item.quantity} {item.unit}</span>
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={onSubmit} className="p-5 space-y-4">

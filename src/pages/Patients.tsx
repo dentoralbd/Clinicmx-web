@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Eye, Users } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Eye, Users, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
@@ -325,8 +325,11 @@ export function Patients() {
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 sticky top-0 bg-white">
+            <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-center justify-between">
               <h2 className="text-xl font-bold">{editingId ? 'Edit Patient' : 'Add New Patient'}</h2>
+              <button type="button" onClick={() => { setShowForm(false); resetForm() }} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
