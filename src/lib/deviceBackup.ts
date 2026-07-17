@@ -134,8 +134,12 @@ export async function buildDeviceBackup(onProgress?: (p: BackupProgress) => void
   }
 }
 
+export function backupFileName(date: Date = new Date()) {
+  return `clinicmx-backup-${format(date, 'yyyy-MM-dd')}.json`
+}
+
 export function downloadDeviceBackup(backup: DeviceBackup) {
-  const filename = `clinicmx-backup-${format(new Date(), 'yyyy-MM-dd')}.json`
+  const filename = backupFileName()
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -147,6 +151,39 @@ export function downloadDeviceBackup(backup: DeviceBackup) {
   URL.revokeObjectURL(url)
   markBackupDone()
   return filename
+}
+
+// Uploads via the same-origin Cloudflare Pages Function (functions/api/upload-backup.ts),
+// which holds the Google credentials server-side — no Google login in the browser,
+// so this also works inside the Android WebView APK where OAuth popups are blocked.
+export async function uploadBackupToDrive(
+  backup: DeviceBackup
+): Promise<{ name: string; webViewLink?: string }> {
+  const filename = backupFileName()
+  let response: Response
+  try {
+    response = await fetch('/api/upload-backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, backup }),
+    })
+  } catch {
+    throw new Error('Could not reach the upload service. Check your internet connection.')
+  }
+  let body: { ok?: boolean; name?: string; webViewLink?: string; error?: string } | null = null
+  try {
+    body = await response.json()
+  } catch {
+    // Non-JSON response (e.g. 404 HTML when the function isn't deployed)
+  }
+  if (!response.ok || !body?.ok) {
+    if (response.status === 404) {
+      throw new Error('Upload service not available on this deployment.')
+    }
+    throw new Error(body?.error || `Upload failed (HTTP ${response.status}).`)
+  }
+  markBackupDone()
+  return { name: body.name || filename, webViewLink: body.webViewLink }
 }
 
 export type ParseResult =

@@ -9,6 +9,7 @@ import {
   FileUp,
   HardDriveDownload,
   Loader2,
+  UploadCloud,
   XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +17,7 @@ import { getAppRole } from '@/lib/appSession'
 import {
   buildDeviceBackup,
   downloadDeviceBackup,
+  uploadBackupToDrive,
   parseBackupFile,
   analyzeRestore,
   executeRestore,
@@ -50,6 +52,9 @@ export function BackupRestore() {
   const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
   const [lastBackupAt, setLastBackupAt] = useState<Date | null>(() => getLastBackupAt())
   const [lastDownloadedFile, setLastDownloadedFile] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<{ name: string; webViewLink?: string } | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const [restore, setRestore] = useState<RestoreState>({ step: 'idle' })
   const [mode, setMode] = useState<RestoreMode>('insert-missing')
@@ -74,7 +79,7 @@ export function BackupRestore() {
   // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
   if (getAppRole() !== 'admin') return <Navigate to="/dashboard" replace />
 
-  const busy = backingUp || restore.step === 'analyzing' || restore.step === 'running'
+  const busy = backingUp || uploading || restore.step === 'analyzing' || restore.step === 'running'
 
   const handleDownloadBackup = async () => {
     setBackingUp(true)
@@ -88,6 +93,25 @@ export function BackupRestore() {
       alert(`Backup failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setBackingUp(false)
+      setBackupProgress(null)
+    }
+  }
+
+  const handleUploadToDrive = async () => {
+    setUploading(true)
+    setUploadResult(null)
+    setUploadError(null)
+    setBackupProgress(null)
+    try {
+      const backup = await buildDeviceBackup(setBackupProgress)
+      setBackupProgress(null)
+      const result = await uploadBackupToDrive(backup)
+      setLastBackupAt(getLastBackupAt())
+      setUploadResult(result)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed.')
+    } finally {
+      setUploading(false)
       setBackupProgress(null)
     }
   }
@@ -166,13 +190,29 @@ export function BackupRestore() {
           Device backup
         </h2>
         <p className="text-sm text-text-secondary mb-4">
-          Downloads every database record plus this device's app settings (doctor profile with prescription
+          Backs up every database record plus this device's app settings (doctor profile with prescription
           logo, prescription memory &amp; templates) as one JSON file. Patient photos and x-ray image files are
-          not inside this file. Tip: keep your Downloads folder synced to Google Drive with a FolderSync-type
-          app so every backup is automatically uploaded.
+          not inside this file. Use <span className="font-medium">Upload to Google Drive</span> to send it
+          straight to your Drive, or <span className="font-medium">Download backup</span> to save it to this
+          device (optionally synced with a FolderSync-type app).
         </p>
         <div className="flex flex-wrap items-center gap-4">
-          <Button onClick={handleDownloadBackup} disabled={busy}>
+          <Button onClick={handleUploadToDrive} disabled={busy}>
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {backupProgress
+                  ? `Fetching ${backupProgress.table}… ${backupProgress.index}/${backupProgress.total}`
+                  : 'Uploading to Drive…'}
+              </>
+            ) : (
+              <>
+                <UploadCloud className="w-4 h-4 mr-2" />
+                Upload to Google Drive
+              </>
+            )}
+          </Button>
+          <Button variant="outline" onClick={handleDownloadBackup} disabled={busy}>
             {backingUp ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -191,6 +231,33 @@ export function BackupRestore() {
             Last backup from this device: {lastBackupAt ? format(lastBackupAt, 'PPp') : 'Never'}
           </span>
         </div>
+        {uploadResult && !uploading && (
+          <div className="mt-3 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>
+              Uploaded <span className="font-mono">{uploadResult.name}</span> to Google Drive.
+              {uploadResult.webViewLink && (
+                <>
+                  {' '}
+                  <a
+                    href={uploadResult.webViewLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline font-medium"
+                  >
+                    View in Drive
+                  </a>
+                </>
+              )}
+            </span>
+          </div>
+        )}
+        {uploadError && !uploading && (
+          <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex items-center gap-2">
+            <XCircle className="w-4 h-4 shrink-0" />
+            {uploadError}
+          </div>
+        )}
         {lastDownloadedFile && !backingUp && (
           <div className="mt-3 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
