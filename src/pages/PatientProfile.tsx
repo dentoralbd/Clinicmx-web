@@ -452,6 +452,18 @@ export function PatientProfile() {
     loadDoctorProfile()
   }, [id])
 
+  // Deep-link support: Appointments' "Add visit now" prompt lands here with
+  // ?openVisit=1 to auto-open the Add Visit modal instead of requiring a
+  // second manual click on this page.
+  useEffect(() => {
+    if (searchParams.get('openVisit') === '1') {
+      setShowVisitForm(true)
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('openVisit')
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [searchParams])
+
   async function loadPatientData() {
     if (!id) return
     try {

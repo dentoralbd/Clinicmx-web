@@ -33,7 +33,9 @@ export function Appointments() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [rescheduleAppointment, setRescheduleAppointment] = useState<Appointment | null>(null)
+  const [addVisitPrompt, setAddVisitPrompt] = useState<Appointment | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -114,6 +116,10 @@ export function Appointments() {
       setAppointments(prev =>
         prev.map(a => a.id === id ? { ...a, status: newStatus } : a)
       )
+
+      if (newStatus === 'Completed' && appt) {
+        setAddVisitPrompt(appt)
+      }
     } catch (error) {
       console.error('Error updating appointment status:', error)
       alert('Failed to update appointment')
@@ -239,6 +245,35 @@ export function Appointments() {
           onClose={() => setRescheduleAppointment(null)}
           onSave={() => { loadAppointments(); loadWeekAppointments(); setRescheduleAppointment(null) }}
         />
+      )}
+
+      {addVisitPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h2 className="text-lg font-bold">Add visit to patient profile?</h2>
+            <p className="text-sm text-text-secondary mt-2">
+              {addVisitPrompt.patients
+                ? `${addVisitPrompt.patients.first_name} ${addVisitPrompt.patients.last_name} • `
+                : ''}
+              This appointment is now marked Completed. Add the visit record now, or do it later from the patient's profile.
+            </p>
+            <div className="flex gap-3 pt-5">
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  const patientId = addVisitPrompt.patient_id
+                  setAddVisitPrompt(null)
+                  navigate(`/patients/${patientId}?section=visits&openVisit=1`)
+                }}
+              >
+                Add Now
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setAddVisitPrompt(null)}>
+                Later
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
