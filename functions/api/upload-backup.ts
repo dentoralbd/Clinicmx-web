@@ -27,8 +27,14 @@ import {
 } from './_lib'
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024
-const KEEP_LAST_N = 20
-const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}\.json$/
+const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}-\d{6}\.json$/
+
+// Scheduled categories are pruned to their own fixed retention automatically
+// (they're system-managed by "smart upload" — no user toggle needed). Manual
+// (untagged) backups keep the existing opt-in behavior, gated by the `prune`
+// flag from the Backup & Restore page's checkbox.
+const CATEGORY_LIMITS: Record<string, number> = { daily: 20, weekly: 5, monthly: 2 }
+const MANUAL_LIMIT = 20
 
 function categoryOf(filename: string): string {
   return FILENAME_PATTERN.exec(filename)?.[1] ?? 'manual'
@@ -36,9 +42,7 @@ function categoryOf(filename: string): string {
 
 // Best-effort only: a pruning failure must never turn a successful upload
 // into an error response — the backup itself already landed safely.
-// Keeps the newest 20 *per category* (daily/weekly/monthly/manual counted
-// separately) so a run of daily backups can't push out the only monthly one.
-async function pruneOldUploads(token: string, folderId: string): Promise<void> {
+async function pruneOldUploads(token: string, folderId: string, manualPruneEnabled: boolean): Promise<void> {
   try {
     const files = await driveList(
       token,
@@ -52,8 +56,9 @@ async function pruneOldUploads(token: string, folderId: string): Promise<void> {
       list.push(f)
       byCategory.set(cat, list)
     }
-    for (const list of byCategory.values()) {
-      for (const f of list.slice(KEEP_LAST_N)) {
+    for (const [cat, list] of byCategory) {
+      const limit = cat === 'manual' ? (manualPruneEnabled ? MANUAL_LIMIT : Infinity) : CATEGORY_LIMITS[cat]
+      for (const f of list.slice(limit)) {
         await driveDelete(token, f.id)
       }
     }
@@ -108,7 +113,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
       fileId = await uploadNew(token, folderId, filename, content)
     }
 
-    if (prune) await pruneOldUploads(token, folderId)
+    await pruneOldUploads(token, folderId, prune)
 
     const webViewLink = await getWebViewLink(token, fileId)
     return json(200, { ok: true, name: filename, webViewLink })

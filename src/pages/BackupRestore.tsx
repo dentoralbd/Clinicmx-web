@@ -306,7 +306,9 @@ export function BackupRestore() {
             onChange={(e) => handleToggleAutoPrune(e.target.checked)}
           />
           <span className="text-sm text-text-secondary">
-            Automatically delete older Drive backups (keep last 20). Applies to future uploads only.
+            Automatically delete older manual Drive backups (keep last 20). Applies to future uploads only.
+            Scheduled Daily/Weekly/Monthly backups from Smart upload are pruned automatically (keep last 20 /
+            5 / 2).
           </span>
         </label>
         {uploadResult && !uploading && (

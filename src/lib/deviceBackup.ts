@@ -134,17 +134,18 @@ export async function buildDeviceBackup(onProgress?: (p: BackupProgress) => void
   }
 }
 
-// Manual backups (the plain Download/Upload buttons) stay untagged, matching
-// the original filename format. Scheduled daily/weekly/monthly backups (auto
-// or reminder-triggered) get a category segment so they can be told apart —
-// including during restore and for per-category retention (see
-// functions/api/upload-backup.ts pruneOldUploads).
+// Manual backups (the plain Download/Upload buttons) stay untagged. Scheduled
+// daily/weekly/monthly backups (auto or reminder-triggered) get a category
+// segment so they can be told apart — during restore and for per-category
+// retention (see functions/api/upload-backup.ts pruneOldUploads). The time
+// (no colons — Windows forbids them in filenames) is included alongside the
+// date so more than one backup on the same day never collides/overwrites.
 export function backupFileName(date: Date = new Date(), category?: BackupCategory) {
-  const datePart = format(date, 'yyyy-MM-dd')
-  return category ? `clinicmx-backup-${category}-${datePart}.json` : `clinicmx-backup-${datePart}.json`
+  const stamp = format(date, 'yyyy-MM-dd-HHmmss')
+  return category ? `clinicmx-backup-${category}-${stamp}.json` : `clinicmx-backup-${stamp}.json`
 }
 
-const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}\.json$/
+const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}-\d{6}\.json$/
 
 /** Parses the category tag out of a backup filename, or 'manual' if untagged. */
 export function parseBackupCategory(filename: string): BackupCategory | 'manual' {
