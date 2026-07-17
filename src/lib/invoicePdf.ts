@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
   formatInvoiceItemLabel,
+  getInvoiceItemDiscountShares,
   getInvoiceItemLineTotal,
   getInvoiceItemQuantity,
   getInvoiceItemUnitPrice,
@@ -349,6 +350,7 @@ function buildReceiptInvoicePdf(
 
   const rawItems = Array.isArray(invoice.items) ? invoice.items : []
   const items = groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
+  const itemDiscountShares = getInvoiceItemDiscountShares(items, invoice.discount_amount || 0)
   const rows =
     items.length > 0
       ? items.map((item, idx) => [
@@ -356,10 +358,10 @@ function buildReceiptInvoicePdf(
           formatInvoiceItemLabel({ ...item, quantity: 1 }),
           String(getInvoiceItemQuantity(item)),
           formatBDT(getInvoiceItemUnitPrice(item)),
-          formatBDT(0),
-          formatBDT(getInvoiceItemLineTotal(item)),
+          formatBDT(itemDiscountShares[idx] || 0),
+          formatBDT(getInvoiceItemLineTotal(item) - (itemDiscountShares[idx] || 0)),
         ])
-      : [['1', 'Invoice total', '', '', formatBDT(0), formatBDT(invoice.total_amount)]]
+      : [['1', 'Invoice total', '', '', formatBDT(invoice.discount_amount || 0), formatBDT(invoice.total_amount)]]
 
   autoTable(doc, {
     startY: y,
@@ -463,6 +465,7 @@ function buildCombinedInvoicePdf(
 
     if (showItems) {
       if (receipt) {
+        const itemDiscountShares = getInvoiceItemDiscountShares(items, invoice.discount_amount || 0)
         const rows =
           items.length > 0
             ? items.map((item, idx) => [
@@ -470,10 +473,10 @@ function buildCombinedInvoicePdf(
                 formatInvoiceItemLabel({ ...item, quantity: 1 }),
                 String(getInvoiceItemQuantity(item)),
                 formatBDT(getInvoiceItemUnitPrice(item)),
-                formatBDT(0),
-                formatBDT(getInvoiceItemLineTotal(item)),
+                formatBDT(itemDiscountShares[idx] || 0),
+                formatBDT(getInvoiceItemLineTotal(item) - (itemDiscountShares[idx] || 0)),
               ])
-            : [['1', 'Invoice total', '', '', formatBDT(0), formatBDT(invoice.total_amount)]]
+            : [['1', 'Invoice total', '', '', formatBDT(invoice.discount_amount || 0), formatBDT(invoice.total_amount)]]
 
         autoTable(doc, {
           startY: y,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Mail, MessageCircle, Printer, X } from 'lucide-react'
 import {
   formatInvoiceItemLabel,
+  getInvoiceItemDiscountShares,
   getInvoiceItemLineTotal,
   getInvoiceItemQuantity,
   getInvoiceItemUnitPrice,
@@ -163,6 +164,7 @@ function ReceiptStyleInvoice({
   const items = groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
   const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
   const discountAmount = invoice.discount_amount || 0
+  const discountShares = getInvoiceItemDiscountShares(items, discountAmount)
   const roundingOff = roundCurrency((invoice.total_amount || 0) - (subtotal - discountAmount))
   const due = getInvoiceDue(invoice)
 
@@ -206,7 +208,7 @@ function ReceiptStyleInvoice({
             <tr className="border-b border-gray-200">
               <td className="py-1.5 pr-2 text-gray-500">1</td>
               <td className="py-1.5 px-2 text-gray-500" colSpan={3}>Invoice total</td>
-              <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
+              <td className="py-1.5 px-2 text-right">{formatBDT(discountAmount)}</td>
               <td className="py-1.5 pl-2 text-right">{formatBDT(invoice.total_amount)}</td>
             </tr>
           ) : (
@@ -216,8 +218,8 @@ function ReceiptStyleInvoice({
                 <td className="py-1.5 px-2">{formatInvoiceItemLabel({ ...item, quantity: 1 })}</td>
                 <td className="py-1.5 px-2 text-center">{getInvoiceItemQuantity(item)}</td>
                 <td className="py-1.5 px-2 text-right">{formatBDT(getInvoiceItemUnitPrice(item))}</td>
-                <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
-                <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item))}</td>
+                <td className="py-1.5 px-2 text-right">{formatBDT(discountShares[idx] || 0)}</td>
+                <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item) - (discountShares[idx] || 0))}</td>
               </tr>
             ))
           )}
@@ -306,6 +308,7 @@ function StatementTable({
         invoices.map((invoice) => {
           const rawItems = Array.isArray(invoice.items) ? invoice.items : []
           const items = receipt && groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
+          const discountShares = receipt ? getInvoiceItemDiscountShares(items, invoice.discount_amount || 0) : []
           const due = getInvoiceDue(invoice)
           const adjustments: string[] = []
           if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount −${formatBDT(invoice.discount_amount || 0)}`)
@@ -339,8 +342,8 @@ function StatementTable({
                       <td className="py-1.5 px-2">{formatInvoiceItemLabel({ ...item, quantity: 1 })}</td>
                       <td className="py-1.5 px-2 text-center">{getInvoiceItemQuantity(item)}</td>
                       <td className="py-1.5 px-2 text-right">{formatBDT(getInvoiceItemUnitPrice(item))}</td>
-                      <td className="py-1.5 px-2 text-right">{formatBDT(0)}</td>
-                      <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item))}</td>
+                      <td className="py-1.5 px-2 text-right">{formatBDT(discountShares[idx] || 0)}</td>
+                      <td className="py-1.5 pl-2 text-right">{formatBDT(getInvoiceItemLineTotal(item) - (discountShares[idx] || 0))}</td>
                     </tr>
                   ))
                 ) : (

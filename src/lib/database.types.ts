@@ -155,6 +155,7 @@ export interface Database {
           description: string | null
           status: string
           cost: number
+          original_cost: number | null
           notes: string | null
           is_invoiced: boolean
           invoice_id: string | null
@@ -172,6 +173,7 @@ export interface Database {
           description?: string | null
           status?: string
           cost?: number
+          original_cost?: number | null
           notes?: string | null
           is_invoiced?: boolean
           invoice_id?: string | null
@@ -189,6 +191,7 @@ export interface Database {
           description?: string | null
           status?: string
           cost?: number
+          original_cost?: number | null
           notes?: string | null
           is_invoiced?: boolean
           invoice_id?: string | null

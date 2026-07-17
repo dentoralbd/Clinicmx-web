@@ -9,6 +9,7 @@ import {
   getFriendlySupabaseErrorMessage,
   getInvoiceItemLineTotal,
   getInvoiceItemSubtotal,
+  getTreatmentPlanDiscountTotal,
   isSchemaCompatibilityError,
   logBillingError,
   normalizeInvoiceItems,
@@ -68,6 +69,7 @@ interface PendingTreatment {
   tooth_number: number | null
   status: string
   cost: number
+  original_cost?: number | null
   is_invoiced?: boolean
   invoice_id?: string | null
   treatment_plan_group_id?: string | null
@@ -125,6 +127,9 @@ export function InvoiceModal({
       ? String((editingInvoice.discount_type === 'percentage' ? editingInvoice.discount_value : editingInvoice.discount_amount) || '')
       : String(template?.discount_amount || '')
   )
+  // Tracks the last discount value we auto-filled from imported treatments' baked-in
+  // plan discount, so re-syncing on tick/untick never clobbers a value the user typed themselves.
+  const [autoAppliedDiscount, setAutoAppliedDiscount] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
@@ -190,7 +195,8 @@ export function InvoiceModal({
           if (!blank && !autoImported) return prev
           if (initial.length > 0) {
             setAutoImported(true)
-            return buildTreatmentInvoiceItems(initial)
+            applyPlanDiscount(initial)
+            return buildTreatmentInvoiceItems(initial, { useOriginalCost: true })
           }
           setAutoImported(false)
           return blank ? prev : [createInvoiceItem()]
@@ -214,7 +220,7 @@ export function InvoiceModal({
     try {
       const { data, error } = await supabase
         .from('treatments')
-        .select('id, treatment_type, description, tooth_number, status, cost, is_invoiced, invoice_id, treatment_plan_group_id')
+        .select('id, treatment_type, description, tooth_number, status, cost, original_cost, is_invoiced, invoice_id, treatment_plan_group_id')
         .eq('patient_id', patientId)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -262,12 +268,27 @@ export function InvoiceModal({
     }
   }
 
+  /** Prefills the Discount field from imported treatments' baked-in plan discount, without
+   *  clobbering a value the user has since typed in themselves. */
+  function applyPlanDiscount(selected: PendingTreatment[]) {
+    const discountTotal = getTreatmentPlanDiscountTotal(selected)
+    const nextValue = discountTotal > 0 ? String(discountTotal) : ''
+    const userOwnsField = discountValue !== '' && discountValue !== autoAppliedDiscount
+    setAutoAppliedDiscount(nextValue)
+    if (userOwnsField) return
+    setDiscountValue(nextValue)
+    if (discountTotal > 0 && formData.discount_type !== 'percentage') {
+      setFormData((prev) => ({ ...prev, discount_type: 'fixed' }))
+    }
+  }
+
   /** While in auto-import mode, ticked treatments and invoice items stay in sync */
   function applyTreatmentSelection(next: Set<string>) {
     setSelectedTreatmentIds(next)
     if (autoImported) {
       const selected = pendingTreatments.filter((t) => next.has(t.id))
-      setItems(selected.length > 0 ? buildTreatmentInvoiceItems(selected) : [createInvoiceItem()])
+      setItems(selected.length > 0 ? buildTreatmentInvoiceItems(selected, { useOriginalCost: true }) : [createInvoiceItem()])
+      applyPlanDiscount(selected)
     }
   }
 
@@ -308,7 +329,7 @@ export function InvoiceModal({
     const selected = pendingTreatments.filter((t) => treatmentIds.includes(t.id))
     if (selected.length === 0) return
 
-    appendItems(buildTreatmentInvoiceItems(selected))
+    appendItems(buildTreatmentInvoiceItems(selected, { useOriginalCost: true }))
     setSelectedTreatmentIds(new Set(treatmentIds))
   }
 

@@ -16,6 +16,7 @@ export interface PendingTreatmentLike {
   description?: string | null
   tooth_number?: number | null
   cost?: number | null
+  original_cost?: number | null
 }
 
 export const QUICK_TREATMENT_OPTIONS = [
@@ -102,6 +103,28 @@ export function getInvoiceItemSubtotal(items: Array<Partial<BillingLineItem>>) {
   return roundCurrency(items.reduce((sum, item) => sum + getInvoiceItemLineTotal(item), 0))
 }
 
+/**
+ * Splits an invoice-level discount across its line items proportionally to each item's
+ * share of the subtotal, so a per-item "Discount" column (receipt-style printouts) can
+ * show a real breakdown instead of a hardcoded 0 that silently disagrees with the
+ * invoice's actual discount total shown elsewhere on the same page.
+ */
+export function getInvoiceItemDiscountShares(items: Array<Partial<BillingLineItem>>, discountAmount: number) {
+  if (discountAmount <= 0 || items.length === 0) return items.map(() => 0)
+
+  const subtotal = getInvoiceItemSubtotal(items)
+  if (subtotal <= 0) return items.map(() => 0)
+
+  const shares = items.map((item) => roundCurrency((getInvoiceItemLineTotal(item) / subtotal) * discountAmount))
+  // Rounding may leave a fraction of a cent unaccounted for — put it on the last item
+  // so the column always sums to exactly discountAmount.
+  const remainder = roundCurrency(discountAmount - shares.reduce((sum, share) => sum + share, 0))
+  if (remainder !== 0) {
+    shares[shares.length - 1] = roundCurrency(shares[shares.length - 1] + remainder)
+  }
+  return shares
+}
+
 export function formatInvoiceItemLabel(item: Partial<BillingLineItem>) {
   const description = item.description?.trim() || 'Untitled item'
   const quantity = getInvoiceItemQuantity(item)
@@ -175,12 +198,27 @@ export function groupSimilarInvoiceItems(items: BillingLineItem[]): BillingLineI
   })
 }
 
-export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[]) {
+/** Pre-discount price for a treatment row, falling back to its (post-discount) cost when none was recorded. */
+export function getTreatmentOriginalCost(treatment: PendingTreatmentLike) {
+  return treatment.original_cost === null || treatment.original_cost === undefined
+    ? parseCurrency(treatment.cost)
+    : parseCurrency(treatment.original_cost)
+}
+
+/** Sum of (original_cost - cost) across treatments — the discount baked in at treatment-plan creation. */
+export function getTreatmentPlanDiscountTotal(treatments: PendingTreatmentLike[]) {
+  return roundCurrency(
+    treatments.reduce((sum, t) => sum + Math.max(getTreatmentOriginalCost(t) - parseCurrency(t.cost), 0), 0)
+  )
+}
+
+export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[], options?: { useOriginalCost?: boolean }) {
+  const useOriginalCost = options?.useOriginalCost ?? false
   const groupedItems = new Map<string, BillingLineItem>()
 
   for (const treatment of treatments) {
     const description = buildTreatmentLabel(treatment)
-    const unitPrice = parseCurrency(treatment.cost)
+    const unitPrice = useOriginalCost ? getTreatmentOriginalCost(treatment) : parseCurrency(treatment.cost)
     const key = `${description}::${unitPrice}`
     const existing = groupedItems.get(key)
 

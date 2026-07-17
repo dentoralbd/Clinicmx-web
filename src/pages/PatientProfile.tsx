@@ -13,7 +13,7 @@ import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
-import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
+import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
@@ -93,6 +93,41 @@ function resolvePlannedCostSeed(target: any, plannedTreatments: any[]): string {
       (t.tooth_number ?? null) === (target.tooth_number ?? null)
   )
   return match ? String(match.cost) : String(target.cost ?? '')
+}
+
+// Cost shown (read-only) for a plan item in the Add Visit modal. If the treatment
+// is the sole item on its invoice, a discount applied later at invoice creation
+// is reflected by showing that invoice's post-discount total instead of the plan's
+// raw cost. Treatments sharing an invoice with others keep their plain plan cost,
+// since a shared invoice-level discount can't be attributed to one line item.
+function resolvePlannedDisplayCost(target: any, allTreatments: any[], invoices: any[]): number {
+  if (target.invoice_id) {
+    const siblingCount = (allTreatments || []).filter((t) => t.invoice_id === target.invoice_id).length
+    if (siblingCount === 1) {
+      const invoice = (invoices || []).find((inv) => inv.id === target.invoice_id)
+      if (invoice) return Number(invoice.total_amount) || 0
+    }
+  }
+  return Number(target.cost) || 0
+}
+
+// Shared by the Treatment Plan form's live preview and its submit handler, so the
+// discount that's shown always matches what actually gets written to treatments.cost.
+function computeTreatmentPlanDiscount(
+  items: Array<{ cost: string; teeth: number[] }>,
+  discountType: 'fixed' | 'percentage',
+  discountValue: string
+) {
+  const subtotal = items.reduce(
+    (sum, item) => sum + (parseFloat(item.cost) || 0) * Math.max(item.teeth.length, 1),
+    0
+  )
+  const rawDiscount =
+    discountType === 'percentage'
+      ? subtotal * ((parseFloat(discountValue) || 0) / 100)
+      : parseFloat(discountValue) || 0
+  const discountAmount = Math.min(Math.max(rawDiscount, 0), subtotal)
+  return { subtotal, discountAmount, finalTotal: subtotal - discountAmount }
 }
 
 // Prefixes are load-bearing: splitVisitNotes() parses them back out of the
@@ -391,6 +426,8 @@ export function PatientProfile() {
     items: [
       { treatment_type: '', teeth: [] as number[], description: '', status: 'Planned', cost: '', notes: '' },
     ],
+    discount_type: 'fixed' as 'fixed' | 'percentage',
+    discount_value: '',
   })
 
   const [showMedicalHistoryForm, setShowMedicalHistoryForm] = useState(false)
@@ -593,15 +630,28 @@ export function PatientProfile() {
       // Items created in the same submission share a planGroupId so they can be
       // displayed/selected together later (Treatment History grouping, invoice picker).
       const planGroupId = crypto.randomUUID()
+      // Discount is entered once for the whole plan (see the form's Discount section)
+      // and baked proportionally into each row's cost here, so every downstream reader
+      // of treatments.cost (Add Visit, invoicing, the Treatments list) already sees the
+      // discounted price with no separate discount field to keep in sync.
+      const { subtotal, discountAmount } = computeTreatmentPlanDiscount(
+        treatmentPlanForm.items,
+        treatmentPlanForm.discount_type,
+        treatmentPlanForm.discount_value
+      )
+      const costFactor = discountAmount > 0 && subtotal > 0 ? 1 - discountAmount / subtotal : 1
       const rows = treatmentPlanForm.items.flatMap((item) => {
         const teethList: Array<number | null> = item.teeth.length > 0 ? item.teeth : [null]
+        const originalCost = parseFloat(item.cost) || 0
+        const discountedCost = Math.round(originalCost * costFactor * 100) / 100
         return teethList.map((tooth) => ({
           patient_id: id,
           tooth_number: tooth,
           treatment_type: item.treatment_type,
           description: item.description || null,
           status: item.status,
-          cost: parseFloat(item.cost) || 0,
+          cost: discountedCost,
+          original_cost: originalCost,
           notes: item.notes || null,
           treatment_plan_group_id: planGroupId,
         }))
@@ -619,6 +669,8 @@ export function PatientProfile() {
       setShowTreatmentPlanForm(false)
       setTreatmentPlanForm({
         items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' }],
+        discount_type: 'fixed',
+        discount_value: '',
       })
       loadPatientData()
 
@@ -842,7 +894,7 @@ export function PatientProfile() {
     // Ad-hoc entries create one row per tooth, each at the entry's cost
     const treatmentsTotal =
       doneEntries.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
-      billableFromPlan.reduce((sum, { selection }) => sum + (parseFloat(selection.cost) || 0), 0)
+      billableFromPlan.reduce((sum, { treatment }) => sum + (Number(treatment.cost) || 0), 0)
     // Selected plan items that were invoiced on a previous visit: a payment
     // entered here goes toward their existing invoices' due balances.
     const billedFromPlan = doneFromPlan.filter(({ treatment }) => treatment.invoice_id)
@@ -912,14 +964,15 @@ export function PatientProfile() {
           patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
           previousPayload: treatment,
         })
-        const nextCost = parseFloat(selection.cost) || 0
+        // Cost is read-only in this modal (set at treatment-plan creation, or by the
+        // linked invoice once billed), so only status is writable here.
         const { error: planUpdateError } = await supabase
           .from('treatments')
-          .update({ status: selection.status, cost: nextCost })
+          .update({ status: selection.status })
           .eq('id', treatment.id)
         if (planUpdateError) throw planUpdateError
         if (billablePlanIds.has(treatment.id)) {
-          updatedPlanTreatments.push({ ...treatment, status: selection.status, cost: nextCost })
+          updatedPlanTreatments.push({ ...treatment, status: selection.status })
         }
       }
 
@@ -1001,20 +1054,33 @@ export function PatientProfile() {
   async function createVisitInvoiceWithPayment(insertedTreatments: any[], paymentAmount: number): Promise<string | null> {
     if (!id) return null
 
-    const items = buildTreatmentInvoiceItems(insertedTreatments)
-    const totalAmount = getInvoiceItemSubtotal(items)
-    const { data: invoice, error: invoiceError } = await supabase
-      .from('invoices')
-      .insert([buildLegacySafeInvoicePayload({
-        patientId: id,
-        items,
-        totalAmount,
-        paidAmount: 0,
-        status: 'Pending',
-        dueDate: null,
-      })])
-      .select('id')
-      .single()
+    // Items show the pre-discount price so the printed invoice can break out a
+    // Discount line, matching how a discount applied at treatment-plan creation
+    // is expected to "sync" into invoicing (rather than silently disappearing
+    // into a lower, unlabeled price).
+    const items = buildTreatmentInvoiceItems(insertedTreatments, { useOriginalCost: true })
+    const subtotal = getInvoiceItemSubtotal(items)
+    const discountAmount = getTreatmentPlanDiscountTotal(insertedTreatments)
+    const totalAmount = Math.max(subtotal - discountAmount, 0)
+    const basePayload = buildLegacySafeInvoicePayload({
+      patientId: id,
+      items,
+      totalAmount,
+      paidAmount: 0,
+      status: 'Pending',
+      dueDate: null,
+    })
+    // discount_amount/type/value columns arrive in migration 008 — fall back to the
+    // legacy-safe payload (still correctly totaled) on older schemas.
+    const extendedPayload = discountAmount > 0
+      ? { ...basePayload, discount_amount: discountAmount, discount_type: 'fixed', discount_value: discountAmount }
+      : basePayload
+
+    let insertResult = await supabase.from('invoices').insert([extendedPayload]).select('id').single()
+    if (insertResult.error && isSchemaCompatibilityError(insertResult.error)) {
+      insertResult = await supabase.from('invoices').insert([basePayload]).select('id').single()
+    }
+    const { data: invoice, error: invoiceError } = insertResult
     if (invoiceError) throw invoiceError
     if (!invoice?.id) return null
 
@@ -3723,6 +3789,8 @@ export function PatientProfile() {
           plannedTreatments={plannedTreatments}
           plannedSelections={visitPlannedSelections}
           setPlannedSelections={setVisitPlannedSelections}
+          invoices={invoices}
+          allTreatments={treatments}
           payment={visitPayment}
           setPayment={setVisitPayment}
           dentitionType={patientDentition}
@@ -4163,6 +4231,8 @@ function VisitFormModal({
   plannedTreatments,
   plannedSelections,
   setPlannedSelections,
+  invoices,
+  allTreatments,
   payment,
   setPayment,
   dentitionType,
@@ -4191,6 +4261,16 @@ function VisitFormModal({
   const treatmentsTotal =
     validTreatments.reduce((sum, entry) => sum + (parseFloat(entry.cost) || 0) * Math.max(entry.teeth.length, 1), 0) +
     selectedUnbilled.reduce((sum, t) => sum + (parseFloat(plannedSelections[t.id]?.cost) || 0), 0)
+  // Already-billed selected items don't add to treatmentsTotal (their cost was invoiced on
+  // a prior visit) — payment for them instead pays down whatever's still due on that invoice.
+  // Surfaced separately so "Treatments total: 0" doesn't read as if there's nothing to pay.
+  const selectedBilledInvoiceIds = Array.from(
+    new Set(selectedPlanned.filter((t) => t.invoice_id).map((t) => t.invoice_id as string))
+  )
+  const billedDueTotal = selectedBilledInvoiceIds.reduce((sum, invoiceId) => {
+    const invoice = (invoices as any[]).find((inv) => inv.id === invoiceId)
+    return invoice ? sum + getInvoiceDue(invoice) : sum
+  }, 0)
   const hasAnyDone = validTreatments.length > 0 || selectedPlanned.length > 0
 
   function updateTreatmentEntry(index: number, patch: Partial<VisitTreatmentEntry>) {
@@ -4296,15 +4376,9 @@ function VisitFormModal({
                     </label>
                     {selection?.selected && (
                       <div className="flex flex-wrap items-center gap-2 pl-6">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          placeholder="Cost (BDT)"
-                          value={selection.cost}
-                          onChange={(e) => updatePlannedSelection(t.id, { cost: e.target.value })}
-                          className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
+                        <span className="w-32 px-3 py-1.5 text-sm text-text-secondary">
+                          {formatBDT(resolvePlannedDisplayCost(t, allTreatments, invoices))}
+                        </span>
                         <select
                           value={selection.status}
                           onChange={(e) => updatePlannedSelection(t.id, { status: e.target.value as 'In Progress' | 'Completed' })}
@@ -4458,7 +4532,15 @@ function VisitFormModal({
                     <option value="Cheque">Cheque</option>
                     <option value="Transfer">Transfer</option>
                   </select>
-                  <span className="text-xs text-text-secondary">Treatments total: {formatBDT(treatmentsTotal)}</span>
+                  {treatmentsTotal > 0 && (
+                    <span className="text-xs text-text-secondary">Treatments total: {formatBDT(treatmentsTotal)}</span>
+                  )}
+                  {billedDueTotal > 0 && (
+                    <span className="text-xs text-text-secondary">Due on billed item(s): {formatBDT(billedDueTotal)}</span>
+                  )}
+                  {treatmentsTotal <= 0 && billedDueTotal <= 0 && (
+                    <span className="text-xs text-text-secondary">Treatments total: {formatBDT(0)}</span>
+                  )}
                 </div>
                 {(parseFloat(payment.amount) || 0) > 0 && (
                   <p className="text-xs text-text-secondary">
@@ -5643,6 +5725,52 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
           >
             + Add Treatment Item
           </button>
+
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+            <label className="block text-sm font-medium">Discount</label>
+            <div className="grid grid-cols-2 gap-3">
+              <select
+                value={formData.discount_type}
+                onChange={(e) => setFormData({ ...formData, discount_type: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="fixed">Fixed (BDT)</option>
+                <option value="percentage">Percentage (%)</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.discount_value}
+                onChange={(e) => setFormData({ ...formData, discount_value: e.target.value })}
+                placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            {(() => {
+              const { subtotal, discountAmount, finalTotal } = computeTreatmentPlanDiscount(
+                formData.items,
+                formData.discount_type,
+                formData.discount_value
+              )
+              return (
+                <div className="text-sm space-y-1 pt-1 border-t border-gray-200">
+                  <div className="flex justify-between text-text-secondary">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-text-secondary">
+                    <span>Discount</span>
+                    <span>-{formatCurrency(discountAmount)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold">
+                    <span>Final Total</span>
+                    <span>{formatCurrency(finalTotal)}</span>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
 
           <div className="flex gap-3 pt-4">
             <Button type="submit" className="flex-1">Save Treatment Plan</Button>
