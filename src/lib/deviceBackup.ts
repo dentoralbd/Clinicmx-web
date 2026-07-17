@@ -153,6 +153,26 @@ export function downloadDeviceBackup(backup: DeviceBackup) {
   return filename
 }
 
+const AUTO_PRUNE_KEY = 'clinicmx_backup_autoprune'
+
+// Off by default — deleting Drive files is a one-way action, so this only
+// takes effect once the user explicitly opts in from the Backup & Restore page.
+export function getAutoPruneEnabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PRUNE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setAutoPruneEnabled(enabled: boolean) {
+  try {
+    localStorage.setItem(AUTO_PRUNE_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // ignore (e.g. private browsing / storage disabled)
+  }
+}
+
 // Uploads via the same-origin Cloudflare Pages Function (functions/api/upload-backup.ts),
 // which holds the Google credentials server-side — no Google login in the browser,
 // so this also works inside the Android WebView APK where OAuth popups are blocked.
@@ -165,7 +185,7 @@ export async function uploadBackupToDrive(
     response = await fetch('/api/upload-backup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, backup }),
+      body: JSON.stringify({ filename, backup, prune: getAutoPruneEnabled() }),
     })
   } catch {
     throw new Error('Could not reach the upload service. Check your internet connection.')
@@ -184,6 +204,60 @@ export async function uploadBackupToDrive(
   }
   markBackupDone()
   return { name: body.name || filename, webViewLink: body.webViewLink }
+}
+
+export interface DriveBackupFile {
+  id: string
+  name: string
+  size: number
+  modifiedTime?: string
+}
+
+// Lists backups in Drive's device-backups folder via the same-origin
+// Cloudflare Pages Function (functions/api/list-backups.ts) — newest first.
+export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
+  let response: Response
+  try {
+    response = await fetch('/api/list-backups')
+  } catch {
+    throw new Error('Could not reach Google Drive. Check your internet connection.')
+  }
+  let body: { ok?: boolean; files?: DriveBackupFile[]; error?: string } | null = null
+  try {
+    body = await response.json()
+  } catch {
+    // Non-JSON response (e.g. 404 HTML when the function isn't deployed)
+  }
+  if (!response.ok || !body?.ok) {
+    if (response.status === 404) {
+      throw new Error('Backup listing is not available on this deployment.')
+    }
+    throw new Error(body?.error || `Listing backups failed (HTTP ${response.status}).`)
+  }
+  return body.files || []
+}
+
+// Fetches one Drive backup's content and wraps it as a File so it can feed
+// straight into the same parseBackupFile/handleFileChosen path used for a
+// locally-picked file — the rest of the restore flow needs no changes.
+export async function fetchBackupFromDrive(id: string, name: string): Promise<File> {
+  let response: Response
+  try {
+    response = await fetch(`/api/download-backup?id=${encodeURIComponent(id)}`)
+  } catch {
+    throw new Error('Could not reach Google Drive. Check your internet connection.')
+  }
+  if (!response.ok) {
+    let error: string | undefined
+    try {
+      error = (await response.json())?.error
+    } catch {
+      // ignore
+    }
+    throw new Error(error || `Downloading backup failed (HTTP ${response.status}).`)
+  }
+  const text = await response.text()
+  return new File([text], name, { type: 'application/json' })
 }
 
 export type ParseResult =

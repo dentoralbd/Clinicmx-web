@@ -6,6 +6,7 @@ import {
   BellRing,
   CheckCircle2,
   DatabaseBackup,
+  DownloadCloud,
   FileUp,
   HardDriveDownload,
   Loader2,
@@ -18,10 +19,15 @@ import {
   buildDeviceBackup,
   downloadDeviceBackup,
   uploadBackupToDrive,
+  listBackupsFromDrive,
+  fetchBackupFromDrive,
+  getAutoPruneEnabled,
+  setAutoPruneEnabled,
   parseBackupFile,
   analyzeRestore,
   executeRestore,
   type BackupProgress,
+  type DriveBackupFile,
   type RestoreAnalysis,
   type RestoreMode,
   type RestoreOutcome,
@@ -55,12 +61,21 @@ export function BackupRestore() {
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ name: string; webViewLink?: string } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [autoPrune, setAutoPrune] = useState(() => getAutoPruneEnabled())
 
   const [restore, setRestore] = useState<RestoreState>({ step: 'idle' })
   const [mode, setMode] = useState<RestoreMode>('insert-missing')
   const [overwriteConfirmText, setOverwriteConfirmText] = useState('')
   const [restoreSettings, setRestoreSettings] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [driveBrowse, setDriveBrowse] = useState<
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'loaded'; files: DriveBackupFile[] }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' })
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const [settings, setSettings] = useState(() => getBackupSettings())
   const [settingsSavedAt, setSettingsSavedAt] = useState<Date | null>(null)
@@ -79,7 +94,13 @@ export function BackupRestore() {
   // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
   if (getAppRole() !== 'admin') return <Navigate to="/dashboard" replace />
 
-  const busy = backingUp || uploading || restore.step === 'analyzing' || restore.step === 'running'
+  const busy =
+    backingUp ||
+    uploading ||
+    restore.step === 'analyzing' ||
+    restore.step === 'running' ||
+    driveBrowse.status === 'loading' ||
+    downloadingId !== null
 
   const handleDownloadBackup = async () => {
     setBackingUp(true)
@@ -140,6 +161,34 @@ export function BackupRestore() {
     }
   }
 
+  const handleBrowseDrive = async () => {
+    setDriveBrowse({ status: 'loading' })
+    try {
+      const files = await listBackupsFromDrive()
+      setDriveBrowse({ status: 'loaded', files })
+    } catch (error) {
+      setDriveBrowse({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Could not list Drive backups.',
+      })
+    }
+  }
+
+  const handleRestoreFromDrive = async (file: DriveBackupFile) => {
+    setDownloadingId(file.id)
+    try {
+      const downloaded = await fetchBackupFromDrive(file.id, file.name)
+      await handleFileChosen(downloaded)
+    } catch (error) {
+      setRestore({
+        step: 'error',
+        message: `Could not download ${file.name} from Drive: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      })
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
   const handleRunRestore = async () => {
     if (restore.step !== 'summary') return
     const { analysis } = restore
@@ -163,6 +212,11 @@ export function BackupRestore() {
     const saved = saveBackupSettings(settings)
     setSettings(saved)
     setSettingsSavedAt(new Date())
+  }
+
+  const handleToggleAutoPrune = (checked: boolean) => {
+    setAutoPrune(checked)
+    setAutoPruneEnabled(checked)
   }
 
   const handleEnableNotifications = async () => {
@@ -231,6 +285,17 @@ export function BackupRestore() {
             Last backup from this device: {lastBackupAt ? format(lastBackupAt, 'PPp') : 'Never'}
           </span>
         </div>
+        <label className="flex items-start gap-2 cursor-pointer mt-3">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={autoPrune}
+            onChange={(e) => handleToggleAutoPrune(e.target.checked)}
+          />
+          <span className="text-sm text-text-secondary">
+            Automatically delete older Drive backups (keep last 20). Applies to future uploads only.
+          </span>
+        </label>
         {uploadResult && !uploading && (
           <div className="mt-3 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -296,10 +361,64 @@ export function BackupRestore() {
                 {restore.message}
               </div>
             )}
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-              <FileUp className="w-4 h-4 mr-2" />
-              Choose backup file
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                <FileUp className="w-4 h-4 mr-2" />
+                Choose backup file
+              </Button>
+              <Button variant="outline" onClick={handleBrowseDrive} disabled={busy}>
+                {driveBrowse.status === 'loading' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Checking Drive…
+                  </>
+                ) : (
+                  <>
+                    <DownloadCloud className="w-4 h-4 mr-2" />
+                    Restore from Google Drive
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {driveBrowse.status === 'error' && (
+              <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex items-center gap-2">
+                <XCircle className="w-4 h-4 shrink-0" />
+                {driveBrowse.message}
+              </div>
+            )}
+
+            {driveBrowse.status === 'loaded' && (
+              <div className="mt-3 border border-gray-200 rounded-lg divide-y divide-gray-100">
+                {driveBrowse.files.length === 0 ? (
+                  <div className="p-3 text-sm text-text-secondary">No backups found in Drive yet.</div>
+                ) : (
+                  driveBrowse.files.map((f) => (
+                    <div key={f.id} className="p-3 flex items-center justify-between gap-3 text-sm">
+                      <div>
+                        <div className="font-mono">{f.name}</div>
+                        <div className="text-text-secondary text-xs">
+                          {f.modifiedTime ? format(new Date(f.modifiedTime), 'PPp') : ''} ·{' '}
+                          {(f.size / 1024).toFixed(0)} KB
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRestoreFromDrive(f)}
+                        disabled={busy}
+                      >
+                        {downloadingId === f.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          'Restore this'
+                        )}
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </>
         )}
 

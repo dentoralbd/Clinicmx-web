@@ -13,127 +13,44 @@
 // size cap, and writes confined to the device-backups subfolder — worst case
 // is junk JSON files appearing there.
 
-interface Env {
-  GOOGLE_OAUTH_CLIENT_ID: string
-  GOOGLE_OAUTH_CLIENT_SECRET: string
-  GOOGLE_OAUTH_REFRESH_TOKEN: string
-  GOOGLE_DRIVE_FOLDER_ID: string
-}
+import {
+  type Env,
+  json,
+  hasCredentials,
+  getAccessToken,
+  driveList,
+  ensureSubfolder,
+  uploadNew,
+  updateExisting,
+  getWebViewLink,
+  driveDelete,
+} from './_lib'
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024
-const SUBFOLDER = 'device-backups'
-const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const KEEP_LAST_N = 20
 
-function json(status: number, body: Record<string, unknown>): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
-}
-
-async function getAccessToken(env: Env): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: env.GOOGLE_OAUTH_CLIENT_ID,
-      client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
-      refresh_token: env.GOOGLE_OAUTH_REFRESH_TOKEN,
-      grant_type: 'refresh_token',
-    }),
-  })
-  const data = (await res.json()) as { access_token?: string; error?: string }
-  if (!res.ok || !data.access_token) {
-    throw new Error(`Google auth failed: ${data.error || res.status}`)
-  }
-  return data.access_token
-}
-
-async function driveList(token: string, q: string): Promise<Array<{ id: string; name: string }>> {
-  const url = new URL('https://www.googleapis.com/drive/v3/files')
-  url.searchParams.set('q', q)
-  url.searchParams.set('fields', 'files(id, name)')
-  url.searchParams.set('pageSize', '10')
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  const data = (await res.json()) as { files?: Array<{ id: string; name: string }>; error?: { message?: string } }
-  if (!res.ok) throw new Error(`Drive list failed: ${data.error?.message || res.status}`)
-  return data.files || []
-}
-
-async function ensureSubfolder(token: string, parentId: string): Promise<string> {
-  const existing = await driveList(
-    token,
-    `name = '${SUBFOLDER}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`
-  )
-  if (existing.length) return existing[0].id
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: SUBFOLDER, mimeType: FOLDER_MIME, parents: [parentId] }),
-  })
-  const data = (await res.json()) as { id?: string; error?: { message?: string } }
-  if (!res.ok || !data.id) throw new Error(`Drive folder create failed: ${data.error?.message || res.status}`)
-  return data.id
-}
-
-async function uploadNew(token: string, folderId: string, filename: string, content: string): Promise<string> {
-  const boundary = 'clinicmx-' + crypto.randomUUID()
-  const body =
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name: filename, parents: [folderId] }) +
-    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
-    content +
-    `\r\n--${boundary}--`
-  const res = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-      },
-      body,
+// Best-effort only: a pruning failure must never turn a successful upload
+// into an error response — the backup itself already landed safely.
+async function pruneOldUploads(token: string, folderId: string): Promise<void> {
+  try {
+    const files = await driveList(
+      token,
+      `'${folderId}' in parents and trashed = false`,
+      'id, name'
+    )
+    const toDelete = files.slice(KEEP_LAST_N)
+    for (const f of toDelete) {
+      await driveDelete(token, f.id)
     }
-  )
-  const data = (await res.json()) as { id?: string; error?: { message?: string } }
-  if (!res.ok || !data.id) throw new Error(`Drive upload failed: ${data.error?.message || res.status}`)
-  return data.id
-}
-
-async function updateExisting(token: string, fileId: string, content: string): Promise<void> {
-  const res = await fetch(
-    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-    {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: content,
-    }
-  )
-  if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
-    throw new Error(`Drive update failed: ${data?.error?.message || res.status}`)
+  } catch (err) {
+    console.error('Backup prune failed (non-fatal):', err)
   }
-}
-
-async function getWebViewLink(token: string, fileId: string): Promise<string | undefined> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  )
-  if (!res.ok) return undefined
-  const data = (await res.json()) as { webViewLink?: string }
-  return data.webViewLink
 }
 
 export const onRequestPost = async (context: { request: Request; env: Env }): Promise<Response> => {
   const { request, env } = context
 
-  if (
-    !env.GOOGLE_OAUTH_CLIENT_ID ||
-    !env.GOOGLE_OAUTH_CLIENT_SECRET ||
-    !env.GOOGLE_OAUTH_REFRESH_TOKEN ||
-    !env.GOOGLE_DRIVE_FOLDER_ID
-  ) {
+  if (!hasCredentials(env)) {
     return json(503, { ok: false, error: 'Upload service is not configured on the server yet.' })
   }
 
@@ -142,9 +59,9 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
     return json(413, { ok: false, error: 'Backup is too large to upload this way.' })
   }
 
-  let payload: { filename?: unknown; backup?: unknown }
+  let payload: { filename?: unknown; backup?: unknown; prune?: unknown }
   try {
-    payload = (await request.json()) as { filename?: unknown; backup?: unknown }
+    payload = (await request.json()) as { filename?: unknown; backup?: unknown; prune?: unknown }
   } catch {
     return json(400, { ok: false, error: 'Invalid request body.' })
   }
@@ -157,6 +74,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
   if (!backup || backup.kind !== 'clinicmx-device-backup') {
     return json(400, { ok: false, error: 'Not a ClinicMx backup file.' })
   }
+  const prune = payload.prune === true
 
   try {
     const token = await getAccessToken(env)
@@ -174,6 +92,8 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
     } else {
       fileId = await uploadNew(token, folderId, filename, content)
     }
+
+    if (prune) await pruneOldUploads(token, folderId)
 
     const webViewLink = await getWebViewLink(token, fileId)
     return json(200, { ok: true, name: filename, webViewLink })
