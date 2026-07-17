@@ -10,7 +10,7 @@ import {
   getInvestigationSectionTemplates,
   getMedicationSectionTemplates,
 } from './prescriptionSectionTemplates'
-import { markBackupDone } from './backupReminders'
+import { markBackupDone, type BackupCategory } from './backupReminders'
 
 /**
  * All backed-up tables in foreign-key dependency order (parents first), same
@@ -134,12 +134,26 @@ export async function buildDeviceBackup(onProgress?: (p: BackupProgress) => void
   }
 }
 
-export function backupFileName(date: Date = new Date()) {
-  return `clinicmx-backup-${format(date, 'yyyy-MM-dd')}.json`
+// Manual backups (the plain Download/Upload buttons) stay untagged, matching
+// the original filename format. Scheduled daily/weekly/monthly backups (auto
+// or reminder-triggered) get a category segment so they can be told apart —
+// including during restore and for per-category retention (see
+// functions/api/upload-backup.ts pruneOldUploads).
+export function backupFileName(date: Date = new Date(), category?: BackupCategory) {
+  const datePart = format(date, 'yyyy-MM-dd')
+  return category ? `clinicmx-backup-${category}-${datePart}.json` : `clinicmx-backup-${datePart}.json`
 }
 
-export function downloadDeviceBackup(backup: DeviceBackup) {
-  const filename = backupFileName()
+const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}\.json$/
+
+/** Parses the category tag out of a backup filename, or 'manual' if untagged. */
+export function parseBackupCategory(filename: string): BackupCategory | 'manual' {
+  const match = FILENAME_PATTERN.exec(filename)
+  return (match?.[1] as BackupCategory | undefined) ?? 'manual'
+}
+
+export function downloadDeviceBackup(backup: DeviceBackup, category?: BackupCategory) {
+  const filename = backupFileName(new Date(), category)
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -149,7 +163,7 @@ export function downloadDeviceBackup(backup: DeviceBackup) {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
-  markBackupDone()
+  markBackupDone(category)
   return filename
 }
 
@@ -177,9 +191,10 @@ export function setAutoPruneEnabled(enabled: boolean) {
 // which holds the Google credentials server-side — no Google login in the browser,
 // so this also works inside the Android WebView APK where OAuth popups are blocked.
 export async function uploadBackupToDrive(
-  backup: DeviceBackup
+  backup: DeviceBackup,
+  category?: BackupCategory
 ): Promise<{ name: string; webViewLink?: string }> {
-  const filename = backupFileName()
+  const filename = backupFileName(new Date(), category)
   let response: Response
   try {
     response = await fetch('/api/upload-backup', {
@@ -202,7 +217,7 @@ export async function uploadBackupToDrive(
     }
     throw new Error(body?.error || `Upload failed (HTTP ${response.status}).`)
   }
-  markBackupDone()
+  markBackupDone(category)
   return { name: body.name || filename, webViewLink: body.webViewLink }
 }
 

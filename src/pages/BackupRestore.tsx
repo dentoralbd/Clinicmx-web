@@ -24,6 +24,7 @@ import {
   getAutoPruneEnabled,
   setAutoPruneEnabled,
   parseBackupFile,
+  parseBackupCategory,
   analyzeRestore,
   executeRestore,
   type BackupProgress,
@@ -33,6 +34,7 @@ import {
   type RestoreOutcome,
 } from '@/lib/deviceBackup'
 import {
+  BACKUP_CATEGORIES,
   getBackupSettings,
   saveBackupSettings,
   getLastBackupAt,
@@ -40,8 +42,15 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   isNotificationSupported,
-  type BackupFrequency,
+  type BackupCategory,
+  type ScheduleSettings,
 } from '@/lib/backupReminders'
+
+const CATEGORY_LABEL: Record<BackupCategory, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly (Mondays)',
+  monthly: 'Monthly (1st)',
+}
 
 type RestoreState =
   | { step: 'idle' }
@@ -212,6 +221,10 @@ export function BackupRestore() {
     const saved = saveBackupSettings(settings)
     setSettings(saved)
     setSettingsSavedAt(new Date())
+  }
+
+  const updateSchedule = (category: BackupCategory, patch: Partial<ScheduleSettings>) => {
+    setSettings((prev) => ({ ...prev, [category]: { ...prev[category], ...patch } }))
   }
 
   const handleToggleAutoPrune = (checked: boolean) => {
@@ -389,33 +402,48 @@ export function BackupRestore() {
             )}
 
             {driveBrowse.status === 'loaded' && (
-              <div className="mt-3 border border-gray-200 rounded-lg divide-y divide-gray-100">
+              <div className="mt-3 space-y-4">
                 {driveBrowse.files.length === 0 ? (
-                  <div className="p-3 text-sm text-text-secondary">No backups found in Drive yet.</div>
+                  <div className="p-3 text-sm text-text-secondary border border-gray-200 rounded-lg">
+                    No backups found in Drive yet.
+                  </div>
                 ) : (
-                  driveBrowse.files.map((f) => (
-                    <div key={f.id} className="p-3 flex items-center justify-between gap-3 text-sm">
-                      <div>
-                        <div className="font-mono">{f.name}</div>
-                        <div className="text-text-secondary text-xs">
-                          {f.modifiedTime ? format(new Date(f.modifiedTime), 'PPp') : ''} ·{' '}
-                          {(f.size / 1024).toFixed(0)} KB
+                  (['daily', 'weekly', 'monthly', 'manual'] as const).map((group) => {
+                    const files = driveBrowse.files.filter((f) => parseBackupCategory(f.name) === group)
+                    if (files.length === 0) return null
+                    return (
+                      <div key={group}>
+                        <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">
+                          {group === 'manual' ? 'Manual' : CATEGORY_LABEL[group]}
+                        </div>
+                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                          {files.map((f) => (
+                            <div key={f.id} className="p-3 flex items-center justify-between gap-3 text-sm">
+                              <div>
+                                <div className="font-mono">{f.name}</div>
+                                <div className="text-text-secondary text-xs">
+                                  {f.modifiedTime ? format(new Date(f.modifiedTime), 'PPp') : ''} ·{' '}
+                                  {(f.size / 1024).toFixed(0)} KB
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRestoreFromDrive(f)}
+                                disabled={busy}
+                              >
+                                {downloadingId === f.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  'Restore this'
+                                )}
+                              </Button>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRestoreFromDrive(f)}
-                        disabled={busy}
-                      >
-                        {downloadingId === f.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          'Restore this'
-                        )}
-                      </Button>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             )}
@@ -643,48 +671,60 @@ export function BackupRestore() {
           Backup reminders
         </h2>
         <p className="text-sm text-text-secondary mb-4">
-          When a scheduled backup time passes without a backup, a reminder banner appears in the app (and a
-          browser notification if enabled). Reminders only show while the app is open.
+          Enable Daily, Weekly, and/or Monthly on their own schedule. When a scheduled time passes, either a
+          reminder appears (bell icon + banner + browser notification) asking you to back up manually, or —
+          with <span className="font-medium">Smart upload</span> turned on — the app automatically backs up and
+          uploads to Google Drive by itself, and just notifies you of the result.
         </p>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="text-sm">
-            <span className="block text-text-secondary mb-1">Frequency</span>
-            <select
-              value={settings.frequency}
-              onChange={(e) => setSettings({ ...settings, frequency: e.target.value as BackupFrequency })}
-              className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly (Mondays)</option>
-              <option value="monthly">Monthly (1st)</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="block text-text-secondary mb-1">Time</span>
-            <input
-              type="time"
-              value={settings.time}
-              onChange={(e) => setSettings({ ...settings, time: e.target.value || '23:30' })}
-              className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.remindersEnabled}
-              onChange={(e) => setSettings({ ...settings, remindersEnabled: e.target.checked })}
-            />
-            Enable reminders
-          </label>
-          <Button variant="secondary" onClick={handleSaveSettings}>
-            Save settings
-          </Button>
+        <div className="space-y-4">
+          {BACKUP_CATEGORIES.map((category) => {
+            const schedule = settings[category]
+            return (
+              <div key={category} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex flex-wrap items-end gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={schedule.enabled}
+                      onChange={(e) => updateSchedule(category, { enabled: e.target.checked })}
+                    />
+                    {CATEGORY_LABEL[category]}
+                  </label>
+                  <label className="text-sm">
+                    <span className="block text-text-secondary mb-1">Time</span>
+                    <input
+                      type="time"
+                      value={schedule.time}
+                      disabled={!schedule.enabled}
+                      onChange={(e) => updateSchedule(category, { time: e.target.value || '23:30' })}
+                      className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-400"
+                    />
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 text-sm pb-2 ${schedule.enabled ? 'cursor-pointer' : 'text-gray-400'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={schedule.autoUpload}
+                      disabled={!schedule.enabled}
+                      onChange={(e) => updateSchedule(category, { autoUpload: e.target.checked })}
+                    />
+                    Smart upload (auto-backup to Drive)
+                  </label>
+                </div>
+                {schedule.enabled && (
+                  <p className="text-xs text-text-secondary mt-2">
+                    Next due: {format(getNextScheduledInstant(category, schedule), 'PPp')}
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
-        {settingsSavedAt && (
-          <p className="text-sm text-green-700 mt-2">
-            Saved. Next backup due: {format(getNextScheduledInstant(settings), 'PPp')}
-          </p>
-        )}
+        <Button variant="secondary" onClick={handleSaveSettings} className="mt-4">
+          Save settings
+        </Button>
+        {settingsSavedAt && <p className="text-sm text-green-700 mt-2">Saved.</p>}
         {isNotificationSupported() && (
           <div className="mt-4 flex items-center gap-3">
             {notifPermission === 'granted' ? (

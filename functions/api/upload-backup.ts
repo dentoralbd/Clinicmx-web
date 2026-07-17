@@ -28,9 +28,16 @@ import {
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024
 const KEEP_LAST_N = 20
+const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}\.json$/
+
+function categoryOf(filename: string): string {
+  return FILENAME_PATTERN.exec(filename)?.[1] ?? 'manual'
+}
 
 // Best-effort only: a pruning failure must never turn a successful upload
 // into an error response — the backup itself already landed safely.
+// Keeps the newest 20 *per category* (daily/weekly/monthly/manual counted
+// separately) so a run of daily backups can't push out the only monthly one.
 async function pruneOldUploads(token: string, folderId: string): Promise<void> {
   try {
     const files = await driveList(
@@ -38,9 +45,17 @@ async function pruneOldUploads(token: string, folderId: string): Promise<void> {
       `'${folderId}' in parents and trashed = false`,
       'id, name'
     )
-    const toDelete = files.slice(KEEP_LAST_N)
-    for (const f of toDelete) {
-      await driveDelete(token, f.id)
+    const byCategory = new Map<string, typeof files>()
+    for (const f of files) {
+      const cat = categoryOf(f.name)
+      const list = byCategory.get(cat) ?? []
+      list.push(f)
+      byCategory.set(cat, list)
+    }
+    for (const list of byCategory.values()) {
+      for (const f of list.slice(KEEP_LAST_N)) {
+        await driveDelete(token, f.id)
+      }
     }
   } catch (err) {
     console.error('Backup prune failed (non-fatal):', err)
@@ -67,7 +82,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
   }
 
   const filename = typeof payload.filename === 'string' ? payload.filename : ''
-  if (!/^clinicmx-backup-\d{4}-\d{2}-\d{2}\.json$/.test(filename)) {
+  if (!FILENAME_PATTERN.test(filename)) {
     return json(400, { ok: false, error: 'Invalid backup filename.' })
   }
   const backup = payload.backup as { kind?: unknown } | undefined

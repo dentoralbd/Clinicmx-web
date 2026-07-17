@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, User, Menu, LogOut } from 'lucide-react'
+import { User, Menu, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 import { canDelete, canEditClinicProfile, canRevert, clearAppRole, clearAppUser, getAppRole, getAppUser } from '@/lib/appSession'
+import { NotificationBell } from './NotificationBell'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -65,10 +66,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           >
             {roleLabel}
           </span>
-          <button aria-label="Notifications" className="icon-button p-2 hover:bg-gray-100 hover:shadow-elevation-low rounded-lg transition-all duration-150 relative">
-            <Bell className="w-5 h-5 text-text-secondary" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-          </button>
+          <NotificationBell />
           <div className="relative" ref={profileRef}>
             <button
               aria-label="User profile"
