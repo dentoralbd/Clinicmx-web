@@ -7,6 +7,7 @@ import { clearAppUser, setAppRole, setAppUser, type AppRole } from '@/lib/appSes
 import { findAppUserByIdentifier, touchLastLogin, verifyPassword, type AppUserRecord } from '@/lib/appUsers'
 import { logLogin } from '@/lib/activityLog'
 import { checkIpAccess, fetchClientIp, requestIpApproval } from '@/lib/ipAccess'
+import { requestAdminOtp, verifyAdminOtp } from '@/lib/adminOtp'
 
 const ADMIN_PASSWORD = '6040'
 
@@ -21,6 +22,14 @@ export function Login() {
   // device's IP. The verified account is kept so approval completes the login.
   const [waiting, setWaiting] = useState<{ account: AppUserRecord; ip: string; role: AppRole } | null>(null)
   const [checking, setChecking] = useState(false)
+  // Set when the admin 2FA endpoint asked for a code. `nonce` is null when
+  // delivery failed and only the recovery-code path is usable.
+  const [otp, setOtp] = useState<{ pin: string; nonce: string | null } | null>(null)
+  const [otpCode, setOtpCode] = useState('')
+  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [otpError, setOtpError] = useState('')
+  const [otpBusy, setOtpBusy] = useState(false)
   const finishingRef = useRef(false)
   const navigate = useNavigate()
 
@@ -54,12 +63,39 @@ export function Login() {
     await new Promise((r) => setTimeout(r, 400))
 
     if (role === 'admin') {
-      if (password === ADMIN_PASSWORD) {
-        clearAppUser()
-        await completeLogin('admin')
-      } else {
+      if (password !== ADMIN_PASSWORD) {
         failLogin('Incorrect password')
+        return
       }
+      // Second factor: the server sends a Telegram code unless this device
+      // holds a valid trusted-device token (7 days) or 2FA isn't configured.
+      const result = await requestAdminOtp(password)
+      if (result.kind === 'rejected') {
+        failLogin(result.message)
+        return
+      }
+      if (result.kind === 'unreachable' && !import.meta.env.DEV) {
+        failLogin('Could not reach the login verification service. Check your connection and try again.')
+        return
+      }
+      if (result.kind === 'unreachable' || result.kind === 'unconfigured') {
+        // Local dev has no functions; production without secrets set keeps
+        // today's PIN-only behavior until 2FA is configured.
+        console.warn('Admin 2FA inactive (endpoint unreachable or unconfigured) — PIN-only login.')
+      } else if (result.kind === 'otp' || result.kind === 'send-failed') {
+        setLoading(false)
+        setOtp({ pin: password, nonce: result.kind === 'otp' ? result.nonce : null })
+        setOtpCode('')
+        setRecoveryMode(result.kind === 'send-failed')
+        setOtpError(
+          result.kind === 'send-failed'
+            ? 'The code could not be delivered to Telegram. Use your recovery code instead.'
+            : ''
+        )
+        return
+      }
+      clearAppUser()
+      await completeLogin('admin')
       return
     }
 
@@ -139,12 +175,81 @@ export function Login() {
     return () => clearInterval(timer)
   }, [waiting])
 
+  async function handleOtpSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!otp || otpBusy) return
+    setOtpBusy(true)
+    setOtpError('')
+    try {
+      const payload = recoveryMode
+        ? { recoveryCode: recoveryCode.trim() }
+        : otp.nonce
+          ? { nonce: otp.nonce, code: otpCode.trim() }
+          : null
+      if (!payload || (recoveryMode ? !recoveryCode.trim() : otpCode.trim().length !== 6)) {
+        setOtpError(recoveryMode ? 'Enter your recovery code.' : 'Enter the 6-digit code.')
+        return
+      }
+      const result = await verifyAdminOtp(otp.pin, payload)
+      if (result.kind === 'ok') {
+        setOtp(null)
+        clearAppUser()
+        await completeLogin('admin')
+        return
+      }
+      setOtpError(
+        result.kind === 'rejected'
+          ? result.message
+          : 'Could not reach the verification service. Try again.'
+      )
+    } finally {
+      setOtpBusy(false)
+    }
+  }
+
+  async function handleOtpResend() {
+    if (!otp || otpBusy) return
+    setOtpBusy(true)
+    setOtpError('')
+    try {
+      const result = await requestAdminOtp(otp.pin)
+      if (result.kind === 'otp') {
+        setOtp({ pin: otp.pin, nonce: result.nonce })
+        setOtpCode('')
+        setRecoveryMode(false)
+        setOtpError('')
+      } else if (result.kind === 'trusted' || result.kind === 'unconfigured' || result.kind === 'unreachable') {
+        // Trusted shouldn't happen mid-flow, but if it does, just finish.
+        if (result.kind === 'trusted') {
+          setOtp(null)
+          clearAppUser()
+          await completeLogin('admin')
+          return
+        }
+        setOtpError('Could not request a new code. Try again.')
+      } else if (result.kind === 'send-failed') {
+        setOtp({ pin: otp.pin, nonce: null })
+        setRecoveryMode(true)
+        setOtpError('The code could not be delivered to Telegram. Use your recovery code instead.')
+      } else {
+        setOtpError(result.message)
+      }
+    } finally {
+      setOtpBusy(false)
+    }
+  }
+
   function handleBack() {
     setRole(null)
     setIdentifier('')
     setPassword('')
     setError('')
     setWaiting(null)
+    setOtp(null)
+    setOtpCode('')
+    setRecoveryMode(false)
+    setRecoveryCode('')
+    setOtpError('')
   }
 
   const roleTitle = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
@@ -197,6 +302,111 @@ export function Login() {
               Back
             </button>
           </div>
+        ) : otp ? (
+          <form onSubmit={handleOtpSubmit} className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Two-step verification</h2>
+              <p className="text-sm text-text-secondary">
+                {recoveryMode
+                  ? 'Enter your recovery code to finish logging in.'
+                  : 'A 6-digit code was sent to your Telegram. Enter it below to finish logging in.'}
+              </p>
+            </div>
+
+            {recoveryMode ? (
+              <div>
+                <label htmlFor="recovery-code" className="block text-sm font-medium text-gray-700 mb-2">
+                  Recovery code
+                </label>
+                <input
+                  id="recovery-code"
+                  type="password"
+                  value={recoveryCode}
+                  onChange={(e) => {
+                    setRecoveryCode(e.target.value)
+                    setOtpError('')
+                  }}
+                  placeholder="Enter recovery code"
+                  className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
+                    otpError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  }`}
+                  autoFocus
+                  disabled={otpBusy}
+                />
+              </div>
+            ) : (
+              <div>
+                <label htmlFor="otp-code" className="block text-sm font-medium text-gray-700 mb-2">
+                  Verification code
+                </label>
+                <input
+                  id="otp-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => {
+                    setOtpCode(e.target.value.replace(/\D/g, ''))
+                    setOtpError('')
+                  }}
+                  placeholder="6-digit code"
+                  className={`w-full px-4 py-3 border rounded-lg text-center text-2xl tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
+                    otpError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  }`}
+                  autoFocus
+                  disabled={otpBusy}
+                />
+              </div>
+            )}
+            {otpError && <p className="text-sm text-red-600 text-center">{otpError}</p>}
+
+            <Button type="submit" className="w-full py-3" disabled={otpBusy}>
+              {otpBusy ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="spinner spinner-sm" />
+                  Verifying...
+                </span>
+              ) : (
+                'Verify'
+              )}
+            </Button>
+
+            <div className="flex items-center justify-between text-sm">
+              {otp.nonce !== null && !recoveryMode ? (
+                <button
+                  type="button"
+                  onClick={() => void handleOtpResend()}
+                  className="text-primary hover:underline disabled:opacity-50"
+                  disabled={otpBusy}
+                >
+                  Resend code
+                </button>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryMode((prev) => !prev)
+                  setOtpError('')
+                }}
+                className="text-text-secondary hover:text-gray-900 transition-colors disabled:opacity-50"
+                disabled={otpBusy || (otp.nonce === null && recoveryMode)}
+              >
+                {recoveryMode ? (otp.nonce !== null ? 'Use Telegram code' : '') : 'Use recovery code'}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBack}
+              className="w-full text-sm text-text-secondary hover:text-gray-900 transition-colors"
+              disabled={otpBusy}
+            >
+              Back
+            </button>
+          </form>
         ) : !role ? (
           <div className="space-y-4">
             <p className="text-center text-sm font-medium text-gray-700">Continue as</p>
