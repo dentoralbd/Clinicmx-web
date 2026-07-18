@@ -93,6 +93,7 @@ const INSTRUCTIONS_BN: Record<string, string> = {
     'খাবারের কমপক্ষে ১ ঘন্টা আগে; NSAID/স্টেরয়েড কোর্সে পাকস্থলীর সুরক্ষায়',
   'Before breakfast (30-60 min before food); gastric protection during NSAID/steroid course':
     'সকালের নাস্তার আগে (খাবারের ৩০-৬০ মিনিট আগে); NSAID/স্টেরয়েড কোর্সে পাকস্থলীর সুরক্ষায়',
+  'Before breakfast (30-60 min before food)': 'সকালের নাস্তার আগে (খাবারের ৩০-৬০ মিনিট আগে)',
   'Before breakfast, swallow whole; do not crush/chew': 'সকালের নাস্তার আগে, আস্ত গিলে ফেলুন; ভাঙবেন/চিবাবেন না',
   'Before breakfast, swallow whole; gastric protection during NSAID course':
     'সকালের নাস্তার আগে, আস্ত গিলে ফেলুন; NSAID কোর্সে পাকস্থলীর সুরক্ষায়',
@@ -277,6 +278,8 @@ const DOSAGE_BN: Record<string, string> = {
   '75mg 2x daily for 5 days': '৭৫ মি.গ্রা. দিনে ২ বার, ৫ দিন',
   'Not recommended <18 years': '১৮ বছরের নিচে সুপারিশ করা হয় না',
   '100mg 2x daily (SR 200mg once daily)': '১০০ মি.গ্রা. দিনে ২ বার (SR ২০০ মি.গ্রা. দিনে ১ বার)',
+  '100mg 2x daily': '১০০ মি.গ্রা. দিনে ২ বার',
+  '20mg twice daily': '২০ মি.গ্রা. দিনে ২ বার',
   'Not recommended <12 years': '১২ বছরের নিচে সুপারিশ করা হয় না',
   '1-2 tablets every 6h as needed (max 8/day)': '১-২টি ট্যাবলেট প্রয়োজনে প্রতি ৬ ঘন্টা অন্তর (দিনে সর্বোচ্চ ৮টি)',
   'Not recommended <2 years': '২ বছরের নিচে সুপারিশ করা হয় না',
