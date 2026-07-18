@@ -44,6 +44,7 @@ const ENTITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'inventory_item', label: 'Inventory' },
   { value: 'doctor_profile', label: 'Clinic Profile' },
   { value: 'app_user', label: 'User Accounts' },
+  { value: 'ip_access', label: 'Network IPs' },
   { value: 'session', label: 'Login Sessions' },
 ]
 

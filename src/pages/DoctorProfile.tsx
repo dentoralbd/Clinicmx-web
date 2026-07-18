@@ -24,10 +24,13 @@ import {
   Trash2,
   Users,
   ScrollText,
+  Wifi,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { UsersTab } from '@/components/admin/UsersTab'
 import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
+import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
+import { countPendingIpRequests } from '@/lib/ipAccess'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
 import { canDelete, canEditClinicProfile, canRevert, formatAuditActor, getAppRole } from '@/lib/appSession'
@@ -230,7 +233,7 @@ function SnapshotDetails({ payload }: { payload: unknown }) {
   )
 }
 
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'logs'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -245,6 +248,7 @@ function getAvailableTabs(): ZoneTabDef[] {
   if (canRevert()) tabs.push({ id: 'edits', label: 'Edit History', icon: RotateCcw })
   if (canDelete()) tabs.push({ id: 'history', label: 'Delete History', icon: History })
   if (getAppRole() === 'admin') tabs.push({ id: 'users', label: 'Users', icon: Users })
+  if (getAppRole() === 'admin') tabs.push({ id: 'network', label: 'Network Access', icon: Wifi })
   if (getAppRole() === 'admin') tabs.push({ id: 'logs', label: 'Activity Log', icon: ScrollText })
   return tabs
 }
@@ -255,6 +259,7 @@ const TAB_GRID_COLS: Record<number, string> = {
   3: 'grid-cols-3',
   4: 'grid-cols-2 sm:grid-cols-4',
   5: 'grid-cols-2 sm:grid-cols-5',
+  6: 'grid-cols-2 sm:grid-cols-3',
 }
 
 export function DoctorProfile() {
@@ -267,6 +272,7 @@ export function DoctorProfile() {
 
   const availableTabs = getAvailableTabs()
   const [activeTab, setActiveTab] = useState<ZoneTab>(() => getAvailableTabs()[0]?.id ?? 'profile')
+  const [pendingIpCount, setPendingIpCount] = useState(0)
   const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
@@ -292,6 +298,15 @@ export function DoctorProfile() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    if (getAppRole() !== 'admin') return
+    countPendingIpRequests()
+      .then(setPendingIpCount)
+      .catch(() => {
+        // Badge is informational only — a failed count must not break the page.
+      })
   }, [])
 
   useEffect(() => {
@@ -591,12 +606,19 @@ export function DoctorProfile() {
             >
               <Icon className="w-5 h-5" />
               {tab.label}
+              {tab.id === 'network' && pendingIpCount > 0 && (
+                <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
+                  {pendingIpCount}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
 
       {activeTab === 'users' && <UsersTab />}
+
+      {activeTab === 'network' && <AccessRequestsTab onPendingCountChange={setPendingIpCount} />}
 
       {activeTab === 'logs' && <ActivityLogTab />}
 

@@ -73,6 +73,7 @@ export function BackupReminderBanner() {
                     title: 'Backup data shrank unexpectedly',
                     message: `Core records dropped since the last backup (${detail}). If you didn't delete these on purpose, investigate now — older backups are in Drive.`,
                     linkTo: '/backup',
+                    audience: 'admin',
                   })
                   fireBrowserNotification(
                     'ClinicMx: data shrank unexpectedly',
@@ -89,6 +90,7 @@ export function BackupReminderBanner() {
                   ? `Automatically backed up to Google Drive as ${result.name} (integrity verified).`
                   : `Automatically backed up to Google Drive as ${result.name}, but integrity could not be verified — consider re-uploading manually.`,
                 linkTo: '/backup',
+                audience: 'admin',
               })
             } catch (error) {
               addNotification({
@@ -98,6 +100,7 @@ export function BackupReminderBanner() {
                     ? error.message
                     : 'Unknown error — back up manually from Backup & Restore.',
                 linkTo: '/backup',
+                audience: 'admin',
               })
               fireBrowserNotification(
                 `${CATEGORY_LABEL[category]} backup failed`,
@@ -110,6 +113,7 @@ export function BackupReminderBanner() {
               title: `${CATEGORY_LABEL[category]} backup overdue`,
               message: `No backup since the scheduled time (${format(instant, 'MMM d, HH:mm')}).`,
               linkTo: '/backup',
+              audience: 'admin',
             })
             fireBrowserNotification(
               'ClinicMx backup due',
@@ -127,6 +131,7 @@ export function BackupReminderBanner() {
             message:
               "It's been a while since you tested a restore. Open Backup & Restore and run a dry-run — it writes nothing, but proves your backups actually work.",
             linkTo: '/backup',
+            audience: 'admin',
           })
         }
 

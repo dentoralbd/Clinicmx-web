@@ -28,6 +28,7 @@ export const BACKUP_TABLES = [
   'payment_methods',
   'invoice_settings',
   'app_users',
+  'authorized_ips',
   'delete_history',
   'edit_history',
   'activity_log',

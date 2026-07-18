@@ -18,6 +18,9 @@ export interface AppPermissions {
   can_delete: boolean
   can_revert: boolean
   can_edit_clinic_profile: boolean
+  // Skip the per-user IP approval gate at login. Missing key (accounts saved
+  // before this feature) must read as false — the gate applies.
+  can_any_ip: boolean
   pages: Record<AppPageKey, boolean>
 }
 
@@ -36,18 +39,21 @@ export const DEFAULT_PERMISSIONS: Record<AppRole, AppPermissions> = {
     can_delete: true,
     can_revert: true,
     can_edit_clinic_profile: true,
+    can_any_ip: true,
     pages: { ...ALL_PAGES_ON },
   },
   doctor: {
     can_delete: false,
     can_revert: true,
     can_edit_clinic_profile: false,
+    can_any_ip: false,
     pages: { ...ALL_PAGES_ON },
   },
   operator: {
     can_delete: false,
     can_revert: false,
     can_edit_clinic_profile: false,
+    can_any_ip: false,
     pages: { ...ALL_PAGES_ON },
   },
 }

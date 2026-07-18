@@ -26,10 +26,11 @@ const PAGE_OPTIONS: Array<{ key: AppPageKey; label: string }> = [
   { key: 'qr-search', label: 'QR Search' },
 ]
 
-const ACTION_OPTIONS: Array<{ key: 'can_delete' | 'can_revert' | 'can_edit_clinic_profile'; label: string; hint: string }> = [
+const ACTION_OPTIONS: Array<{ key: 'can_delete' | 'can_revert' | 'can_edit_clinic_profile' | 'can_any_ip'; label: string; hint: string }> = [
   { key: 'can_delete', label: 'Delete data', hint: 'Delete records and restore deletions' },
   { key: 'can_revert', label: 'Revert edits', hint: 'Undo changes from Edit History' },
   { key: 'can_edit_clinic_profile', label: 'Edit clinic details', hint: 'Logo, doctor and clinic letterhead info' },
+  { key: 'can_any_ip', label: 'Entry from any IP', hint: 'Skip network approval; login allowed from anywhere' },
 ]
 
 interface UserFormState {
@@ -57,6 +58,7 @@ function permissionSummary(user: AppUserRecord) {
   if (user.permissions.can_delete) parts.push('Delete')
   if (user.permissions.can_revert) parts.push('Revert')
   if (user.permissions.can_edit_clinic_profile) parts.push('Clinic details')
+  if (user.permissions.can_any_ip) parts.push('Any IP')
   const blockedPages = PAGE_OPTIONS.filter((p) => user.permissions.pages[p.key] === false)
   if (blockedPages.length > 0) parts.push(`No ${blockedPages.map((p) => p.label).join(', ')}`)
   return parts.length > 0 ? parts.join(' · ') : 'Standard access'
@@ -391,7 +393,7 @@ export function UsersTab() {
                     <label key={opt.key} className="flex items-start gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={form.permissions[opt.key]}
+                        checked={form.permissions[opt.key] === true}
                         onChange={(e) =>
                           setForm({ ...form, permissions: { ...form.permissions, [opt.key]: e.target.checked } })
                         }

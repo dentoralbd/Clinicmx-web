@@ -907,6 +907,36 @@ export interface Database {
         }
         Relationships: []
       }
+      authorized_ips: {
+        Row: {
+          id: string
+          user_id: string
+          ip: string
+          status: string
+          requested_by: string | null
+          requested_at: string
+          decided_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          ip: string
+          status?: string
+          requested_by?: string | null
+          requested_at?: string
+          decided_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          ip?: string
+          status?: string
+          requested_by?: string | null
+          requested_at?: string
+          decided_at?: string | null
+        }
+        Relationships: []
+      }
       activity_log: {
         Row: {
           id: string

@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Stethoscope, UserCog } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { initializeSecureStorage } from '@/lib/secureLocalStorage'
 import { clearAppUser, setAppRole, setAppUser, type AppRole } from '@/lib/appSession'
-import { findAppUserByIdentifier, touchLastLogin, verifyPassword } from '@/lib/appUsers'
+import { findAppUserByIdentifier, touchLastLogin, verifyPassword, type AppUserRecord } from '@/lib/appUsers'
 import { logLogin } from '@/lib/activityLog'
+import { checkIpAccess, fetchClientIp, requestIpApproval } from '@/lib/ipAccess'
 
 const ADMIN_PASSWORD = '6040'
 
@@ -16,6 +17,11 @@ export function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [shake, setShake] = useState(false)
+  // Set when the network gate paused the login pending admin approval of this
+  // device's IP. The verified account is kept so approval completes the login.
+  const [waiting, setWaiting] = useState<{ account: AppUserRecord; ip: string; role: AppRole } | null>(null)
+  const [checking, setChecking] = useState(false)
+  const finishingRef = useRef(false)
   const navigate = useNavigate()
 
   function failLogin(message: string) {
@@ -68,6 +74,28 @@ export function Login() {
         failLogin('This account is disabled. Contact the admin.')
         return
       }
+      // Network gate: unless the admin granted "Entry from any IP", the
+      // device's public IP must be on this user's approved list.
+      if (account.permissions?.can_any_ip !== true) {
+        const ip = await fetchClientIp()
+        if (!ip) {
+          failLogin(
+            'Could not verify your network. Check your connection, or ask the admin to allow entry from any IP for your account.'
+          )
+          return
+        }
+        const status = await checkIpAccess(account.id, ip)
+        if (status === 'denied') {
+          failLogin('Access from this network was denied by the admin.')
+          return
+        }
+        if (status !== 'approved') {
+          await requestIpApproval(account.id, ip, `${role}:${account.full_name}`)
+          setLoading(false)
+          setWaiting({ account, ip, role })
+          return
+        }
+      }
       setAppUser({ id: account.id, name: account.full_name, permissions: account.permissions })
       touchLastLogin(account.id)
       await completeLogin(role)
@@ -76,11 +104,47 @@ export function Login() {
     }
   }
 
+  async function checkWaitingStatus(current: { account: AppUserRecord; ip: string; role: AppRole }) {
+    setChecking(true)
+    try {
+      const status = await checkIpAccess(current.account.id, current.ip)
+      if (status === 'approved') {
+        if (finishingRef.current) return
+        finishingRef.current = true
+        setAppUser({
+          id: current.account.id,
+          name: current.account.full_name,
+          permissions: current.account.permissions,
+        })
+        touchLastLogin(current.account.id)
+        await completeLogin(current.role)
+        return
+      }
+      if (status === 'denied') {
+        setWaiting(null)
+        failLogin('Access from this network was denied by the admin.')
+      }
+    } catch {
+      // Lookup hiccup while polling — stay on the waiting screen.
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setInterval(() => {
+      void checkWaitingStatus(waiting)
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [waiting])
+
   function handleBack() {
     setRole(null)
     setIdentifier('')
     setPassword('')
     setError('')
+    setWaiting(null)
   }
 
   const roleTitle = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
@@ -98,7 +162,42 @@ export function Login() {
           <p className="text-text-secondary">Dental Clinic Management</p>
         </div>
 
-        {!role ? (
+        {waiting ? (
+          <div className="space-y-6 text-center">
+            <div className="flex justify-center">
+              <span className="spinner" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Waiting for admin approval</h2>
+              <p className="text-sm text-text-secondary">
+                This is the first login from this network (IP {waiting.ip}). The admin has been
+                notified — you will be signed in automatically once access is approved.
+              </p>
+            </div>
+            <Button
+              type="button"
+              className="w-full py-3"
+              onClick={() => void checkWaitingStatus(waiting)}
+              disabled={checking}
+            >
+              {checking ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="spinner spinner-sm" />
+                  Checking...
+                </span>
+              ) : (
+                'Check again'
+              )}
+            </Button>
+            <button
+              type="button"
+              onClick={handleBack}
+              className="w-full text-sm text-text-secondary hover:text-gray-900 transition-colors"
+            >
+              Back
+            </button>
+          </div>
+        ) : !role ? (
           <div className="space-y-4">
             <p className="text-center text-sm font-medium text-gray-700">Continue as</p>
 

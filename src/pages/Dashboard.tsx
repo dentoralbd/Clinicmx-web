@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { format, formatDistanceToNow } from 'date-fns'
 import { getPatientDobOrAge, safeFormat, formatBDT } from '@/lib/utils'
-import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight, DatabaseBackup } from 'lucide-react'
+import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight, DatabaseBackup, Wifi, X } from 'lucide-react'
 import { getAppRole } from '@/lib/appSession'
 import { BACKUP_CATEGORIES, getBackupSettings, getLastBackupAt, getOverdueCategories } from '@/lib/backupReminders'
+import { countPendingIpRequests } from '@/lib/ipAccess'
 
 interface Stats {
   totalPatients: number
@@ -26,9 +27,18 @@ export function Dashboard() {
   const [recentPatients, setRecentPatients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [pendingIpCount, setPendingIpCount] = useState(0)
+  const [ipBannerDismissed, setIpBannerDismissed] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
+    if (getAppRole() === 'admin') {
+      countPendingIpRequests()
+        .then(setPendingIpCount)
+        .catch(() => {
+          // Banner is informational only — a failed count must not break the dashboard.
+        })
+    }
   }, [])
 
   async function loadDashboardData(isRefresh = false) {
@@ -114,6 +124,28 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6 page-fade-in">
+      {getAppRole() === 'admin' && pendingIpCount > 0 && !ipBannerDismissed && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <Wifi className="w-5 h-5 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800 flex-1">
+            {pendingIpCount} network access request{pendingIpCount > 1 ? 's' : ''} waiting for your
+            approval.
+          </p>
+          <button
+            onClick={() => navigate('/doctor-profile')}
+            className="text-sm font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+          >
+            Review
+          </button>
+          <button
+            onClick={() => setIpBannerDismissed(true)}
+            className="text-amber-500 hover:text-amber-700"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
