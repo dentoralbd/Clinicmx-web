@@ -3029,6 +3029,7 @@ export function PatientProfile() {
                         <span>
                           <span className="font-semibold text-primary">Rx</span>
                           {' '}<span className="font-medium text-gray-800">{med.name}</span>
+                          {med.generic && <span className="italic text-gray-500"> ({med.generic})</span>}
                           {med.dosage && <span className="text-gray-600"> · {shouldTranslate ? dosageToBengali(med.dosage) : med.dosage}</span>}
                           {med.frequency && <span className="text-gray-600"> · {shouldTranslate ? frequencyToBengali(med.frequency) : med.frequency}</span>}
                           {med.duration && <span className="text-gray-600"> · {shouldTranslate ? durationToBengali(med.duration) : med.duration}</span>}
