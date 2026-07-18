@@ -35,7 +35,8 @@ import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeT
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
-import { routeToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, dosageToBengali } from '@/lib/medicationBengali'
+import { translateDrugDefaults, translateDosage, type PrescriptionLanguage } from '@/lib/medicationBengali'
+import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
@@ -86,6 +87,7 @@ export function Prescriptions() {
     prescribed_date: format(new Date(), 'yyyy-MM-dd'),
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
     investigations: [{ name: '', description: '', urgency: 'Routine' }],
+    language: 'bn' as PrescriptionLanguage,
   })
 
   const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
@@ -329,6 +331,7 @@ export function Prescriptions() {
         medications: formData.medications.filter((m) => m.name.trim()),
         investigations: formData.investigations.filter((i) => i.name.trim()),
         weight_at_prescription: prescriptionWeight ? Number.parseFloat(prescriptionWeight) : null,
+        language: formData.language,
       }
 
       await supabase
@@ -524,6 +527,7 @@ export function Prescriptions() {
         Array.isArray(prescription.investigations) && prescription.investigations.length > 0
           ? prescription.investigations
           : [{ name: '', description: '' }],
+      language: (prescription.language as PrescriptionLanguage) || 'bn',
     })
     setPatientMode('existing')
     selectPatientHistory(prescription.patient_id || '')
@@ -564,6 +568,7 @@ export function Prescriptions() {
       prescribed_date: format(new Date(), 'yyyy-MM-dd'),
       medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
       investigations: [{ name: '', description: '', urgency: 'Routine' }],
+      language: 'bn',
     })
     setMedicalHistoryForm({ checked: [], other: '' })
     setPatientMode('existing')
@@ -1218,7 +1223,11 @@ export function Prescriptions() {
                   <div className="w-1 h-6 rounded-full bg-primary"></div>
                   <Pill className="w-4 h-4 text-primary" />
                   <span className="font-semibold text-gray-800">Rx — Medications</span>
-                  <div className="ml-auto flex gap-2">
+                  <div className="ml-auto flex items-center gap-2">
+                    <PrescriptionLanguageToggle
+                      value={formData.language}
+                      onChange={(language) => setFormData({ ...formData, language })}
+                    />
                     <Button
                       type="button"
                       size="sm"
@@ -1333,11 +1342,7 @@ export function Prescriptions() {
                               newMeds[index] = {
                                 ...newMeds[index],
                                 name: drug.name,
-                                dosage: dosageToBengali(drug.ageDosing[defaultTier]),
-                                frequency: frequencyToBengali(drug.frequency, drug.category),
-                                duration: durationToBengali(drug.duration),
-                                instructions: instructionsToBengali(drug.instructions),
-                                route: routeToBengali(drug.route),
+                                ...translateDrugDefaults(drug, drug.ageDosing[defaultTier], formData.language),
                                 ageDosing: drug.ageDosing,
                                 generic: drug.generic,
                                 dosageForm: drug.dosageForm,
@@ -1412,7 +1417,7 @@ export function Prescriptions() {
                                       newMeds[index] = {
                                         ...newMeds[index],
                                         selectedAgeTier: tier,
-                                        dosage: dosageToBengali(ageDosing[tier]),
+                                        dosage: translateDosage(ageDosing[tier], formData.language),
                                         dosageSource: 'manual',
                                       } as any
                                       setFormData({ ...formData, medications: newMeds })
@@ -1793,6 +1798,7 @@ export function Prescriptions() {
             medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
+            language: printingPrescription.language,
           }}
           patient={{
             first_name: printingPatient?.first_name || printingPrescription.patients?.first_name || '',

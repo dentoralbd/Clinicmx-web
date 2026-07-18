@@ -46,6 +46,8 @@ import { formatBDT } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
+import { translateDrugDefaults, translateDosage, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
+import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
@@ -473,6 +475,7 @@ export function PatientProfile() {
     investigations: [{ name: '', description: '' }],
     notes: '',
     weight: '',
+    language: 'bn' as PrescriptionLanguage,
   })
   const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
 
@@ -1339,6 +1342,7 @@ export function PatientProfile() {
         investigations: prescriptionForm.investigations.filter(i => i.name.trim()),
         notes: prescriptionForm.notes,
         weight_at_prescription: prescriptionForm.weight ? Number.parseFloat(prescriptionForm.weight) : null,
+        language: prescriptionForm.language,
       }
 
       await supabase
@@ -1521,6 +1525,7 @@ export function PatientProfile() {
         investigations: [{ name: '', description: '' }],
         notes: '',
         weight: '',
+        language: 'bn',
       })
       setAiPanelOpenIndex(null)
       loadPatientData()
@@ -1542,6 +1547,7 @@ export function PatientProfile() {
       investigations: [{ name: '', description: '', urgency: 'Routine' } as any],
       notes: '',
       weight: patient?.weight != null ? String(patient.weight) : '',
+      language: 'bn',
     } as any)
     setAiPanelOpenIndex(null)
     seedMedicalHistoryForm()
@@ -1575,6 +1581,7 @@ export function PatientProfile() {
       weight: prescription.weight_at_prescription != null
         ? String(prescription.weight_at_prescription)
         : (patient?.weight != null ? String(patient.weight) : ''),
+      language: (prescription.language as PrescriptionLanguage) || 'bn',
     })
     setAiPanelOpenIndex(null)
     seedMedicalHistoryForm()
@@ -3014,19 +3021,22 @@ export function PatientProfile() {
                     <Pill className="w-3.5 h-3.5" /> Medications
                   </div>
                   <ol className="space-y-1.5">
-                    {prescription.medications.map((med: any, idx: number) => (
+                    {prescription.medications.map((med: any, idx: number) => {
+                      const shouldTranslate = prescription.language !== 'en'
+                      return (
                       <li key={idx} className="flex items-start gap-2 text-sm">
                         <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">{idx + 1}</span>
                         <span>
                           <span className="font-semibold text-primary">Rx</span>
                           {' '}<span className="font-medium text-gray-800">{med.name}</span>
-                          {med.dosage && <span className="text-gray-600"> · {med.dosage}</span>}
-                          {med.frequency && <span className="text-gray-600"> · {med.frequency}</span>}
-                          {med.duration && <span className="text-gray-600"> · {med.duration}</span>}
-                          {med.instructions && <span className="text-gray-500 italic"> — {med.instructions}</span>}
+                          {med.dosage && <span className="text-gray-600"> · {shouldTranslate ? dosageToBengali(med.dosage) : med.dosage}</span>}
+                          {med.frequency && <span className="text-gray-600"> · {shouldTranslate ? frequencyToBengali(med.frequency) : med.frequency}</span>}
+                          {med.duration && <span className="text-gray-600"> · {shouldTranslate ? durationToBengali(med.duration) : med.duration}</span>}
+                          {med.instructions && <span className="text-gray-500 italic"> — {shouldTranslate ? instructionsToBengali(med.instructions) : med.instructions}</span>}
                         </span>
                       </li>
-                    ))}
+                      )
+                    })}
                   </ol>
                 </div>
               )}
@@ -3942,6 +3952,7 @@ export function PatientProfile() {
             medications: Array.isArray(printingPrescription.medications) ? printingPrescription.medications : [],
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
+            language: printingPrescription.language,
           }}
           patient={{
             first_name: patient.first_name,
@@ -4903,7 +4914,11 @@ function PrescriptionFormModal({
               <div className="w-1 h-6 rounded-full bg-primary"></div>
               <Pill className="w-4 h-4 text-primary" />
               <span className="font-semibold text-gray-800">Rx — Medications</span>
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto flex items-center gap-2">
+                <PrescriptionLanguageToggle
+                  value={formData.language}
+                  onChange={(language) => setFormData({ ...formData, language })}
+                />
                 <Button
                   type="button"
                   size="sm"
@@ -5013,11 +5028,7 @@ function PrescriptionFormModal({
                           newMeds[index] = {
                             ...newMeds[index],
                             name: drug.name,
-                            dosage: drug.ageDosing[defaultTier],
-                            frequency: drug.frequency,
-                            duration: drug.duration,
-                            instructions: drug.instructions,
-                            route: drug.route,
+                            ...translateDrugDefaults(drug, drug.ageDosing[defaultTier], formData.language),
                             ageDosing: drug.ageDosing,
                             generic: drug.generic,
                             dosageForm: drug.dosageForm,
@@ -5087,7 +5098,7 @@ function PrescriptionFormModal({
                                   newMeds[index] = {
                                     ...newMeds[index],
                                     selectedAgeTier: tier,
-                                    dosage: ageDosing[tier],
+                                    dosage: translateDosage(ageDosing[tier], formData.language),
                                     dosageSource: 'manual',
                                   }
                                   setFormData({ ...formData, medications: newMeds })

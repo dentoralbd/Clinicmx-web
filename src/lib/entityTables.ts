@@ -21,7 +21,7 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   },
   prescription: {
     table: 'prescriptions',
-    columns: ['id', 'patient_id', 'appointment_id', 'medications', 'investigations', 'chief_complaint', 'chief_complaint_entries', 'on_examination', 'on_examination_entries', 'diagnosis', 'diagnosis_entries', 'treatment_plan', 'treatment_plan_entries', 'notes', 'weight_at_prescription', 'prescribed_date', 'created_at'],
+    columns: ['id', 'patient_id', 'appointment_id', 'medications', 'investigations', 'chief_complaint', 'chief_complaint_entries', 'on_examination', 'on_examination_entries', 'diagnosis', 'diagnosis_entries', 'treatment_plan', 'treatment_plan_entries', 'notes', 'weight_at_prescription', 'prescribed_date', 'language', 'created_at'],
   },
   invoice: {
     table: 'invoices',

@@ -304,3 +304,29 @@ export const frequencyToBengali = (value: string, category?: string) =>
 export const durationToBengali = (value: string) => DURATION_BN[value] ?? value
 
 export const instructionsToBengali = (value: string) => INSTRUCTIONS_BN[value] ?? value
+
+export type PrescriptionLanguage = 'bn' | 'en'
+
+// Applied at drug-pick time in both prescription forms (Prescriptions.tsx and
+// PatientProfile.tsx) so a prescription's language toggle controls whether freshly
+// selected drug defaults land in the form as Bengali or English.
+export function translateDrugDefaults(
+  drug: { frequency: string; duration: string; instructions: string; route: string; category?: string },
+  dosage: string,
+  language: PrescriptionLanguage
+) {
+  if (language === 'en') {
+    return { dosage, frequency: drug.frequency, duration: drug.duration, instructions: drug.instructions, route: drug.route }
+  }
+  return {
+    dosage: dosageToBengali(dosage),
+    frequency: frequencyToBengali(drug.frequency, drug.category),
+    duration: durationToBengali(drug.duration),
+    instructions: instructionsToBengali(drug.instructions),
+    route: routeToBengali(drug.route),
+  }
+}
+
+export function translateDosage(dosage: string, language: PrescriptionLanguage) {
+  return language === 'en' ? dosage : dosageToBengali(dosage)
+}

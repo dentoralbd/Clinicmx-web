@@ -49,6 +49,7 @@ interface PrescriptionPrintProps {
     diagnosis_entries?: ClinicalEntry[]
     treatment_plan?: string
     treatment_plan_entries?: ClinicalEntry[]
+    language?: string
     medications: Array<{
       name: string
       dosage: string
@@ -94,6 +95,10 @@ function calcAge(dob?: string): string {
 }
 
 export function PrescriptionPrint({ prescription, patient, doctor, onClose }: PrescriptionPrintProps) {
+  // Legacy rows have no `language` value — keep translating those (matches the
+  // behavior this render-time fix originally shipped with). Only an explicit 'en'
+  // (from the language toggle) skips translation, honoring an intentionally-English prescription.
+  const shouldTranslate = prescription.language !== 'en'
   const filteredMeds = prescription.medications.filter((m) => m.name?.trim())
   const filteredInvs = prescription.investigations.filter((i) => i.name?.trim())
   const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
@@ -421,13 +426,21 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                     <span className="font-bold min-w-[1.2rem]">{idx + 1}.</span>
                     <div>
                       <span className="font-bold">{med.name}</span>
-                      {med.dosage && <span className="text-gray-700"> — {dosageToBengali(med.dosage)}</span>}
-                      {med.route && <span className="text-gray-600"> ({routeToBengali(med.route)})</span>}
-                      {med.frequency && <span className="text-gray-600"> · {frequencyToBengali(med.frequency)}</span>}
-                      {med.duration && <span className="text-gray-600"> · {durationToBengali(med.duration)}</span>}
+                      {med.dosage && (
+                        <span className="text-gray-700"> — {shouldTranslate ? dosageToBengali(med.dosage) : med.dosage}</span>
+                      )}
+                      {med.route && (
+                        <span className="text-gray-600"> ({shouldTranslate ? routeToBengali(med.route) : med.route})</span>
+                      )}
+                      {med.frequency && (
+                        <span className="text-gray-600"> · {shouldTranslate ? frequencyToBengali(med.frequency) : med.frequency}</span>
+                      )}
+                      {med.duration && (
+                        <span className="text-gray-600"> · {shouldTranslate ? durationToBengali(med.duration) : med.duration}</span>
+                      )}
                       {med.instructions && (
                         <div className="text-xs text-gray-500 mt-0.5 ml-2">
-                          Instructions: {instructionsToBengali(med.instructions)}
+                          Instructions: {shouldTranslate ? instructionsToBengali(med.instructions) : med.instructions}
                         </div>
                       )}
                     </div>

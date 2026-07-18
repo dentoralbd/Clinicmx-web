@@ -226,6 +226,7 @@ export interface Database {
           notes: string | null
           weight_at_prescription: number | null
           prescribed_date: string
+          language: string
           created_at: string
         }
         Insert: {
@@ -245,6 +246,7 @@ export interface Database {
           notes?: string | null
           weight_at_prescription?: number | null
           prescribed_date?: string
+          language?: string
           created_at?: string
         }
         Update: {
@@ -264,6 +266,7 @@ export interface Database {
           notes?: string | null
           weight_at_prescription?: number | null
           prescribed_date?: string
+          language?: string
           created_at?: string
         }
         Relationships: [
