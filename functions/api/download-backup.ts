@@ -35,7 +35,12 @@ export const onRequestGet = async (context: { request: Request; env: Env }): Pro
     }
 
     const content = await driveGetContent(token, id)
-    return new Response(content, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const contentType = match.name.endsWith('.gz')
+      ? 'application/gzip'
+      : match.name.endsWith('.enc')
+        ? 'application/octet-stream'
+        : 'application/json'
+    return new Response(content, { status: 200, headers: { 'Content-Type': contentType } })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Download failed.'
     return json(502, { ok: false, error: message })

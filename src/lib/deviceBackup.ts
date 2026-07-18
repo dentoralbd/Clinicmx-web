@@ -1,7 +1,7 @@
 import { format } from 'date-fns'
 import { supabase } from './supabase'
 import { getScopedStorageKey } from './appSession'
-import { writeSecureJson } from './secureLocalStorage'
+import { readSecureJson, writeSecureJson } from './secureLocalStorage'
 import { loadDoctorProfile, saveDoctorProfile, type DoctorProfileData } from './doctorProfile'
 import { MEMORY_KEYS, getMemory } from './prescriptionMemory'
 import {
@@ -10,7 +10,8 @@ import {
   getInvestigationSectionTemplates,
   getMedicationSectionTemplates,
 } from './prescriptionSectionTemplates'
-import { markBackupDone, type BackupCategory } from './backupReminders'
+import { markBackupDone, markRestoreDrillDone, type BackupCategory } from './backupReminders'
+import { sha256Hex } from './backupCrypto'
 
 /**
  * All backed-up tables in foreign-key dependency order (parents first), same
@@ -89,48 +90,199 @@ export async function fetchAllRows(table: string, onPage?: (fetched: number) => 
   return rows
 }
 
-export async function buildDeviceBackup(onProgress?: (p: BackupProgress) => void): Promise<DeviceBackup> {
-  const tables: Record<string, Row[]> = {}
-  const counts: Record<string, number> = {}
+// ---------------------------------------------------------------------------
+// Encryption setting (P3). The passphrase lives ONLY in this device's
+// encrypted secureLocalStorage; losing it makes encrypted backups unreadable.
 
-  for (let i = 0; i < BACKUP_TABLES.length; i++) {
-    const table = BACKUP_TABLES[i]
-    onProgress?.({ table, index: i + 1, total: BACKUP_TABLES.length })
-    const rows = await fetchAllRows(table)
-    tables[table] = rows
-    counts[table] = rows.length
+const ENCRYPT_ENABLED_KEY = 'clinicmx_backup_encrypt'
+const PASSPHRASE_STORAGE_KEY = 'clinicmx_backup_passphrase'
+
+export async function getBackupEncryption(): Promise<{ enabled: boolean; passphrase: string | null }> {
+  let enabled = false
+  try {
+    enabled = localStorage.getItem(ENCRYPT_ENABLED_KEY) === 'true'
+  } catch {
+    // ignore
+  }
+  const stored = await readSecureJson<{ passphrase: string }>(getScopedStorageKey(PASSPHRASE_STORAGE_KEY))
+  return { enabled, passphrase: stored?.passphrase ?? null }
+}
+
+export async function setBackupEncryption(enabled: boolean, passphrase?: string) {
+  try {
+    localStorage.setItem(ENCRYPT_ENABLED_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+  if (passphrase !== undefined) {
+    await writeSecureJson(getScopedStorageKey(PASSPHRASE_STORAGE_KEY), { passphrase })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Anomaly tripwire (P2): remember each successful backup's row counts and
+// flag suspicious shrinkage of core tables before the next backup is written.
+
+const LAST_COUNTS_KEY = 'clinicmx_last_backup_counts'
+const CORE_TABLES = ['patients', 'appointments', 'treatments', 'prescriptions', 'invoices', 'payments']
+
+export interface CountDrop {
+  table: string
+  from: number
+  to: number
+}
+
+export function detectCountDrops(counts: Record<string, number>): CountDrop[] {
+  let previous: { counts?: Record<string, number> } | null = null
+  try {
+    previous = JSON.parse(localStorage.getItem(LAST_COUNTS_KEY) || 'null')
+  } catch {
+    return []
+  }
+  if (!previous?.counts) return []
+  const drops: CountDrop[] = []
+  for (const table of CORE_TABLES) {
+    const from = previous.counts[table]
+    const to = counts[table]
+    if (typeof from === 'number' && typeof to === 'number' && from - to >= 3 && to < from * 0.8) {
+      drops.push({ table, from, to })
+    }
+  }
+  return drops
+}
+
+function saveLastBackupCounts(counts: Record<string, number>) {
+  try {
+    localStorage.setItem(LAST_COUNTS_KEY, JSON.stringify({ counts, at: new Date().toISOString() }))
+  } catch {
+    // ignore
+  }
+}
+
+/** Fast head-only count of every table (parallel) — powers the anomaly check
+ * and the backup header without fetching any row data. */
+export async function fetchTableCounts(): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    BACKUP_TABLES.map(async (table) => {
+      const { count, error } = await (supabase as any)
+        .from(table)
+        .select('id', { count: 'exact', head: true })
+      if (error) throw new Error(`Failed to count ${table}: ${error.message}`)
+      return [table, count ?? 0] as const
+    })
+  )
+  return Object.fromEntries(entries)
+}
+
+// ---------------------------------------------------------------------------
+// Serialization (P3 + scalability): all CPU-heavy work (stringify, gzip,
+// encrypt, hash) happens in a Web Worker so the UI never freezes, and the
+// JSON is streamed into the compressor table-by-table so peak memory stays
+// bounded even at 3000+ patients. See src/workers/backupWorker.ts.
+
+function spawnBackupWorker(): Worker {
+  return new Worker(new URL('../workers/backupWorker.ts', import.meta.url), { type: 'module' })
+}
+
+export interface SerializedBackup {
+  bytes: Uint8Array
+  filename: string
+  sha256: string
+  counts: Record<string, number>
+  encrypted: boolean
+}
+
+/**
+ * Fetches all tables (paginated, network-bound — non-blocking) and streams
+ * them into the worker for serialization. Returns null if `onAnomaly`
+ * declined to continue after a suspicious count drop.
+ */
+export async function buildSerializedBackup(options?: {
+  category?: BackupCategory
+  onProgress?: (p: BackupProgress) => void
+  onAnomaly?: (drops: CountDrop[]) => Promise<boolean>
+}): Promise<SerializedBackup | null> {
+  const counts = await fetchTableCounts()
+
+  const drops = detectCountDrops(counts)
+  if (drops.length > 0 && options?.onAnomaly) {
+    const proceed = await options.onAnomaly(drops)
+    if (!proceed) return null
   }
 
-  const [doctorProfile, complaints, examinations, medications, investigations] = await Promise.all([
-    loadDoctorProfile(),
-    getComplaintTemplates(),
-    getExaminationTemplates(),
-    getMedicationSectionTemplates(),
-    getInvestigationSectionTemplates(),
-  ])
+  const { enabled, passphrase } = await getBackupEncryption()
+  const activePassphrase = enabled && passphrase ? passphrase : null
 
-  return {
-    kind: BACKUP_KIND,
-    version: BACKUP_VERSION,
-    app: 'clinicmx-web',
-    created_at: new Date().toISOString(),
-    counts,
-    tables,
-    local_settings: {
-      doctor_profile: doctorProfile ?? null,
-      prescription_memory: {
-        [MEMORY_KEYS.COMPLAINTS]: getMemory(MEMORY_KEYS.COMPLAINTS),
-        [MEMORY_KEYS.EXAMINATIONS]: getMemory(MEMORY_KEYS.EXAMINATIONS),
-        [MEMORY_KEYS.MEDICATIONS]: getMemory(MEMORY_KEYS.MEDICATIONS),
-        [MEMORY_KEYS.INVESTIGATIONS]: getMemory(MEMORY_KEYS.INVESTIGATIONS),
+  const worker = spawnBackupWorker()
+  try {
+    let failed = false
+    const done = new Promise<{ buffer: ArrayBuffer; sha256: string; encrypted: boolean }>((resolve, reject) => {
+      worker.onmessage = (e) => {
+        const d = e.data
+        if (d.type === 'serialized') resolve(d)
+        else if (d.type === 'error') reject(new Error(d.message))
+      }
+      worker.onerror = () => reject(new Error('Backup worker crashed.'))
+    })
+    done.catch(() => {
+      failed = true
+    })
+
+    worker.postMessage({
+      type: 'serialize-start',
+      meta: {
+        kind: BACKUP_KIND,
+        version: BACKUP_VERSION,
+        app: 'clinicmx-web',
+        created_at: new Date().toISOString(),
+        counts,
       },
-      prescription_templates: {
-        chief_complaint: complaints,
-        on_examination: examinations,
-        medications,
-        investigations,
+      passphrase: activePassphrase,
+    })
+
+    for (let i = 0; i < BACKUP_TABLES.length && !failed; i++) {
+      const table = BACKUP_TABLES[i]
+      options?.onProgress?.({ table, index: i + 1, total: BACKUP_TABLES.length })
+      const rows = await fetchAllRows(table)
+      worker.postMessage({ type: 'serialize-table', table, rows })
+    }
+
+    const [doctorProfile, complaints, examinations, medications, investigations] = await Promise.all([
+      loadDoctorProfile(),
+      getComplaintTemplates(),
+      getExaminationTemplates(),
+      getMedicationSectionTemplates(),
+      getInvestigationSectionTemplates(),
+    ])
+    worker.postMessage({
+      type: 'serialize-finish',
+      localSettings: {
+        doctor_profile: doctorProfile ?? null,
+        prescription_memory: {
+          [MEMORY_KEYS.COMPLAINTS]: getMemory(MEMORY_KEYS.COMPLAINTS),
+          [MEMORY_KEYS.EXAMINATIONS]: getMemory(MEMORY_KEYS.EXAMINATIONS),
+          [MEMORY_KEYS.MEDICATIONS]: getMemory(MEMORY_KEYS.MEDICATIONS),
+          [MEMORY_KEYS.INVESTIGATIONS]: getMemory(MEMORY_KEYS.INVESTIGATIONS),
+        },
+        prescription_templates: {
+          chief_complaint: complaints,
+          on_examination: examinations,
+          medications,
+          investigations,
+        },
       },
-    },
+    })
+
+    const { buffer, sha256, encrypted } = await done
+    return {
+      bytes: new Uint8Array(buffer),
+      filename: backupFileName(new Date(), options?.category, encrypted),
+      sha256,
+      counts,
+      encrypted,
+    }
+  } finally {
+    worker.terminate()
   }
 }
 
@@ -140,12 +292,16 @@ export async function buildDeviceBackup(onProgress?: (p: BackupProgress) => void
 // retention (see functions/api/upload-backup.ts pruneOldUploads). The time
 // (no colons — Windows forbids them in filenames) is included alongside the
 // date so more than one backup on the same day never collides/overwrites.
-export function backupFileName(date: Date = new Date(), category?: BackupCategory) {
+// New backups are gzipped (.json.gz) or encrypted (.json.enc); plain .json
+// stays accepted everywhere for older backups.
+export function backupFileName(date: Date = new Date(), category?: BackupCategory, encrypted = false) {
   const stamp = format(date, 'yyyy-MM-dd-HHmmss')
-  return category ? `clinicmx-backup-${category}-${stamp}.json` : `clinicmx-backup-${stamp}.json`
+  const ext = encrypted ? '.json.enc' : '.json.gz'
+  return category ? `clinicmx-backup-${category}-${stamp}${ext}` : `clinicmx-backup-${stamp}${ext}`
 }
 
-const FILENAME_PATTERN = /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}-\d{6}\.json$/
+const FILENAME_PATTERN =
+  /^clinicmx-backup-(?:(daily|weekly|monthly)-)?\d{4}-\d{2}-\d{2}-\d{6}\.json(?:\.gz|\.enc)?$/
 
 /** Parses the category tag out of a backup filename, or 'manual' if untagged. */
 export function parseBackupCategory(filename: string): BackupCategory | 'manual' {
@@ -153,19 +309,19 @@ export function parseBackupCategory(filename: string): BackupCategory | 'manual'
   return (match?.[1] as BackupCategory | undefined) ?? 'manual'
 }
 
-export function downloadDeviceBackup(backup: DeviceBackup, category?: BackupCategory) {
-  const filename = backupFileName(new Date(), category)
-  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
+export function downloadSerializedBackup(serialized: SerializedBackup, category?: BackupCategory) {
+  const blob = new Blob([serialized.bytes as BlobPart], { type: 'application/octet-stream' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = filename
+  anchor.download = serialized.filename
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
   markBackupDone(category)
-  return filename
+  saveLastBackupCounts(serialized.counts)
+  return serialized.filename
 }
 
 const AUTO_PRUNE_KEY = 'clinicmx_backup_autoprune'
@@ -188,25 +344,36 @@ export function setAutoPruneEnabled(enabled: boolean) {
   }
 }
 
+export interface UploadResult {
+  name: string
+  webViewLink?: string
+  /** true when the re-downloaded bytes hash-matched what we sent (P2). */
+  verified: boolean
+}
+
 // Uploads via the same-origin Cloudflare Pages Function (functions/api/upload-backup.ts),
 // which holds the Google credentials server-side — no Google login in the browser,
 // so this also works inside the Android WebView APK where OAuth popups are blocked.
-export async function uploadBackupToDrive(
-  backup: DeviceBackup,
+// Sends the serialized bytes raw (gzip/encrypted), then re-downloads and
+// SHA-256-compares them to verify the backup actually landed intact.
+export async function uploadSerializedBackup(
+  serialized: SerializedBackup,
   category?: BackupCategory
-): Promise<{ name: string; webViewLink?: string }> {
-  const filename = backupFileName(new Date(), category)
+): Promise<UploadResult> {
+  const params = new URLSearchParams({ filename: serialized.filename })
+  if (getAutoPruneEnabled()) params.set('prune', '1')
+
   let response: Response
   try {
-    response = await fetch('/api/upload-backup', {
+    response = await fetch(`/api/upload-backup?${params.toString()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, backup, prune: getAutoPruneEnabled() }),
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: serialized.bytes as unknown as BodyInit,
     })
   } catch {
     throw new Error('Could not reach the upload service. Check your internet connection.')
   }
-  let body: { ok?: boolean; name?: string; webViewLink?: string; error?: string } | null = null
+  let body: { ok?: boolean; name?: string; webViewLink?: string; id?: string; error?: string } | null = null
   try {
     body = await response.json()
   } catch {
@@ -218,8 +385,26 @@ export async function uploadBackupToDrive(
     }
     throw new Error(body?.error || `Upload failed (HTTP ${response.status}).`)
   }
+
+  // Verification (P2): re-download by id and compare hashes. Best-effort — a
+  // verification hiccup doesn't undo a successful upload, it just reports
+  // verified: false so the UI/notification can flag it.
+  let verified = false
+  if (body.id) {
+    try {
+      const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`)
+      if (check.ok) {
+        const echoed = new Uint8Array(await check.arrayBuffer())
+        verified = (await sha256Hex(echoed)) === serialized.sha256
+      }
+    } catch {
+      // leave verified = false
+    }
+  }
+
   markBackupDone(category)
-  return { name: body.name || filename, webViewLink: body.webViewLink }
+  saveLastBackupCounts(serialized.counts)
+  return { name: body.name || serialized.filename, webViewLink: body.webViewLink, verified }
 }
 
 export interface DriveBackupFile {
@@ -256,6 +441,7 @@ export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
 // Fetches one Drive backup's content and wraps it as a File so it can feed
 // straight into the same parseBackupFile/handleFileChosen path used for a
 // locally-picked file — the rest of the restore flow needs no changes.
+// Must preserve raw bytes (gzip/encrypted formats), so no text() here.
 export async function fetchBackupFromDrive(id: string, name: string): Promise<File> {
   let response: Response
   try {
@@ -272,20 +458,53 @@ export async function fetchBackupFromDrive(id: string, name: string): Promise<Fi
     }
     throw new Error(error || `Downloading backup failed (HTTP ${response.status}).`)
   }
-  const text = await response.text()
-  return new File([text], name, { type: 'application/json' })
+  const bytes = await response.arrayBuffer()
+  return new File([bytes], name, { type: 'application/octet-stream' })
 }
 
 export type ParseResult =
-  | { ok: true; backup: DeviceBackup; warnings: string[] }
-  | { ok: false; error: string }
+  | { ok: true; backup: DeviceBackup; warnings: string[]; encrypted: boolean }
+  | { ok: false; error: string; needsPassphrase?: boolean }
 
-export async function parseBackupFile(file: File): Promise<ParseResult> {
+/**
+ * Decodes any backup format (legacy plain .json, gzipped .json.gz, encrypted
+ * .json.enc) in the Web Worker — decrypt/gunzip/JSON.parse never block the
+ * UI, even for 100 MB+ files. When the file is encrypted and no working
+ * passphrase is available, returns needsPassphrase so the UI can ask.
+ */
+export async function parseBackupFile(file: File, passphraseOverride?: string): Promise<ParseResult> {
+  const buffer = await file.arrayBuffer()
+  const passphrase = passphraseOverride ?? (await getBackupEncryption()).passphrase
+
+  const worker = spawnBackupWorker()
   let parsed: unknown
+  let encrypted = false
   try {
-    parsed = JSON.parse(await file.text())
-  } catch {
-    return { ok: false, error: 'This file is not valid JSON. Choose a clinicmx-backup-….json file.' }
+    const result = await new Promise<{ backup?: unknown; encrypted?: boolean; needsPassphrase?: boolean }>(
+      (resolve, reject) => {
+        worker.onmessage = (e) => {
+          const d = e.data
+          if (d.type === 'parsed') resolve({ backup: d.backup, encrypted: d.encrypted })
+          else if (d.type === 'needs-passphrase') resolve({ needsPassphrase: true })
+          else if (d.type === 'error') reject(new Error(d.message))
+        }
+        worker.onerror = () => reject(new Error('Backup worker crashed.'))
+        worker.postMessage({ type: 'parse', buffer, passphrase }, [buffer])
+      }
+    )
+    if (result.needsPassphrase) {
+      return { ok: false, needsPassphrase: true, error: 'This backup is encrypted — enter its passphrase to continue.' }
+    }
+    parsed = result.backup
+    encrypted = !!result.encrypted
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not read this file.'
+    if (message.includes('passphrase')) {
+      return { ok: false, needsPassphrase: true, error: message }
+    }
+    return { ok: false, error: 'This file is not a readable ClinicMx backup. Choose a clinicmx-backup-… file.' }
+  } finally {
+    worker.terminate()
   }
 
   const backup = parsed as DeviceBackup
@@ -313,7 +532,7 @@ export async function parseBackupFile(file: File): Promise<ParseResult> {
     }
   }
 
-  return { ok: true, backup, warnings }
+  return { ok: true, backup, warnings, encrypted }
 }
 
 export interface TableAnalysis {
@@ -385,6 +604,10 @@ export async function analyzeRestore(
   const hasLocalSettings = Boolean(
     ls && typeof ls === 'object' && (ls.doctor_profile || ls.prescription_memory || ls.prescription_templates)
   )
+
+  // A completed dry-run counts as a restore drill (P5) — the point is that
+  // the admin regularly exercises the restore path and sees it working.
+  markRestoreDrillDone()
 
   return { backup, tables: analyses, hasLocalSettings }
 }

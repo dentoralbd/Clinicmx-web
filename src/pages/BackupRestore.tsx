@@ -16,18 +16,21 @@ import {
 import { Button } from '@/components/ui/Button'
 import { getAppRole } from '@/lib/appSession'
 import {
-  buildDeviceBackup,
-  downloadDeviceBackup,
-  uploadBackupToDrive,
+  buildSerializedBackup,
+  downloadSerializedBackup,
+  uploadSerializedBackup,
   listBackupsFromDrive,
   fetchBackupFromDrive,
   getAutoPruneEnabled,
   setAutoPruneEnabled,
+  getBackupEncryption,
+  setBackupEncryption,
   parseBackupFile,
   parseBackupCategory,
   analyzeRestore,
   executeRestore,
   type BackupProgress,
+  type CountDrop,
   type DriveBackupFile,
   type RestoreAnalysis,
   type RestoreMode,
@@ -55,6 +58,7 @@ const CATEGORY_LABEL: Record<BackupCategory, string> = {
 type RestoreState =
   | { step: 'idle' }
   | { step: 'error'; message: string }
+  | { step: 'passphrase'; message: string }
   | { step: 'analyzing'; progress: BackupProgress | null }
   | { step: 'summary'; analysis: RestoreAnalysis; warnings: string[] }
   | { step: 'running'; analysis: RestoreAnalysis; progress: BackupProgress | null }
@@ -62,21 +66,35 @@ type RestoreState =
 
 const cardClass = 'bg-white rounded-lg shadow-sm border border-gray-200 p-6'
 
+function formatBytes(bytes: number): string {
+  const abs = Math.abs(bytes)
+  if (abs < 1024) return `${bytes} B`
+  if (abs < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function BackupRestore() {
   const [backingUp, setBackingUp] = useState(false)
   const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
   const [lastBackupAt, setLastBackupAt] = useState<Date | null>(() => getLastBackupAt())
   const [lastDownloadedFile, setLastDownloadedFile] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [uploadResult, setUploadResult] = useState<{ name: string; webViewLink?: string } | null>(null)
+  const [uploadResult, setUploadResult] = useState<{ name: string; webViewLink?: string; verified: boolean } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [autoPrune, setAutoPrune] = useState(() => getAutoPruneEnabled())
+
+  const [encryptEnabled, setEncryptEnabled] = useState(false)
+  const [hasPassphrase, setHasPassphrase] = useState(false)
+  const [passphraseDraft, setPassphraseDraft] = useState('')
+  const [showPassphraseEditor, setShowPassphraseEditor] = useState(false)
 
   const [restore, setRestore] = useState<RestoreState>({ step: 'idle' })
   const [mode, setMode] = useState<RestoreMode>('insert-missing')
   const [overwriteConfirmText, setOverwriteConfirmText] = useState('')
   const [restoreSettings, setRestoreSettings] = useState(true)
+  const [restorePassphrase, setRestorePassphrase] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const pendingFileRef = useRef<File | null>(null)
 
   const [driveBrowse, setDriveBrowse] = useState<
     | { status: 'idle' }
@@ -100,6 +118,13 @@ export function BackupRestore() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [restore.step])
 
+  useEffect(() => {
+    getBackupEncryption().then(({ enabled, passphrase }) => {
+      setEncryptEnabled(enabled)
+      setHasPassphrase(!!passphrase)
+    })
+  }, [])
+
   // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
   if (getAppRole() !== 'admin') return <Navigate to="/dashboard" replace />
 
@@ -111,12 +136,23 @@ export function BackupRestore() {
     driveBrowse.status === 'loading' ||
     downloadingId !== null
 
+  // Anomaly tripwire (P2): in the manual flows a human is present, so ask.
+  const confirmAnomaly = async (drops: CountDrop[]) => {
+    const detail = drops.map((d) => `  ${d.table}: ${d.from} → ${d.to}`).join('\n')
+    return confirm(
+      `WARNING: core records have DECREASED since your last backup:\n\n${detail}\n\n` +
+        `If you didn't delete these on purpose, press Cancel and investigate before backing up ` +
+        `(older backups remain in Drive).\n\nContinue with this backup anyway?`
+    )
+  }
+
   const handleDownloadBackup = async () => {
     setBackingUp(true)
     setBackupProgress(null)
     try {
-      const backup = await buildDeviceBackup(setBackupProgress)
-      const filename = downloadDeviceBackup(backup)
+      const serialized = await buildSerializedBackup({ onProgress: setBackupProgress, onAnomaly: confirmAnomaly })
+      if (!serialized) return
+      const filename = downloadSerializedBackup(serialized)
       setLastBackupAt(getLastBackupAt())
       setLastDownloadedFile(filename)
     } catch (error) {
@@ -133,9 +169,10 @@ export function BackupRestore() {
     setUploadError(null)
     setBackupProgress(null)
     try {
-      const backup = await buildDeviceBackup(setBackupProgress)
+      const serialized = await buildSerializedBackup({ onProgress: setBackupProgress, onAnomaly: confirmAnomaly })
+      if (!serialized) return
       setBackupProgress(null)
-      const result = await uploadBackupToDrive(backup)
+      const result = await uploadSerializedBackup(serialized)
       setLastBackupAt(getLastBackupAt())
       setUploadResult(result)
     } catch (error) {
@@ -146,13 +183,19 @@ export function BackupRestore() {
     }
   }
 
-  const handleFileChosen = async (file: File | null) => {
+  const handleFileChosen = async (file: File | null, passphrase?: string) => {
     if (!file) return
+    pendingFileRef.current = file
     setMode('insert-missing')
     setOverwriteConfirmText('')
     setRestoreSettings(true)
-    const parsed = await parseBackupFile(file)
+    const parsed = await parseBackupFile(file, passphrase)
     if (!parsed.ok) {
+      if (parsed.needsPassphrase) {
+        setRestorePassphrase('')
+        setRestore({ step: 'passphrase', message: parsed.error })
+        return
+      }
       setRestore({ step: 'error', message: parsed.error })
       return
     }
@@ -168,6 +211,22 @@ export function BackupRestore() {
         message: `Could not analyze the backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
       })
     }
+  }
+
+  const handleSaveEncryption = async (enabled: boolean) => {
+    if (enabled && !hasPassphrase && !passphraseDraft.trim()) {
+      setShowPassphraseEditor(true)
+      return
+    }
+    if (passphraseDraft.trim()) {
+      await setBackupEncryption(enabled, passphraseDraft.trim())
+      setHasPassphrase(true)
+      setPassphraseDraft('')
+      setShowPassphraseEditor(false)
+    } else {
+      await setBackupEncryption(enabled)
+    }
+    setEncryptEnabled(enabled)
   }
 
   const handleBrowseDrive = async () => {
@@ -311,11 +370,71 @@ export function BackupRestore() {
             5 / 2).
           </span>
         </label>
+
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={encryptEnabled}
+              onChange={(e) => handleSaveEncryption(e.target.checked)}
+            />
+            <span className="text-sm text-text-secondary">
+              Encrypt backups with a passphrase before they leave this device.{' '}
+              <span className="font-medium text-amber-700">
+                If you lose the passphrase, encrypted backups cannot be recovered by anyone — write it down
+                somewhere safe.
+              </span>
+            </span>
+          </label>
+          {hasPassphrase && encryptEnabled && !showPassphraseEditor && (
+            <div className="mt-2 ml-6 flex items-center gap-3">
+              <span className="text-xs text-green-700 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Passphrase set
+              </span>
+              <button
+                type="button"
+                className="text-xs underline text-text-secondary hover:text-gray-700"
+                onClick={() => setShowPassphraseEditor(true)}
+              >
+                Change passphrase
+              </button>
+            </div>
+          )}
+          {showPassphraseEditor && (
+            <div className="mt-2 ml-6 flex items-center gap-2">
+              <input
+                type="password"
+                value={passphraseDraft}
+                onChange={(e) => setPassphraseDraft(e.target.value)}
+                placeholder="New passphrase"
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSaveEncryption(true)}
+                disabled={!passphraseDraft.trim()}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setShowPassphraseEditor(false); setPassphraseDraft('') }}>
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+
         {uploadResult && !uploading && (
           <div className="mt-3 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>
               Uploaded <span className="font-mono">{uploadResult.name}</span> to Google Drive.
+              {uploadResult.verified ? (
+                <span className="font-medium"> Integrity verified ✓</span>
+              ) : (
+                <span className="text-amber-700"> Could not verify integrity — consider re-uploading.</span>
+              )}
               {uploadResult.webViewLink && (
                 <>
                   {' '}
@@ -353,20 +472,48 @@ export function BackupRestore() {
           Restore from a backup file
         </h2>
         <p className="text-sm text-text-secondary mb-4">
-          Pick a <span className="font-mono">clinicmx-backup-….json</span> file. You will see a summary of what
-          it contains before anything is written.
+          Pick a <span className="font-mono">clinicmx-backup-…</span> file (plain, gzipped, or encrypted). You
+          will see a summary of what it contains before anything is written.
         </p>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,application/json"
+          accept=".json,.gz,.enc,application/json,application/gzip,application/octet-stream"
           className="hidden"
           onChange={(e) => {
             handleFileChosen(e.target.files?.[0] ?? null)
             e.target.value = ''
           }}
         />
+
+        {restore.step === 'passphrase' && (
+          <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {restore.message}
+            </div>
+            <input
+              type="password"
+              value={restorePassphrase}
+              onChange={(e) => setRestorePassphrase(e.target.value)}
+              placeholder="Backup passphrase"
+              autoFocus
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleFileChosen(pendingFileRef.current, restorePassphrase)}
+                disabled={!restorePassphrase}
+              >
+                Unlock
+              </Button>
+              <Button variant="ghost" onClick={() => setRestore({ step: 'idle' })}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {(restore.step === 'idle' || restore.step === 'error') && (
           <>
@@ -413,35 +560,50 @@ export function BackupRestore() {
                   (['daily', 'weekly', 'monthly', 'manual'] as const).map((group) => {
                     const files = driveBrowse.files.filter((f) => parseBackupCategory(f.name) === group)
                     if (files.length === 0) return null
+                    const totalSize = files.reduce((s, f) => s + f.size, 0)
                     return (
                       <div key={group}>
-                        <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">
-                          {group === 'manual' ? 'Manual' : CATEGORY_LABEL[group]}
+                        <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1 flex items-center justify-between">
+                          <span>{group === 'manual' ? 'Manual' : CATEGORY_LABEL[group]}</span>
+                          <span className="font-normal normal-case text-gray-400">
+                            {files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(totalSize)}
+                          </span>
                         </div>
                         <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
-                          {files.map((f) => (
-                            <div key={f.id} className="p-3 flex items-center justify-between gap-3 text-sm">
-                              <div>
-                                <div className="font-mono">{f.name}</div>
-                                <div className="text-text-secondary text-xs">
-                                  {f.modifiedTime ? format(new Date(f.modifiedTime), 'PPp') : ''} ·{' '}
-                                  {(f.size / 1024).toFixed(0)} KB
+                          {files.map((f, i) => {
+                            const older = files[i + 1]
+                            const delta = older ? f.size - older.size : null
+                            return (
+                              <div key={f.id} className="p-3 flex items-center justify-between gap-3 text-sm">
+                                <div>
+                                  <div className="font-mono">{f.name}</div>
+                                  <div className="text-text-secondary text-xs">
+                                    {f.modifiedTime ? format(new Date(f.modifiedTime), 'PPp') : ''} ·{' '}
+                                    {formatBytes(f.size)}
+                                    {delta !== null && (
+                                      <span className={delta > 0 ? 'text-amber-600' : 'text-green-700'}>
+                                        {' '}
+                                        ({delta >= 0 ? '+' : ''}
+                                        {formatBytes(delta)})
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRestoreFromDrive(f)}
+                                  disabled={busy}
+                                >
+                                  {downloadingId === f.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    'Restore this'
+                                  )}
+                                </Button>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleRestoreFromDrive(f)}
-                                disabled={busy}
-                              >
-                                {downloadingId === f.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  'Restore this'
-                                )}
-                              </Button>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )

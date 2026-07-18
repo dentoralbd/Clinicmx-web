@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 import { getPatientDobOrAge, safeFormat, formatBDT } from '@/lib/utils'
-import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight } from 'lucide-react'
+import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight, DatabaseBackup } from 'lucide-react'
+import { getAppRole } from '@/lib/appSession'
+import { BACKUP_CATEGORIES, getBackupSettings, getLastBackupAt, getOverdueCategories } from '@/lib/backupReminders'
 
 interface Stats {
   totalPatients: number
@@ -244,7 +246,60 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      {getAppRole() === 'admin' && <BackupHealthTile onClick={() => navigate('/backup')} />}
     </div>
+  )
+}
+
+const CATEGORY_LABEL: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' }
+
+function BackupHealthTile({ onClick }: { onClick: () => void }) {
+  const lastBackupAt = getLastBackupAt()
+  const settings = getBackupSettings()
+  const overdue = new Set(getOverdueCategories().map((o) => o.category))
+  const enabledCategories = BACKUP_CATEGORIES.filter((c) => settings[c].enabled)
+
+  const ageMs = lastBackupAt ? Date.now() - lastBackupAt.getTime() : null
+  const overallStatus: 'fresh' | 'stale' | 'overdue' =
+    overdue.size > 0 ? 'overdue' : ageMs !== null && ageMs < 36 * 60 * 60 * 1000 ? 'fresh' : ageMs !== null ? 'stale' : 'overdue'
+  const dotClass = { fresh: 'bg-green-500', stale: 'bg-amber-500', overdue: 'bg-red-500' }[overallStatus]
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6 hover:shadow-elevation-high transition-all duration-200"
+    >
+      <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="bg-primary/10 text-primary rounded-lg p-1.5">
+            <DatabaseBackup className="w-4 h-4" />
+          </span>
+          <h3 className="text-lg font-semibold">Backup health</h3>
+        </div>
+        <span className="flex items-center gap-1 text-sm text-primary">
+          Manage <ArrowRight className="w-4 h-4" />
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
+          <span className="text-sm">
+            Last backup: {lastBackupAt ? formatDistanceToNow(lastBackupAt, { addSuffix: true }) : 'never'}
+          </span>
+        </div>
+        {enabledCategories.length === 0 ? (
+          <span className="text-xs text-text-secondary">No schedules enabled</span>
+        ) : (
+          enabledCategories.map((c) => (
+            <span key={c} className="flex items-center gap-1.5 text-xs text-text-secondary">
+              <span className={`w-2 h-2 rounded-full ${overdue.has(c) ? 'bg-red-500' : 'bg-green-500'}`} />
+              {CATEGORY_LABEL[c]}
+            </span>
+          ))
+        )}
+      </div>
+    </button>
   )
 }
 

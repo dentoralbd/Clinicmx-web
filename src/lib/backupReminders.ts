@@ -219,6 +219,52 @@ export function dismissBannerFor(category: BackupCategory, instant: Date) {
   writeInstantMarker(bannerDismissedForKey(category), instant)
 }
 
+// --- Restore drill (P5): a backup you never test isn't a backup. -----------
+
+const RESTORE_DRILL_KEY = 'clinicmx_last_restore_drill_at'
+const DRILL_NUDGED_KEY = 'clinicmx_restore_drill_nudged_at'
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+/** Stamped whenever a restore dry-run analysis completes (see analyzeRestore). */
+export function markRestoreDrillDone() {
+  try {
+    localStorage.setItem(RESTORE_DRILL_KEY, new Date().toISOString())
+  } catch {
+    // ignore
+  }
+}
+
+export function getLastRestoreDrillAt(): Date | null {
+  try {
+    const raw = localStorage.getItem(RESTORE_DRILL_KEY)
+    return raw ? parseISO(raw) : null
+  } catch {
+    return null
+  }
+}
+
+/** True when it's time for the monthly "try a restore dry-run" nudge. */
+export function shouldNudgeRestoreDrill(now: Date = new Date()): boolean {
+  if (!getLastBackupAt()) return false // nothing to drill against yet
+  const drill = getLastRestoreDrillAt()
+  if (drill && now.getTime() - drill.getTime() < THIRTY_DAYS_MS) return false
+  try {
+    const nudged = localStorage.getItem(DRILL_NUDGED_KEY)
+    if (nudged && now.getTime() - parseISO(nudged).getTime() < THIRTY_DAYS_MS) return false
+  } catch {
+    // fall through
+  }
+  return true
+}
+
+export function markRestoreDrillNudged() {
+  try {
+    localStorage.setItem(DRILL_NUDGED_KEY, new Date().toISOString())
+  } catch {
+    // ignore
+  }
+}
+
 export function isNotificationSupported() {
   return typeof window !== 'undefined' && 'Notification' in window
 }

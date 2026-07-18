@@ -10,9 +10,11 @@ import {
   markNotified,
   dismissBannerFor,
   fireBrowserNotification,
+  shouldNudgeRestoreDrill,
+  markRestoreDrillNudged,
   type BackupCategory,
 } from '@/lib/backupReminders'
-import { buildDeviceBackup, uploadBackupToDrive } from '@/lib/deviceBackup'
+import { buildSerializedBackup, uploadSerializedBackup } from '@/lib/deviceBackup'
 import { addNotification } from '@/lib/notifications'
 
 const CATEGORY_LABEL: Record<BackupCategory, string> = {
@@ -60,11 +62,32 @@ export function BackupReminderBanner() {
 
           if (autoUpload) {
             try {
-              const backup = await buildDeviceBackup()
-              const result = await uploadBackupToDrive(backup, category)
+              // Smart upload runs unattended: a suspicious count drop can't ask
+              // anyone, so it warns via notification but still backs up — a
+              // suspicious backup beats no backup.
+              const serialized = await buildSerializedBackup({
+                category,
+                onAnomaly: async (drops) => {
+                  const detail = drops.map((d) => `${d.table}: ${d.from} → ${d.to}`).join(', ')
+                  addNotification({
+                    title: 'Backup data shrank unexpectedly',
+                    message: `Core records dropped since the last backup (${detail}). If you didn't delete these on purpose, investigate now — older backups are in Drive.`,
+                    linkTo: '/backup',
+                  })
+                  fireBrowserNotification(
+                    'ClinicMx: data shrank unexpectedly',
+                    `Records dropped since the last backup (${detail}).`
+                  )
+                  return true
+                },
+              })
+              if (!serialized) throw new Error('Backup was cancelled.')
+              const result = await uploadSerializedBackup(serialized, category)
               addNotification({
-                title: `${CATEGORY_LABEL[category]} backup uploaded`,
-                message: `Automatically backed up to Google Drive as ${result.name}.`,
+                title: `${CATEGORY_LABEL[category]} backup uploaded${result.verified ? ' ✓ verified' : ''}`,
+                message: result.verified
+                  ? `Automatically backed up to Google Drive as ${result.name} (integrity verified).`
+                  : `Automatically backed up to Google Drive as ${result.name}, but integrity could not be verified — consider re-uploading manually.`,
                 linkTo: '/backup',
               })
             } catch (error) {
@@ -94,6 +117,17 @@ export function BackupReminderBanner() {
             )
             visible.push({ category, instant })
           }
+        }
+
+        // Monthly restore-drill nudge (P5): backups you never test aren't backups.
+        if (shouldNudgeRestoreDrill()) {
+          markRestoreDrillNudged()
+          addNotification({
+            title: 'Monthly restore drill',
+            message:
+              "It's been a while since you tested a restore. Open Backup & Restore and run a dry-run — it writes nothing, but proves your backups actually work.",
+            linkTo: '/backup',
+          })
         }
 
         setBanners(visible)

@@ -111,15 +111,19 @@ export async function uploadNew(
   token: string,
   folderId: string,
   filename: string,
-  content: string
+  content: string | Uint8Array,
+  contentType = 'application/json'
 ): Promise<string> {
   const boundary = 'clinicmx-' + crypto.randomUUID()
-  const body =
+  // Multipart body built as a Blob so binary payloads (gzip/encrypted
+  // backups) pass through byte-exact — string concatenation would corrupt them.
+  const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name: filename, parents: [folderId] }) +
-    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
-    content +
-    `\r\n--${boundary}--`
+      JSON.stringify({ name: filename, parents: [folderId] }) +
+      `\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`,
+    content as BlobPart,
+    `\r\n--${boundary}--`,
+  ])
   const res = await fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
     {
@@ -136,13 +140,18 @@ export async function uploadNew(
   return data.id
 }
 
-export async function updateExisting(token: string, fileId: string, content: string): Promise<void> {
+export async function updateExisting(
+  token: string,
+  fileId: string,
+  content: string | Uint8Array,
+  contentType = 'application/json'
+): Promise<void> {
   const res = await fetch(
     `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
     {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: content,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+      body: content as BodyInit,
     }
   )
   if (!res.ok) {
@@ -161,13 +170,15 @@ export async function getWebViewLink(token: string, fileId: string): Promise<str
   return data.webViewLink
 }
 
-export async function driveGetContent(token: string, fileId: string): Promise<string> {
+// Returns raw bytes — backups may be gzipped or encrypted binary, so text
+// decoding here would corrupt them.
+export async function driveGetContent(token: string, fileId: string): Promise<ArrayBuffer> {
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
   if (!res.ok) throw new Error(`Drive download failed: ${res.status}`)
-  return res.text()
+  return res.arrayBuffer()
 }
 
 // Idempotent: a 404 (already gone) counts as success, so overlapping prune
