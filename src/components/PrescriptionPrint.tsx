@@ -57,6 +57,7 @@ interface PrescriptionPrintProps {
       duration: string
       instructions: string
       route?: string
+      generic?: string
     }>
     investigations: Array<{ name: string; description: string; urgency?: string }>
     notes?: string
@@ -426,6 +427,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                     <span className="font-bold min-w-[1.2rem]">{idx + 1}.</span>
                     <div>
                       <span className="font-bold">{med.name}</span>
+                      {med.generic && <span className="italic text-gray-600"> ({med.generic})</span>}
                       {med.dosage && (
                         <span className="text-gray-700"> — {shouldTranslate ? dosageToBengali(med.dosage) : med.dosage}</span>
                       )}
