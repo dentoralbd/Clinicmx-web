@@ -7,6 +7,13 @@ import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 import { cleanLogoSource } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { type ClinicalEntry, quadrantAbbr } from '@/lib/clinicalEntries'
+import {
+  dosageToBengali,
+  routeToBengali,
+  frequencyToBengali,
+  durationToBengali,
+  instructionsToBengali,
+} from '@/lib/medicationBengali'
 
 function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
   const filled = (entries || []).filter((entry) => entry.text.trim())
@@ -414,13 +421,13 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                     <span className="font-bold min-w-[1.2rem]">{idx + 1}.</span>
                     <div>
                       <span className="font-bold">{med.name}</span>
-                      {med.dosage && <span className="text-gray-700"> — {med.dosage}</span>}
-                      {med.route && <span className="text-gray-600"> ({med.route})</span>}
-                      {med.frequency && <span className="text-gray-600"> · {med.frequency}</span>}
-                      {med.duration && <span className="text-gray-600"> · {med.duration}</span>}
+                      {med.dosage && <span className="text-gray-700"> — {dosageToBengali(med.dosage)}</span>}
+                      {med.route && <span className="text-gray-600"> ({routeToBengali(med.route)})</span>}
+                      {med.frequency && <span className="text-gray-600"> · {frequencyToBengali(med.frequency)}</span>}
+                      {med.duration && <span className="text-gray-600"> · {durationToBengali(med.duration)}</span>}
                       {med.instructions && (
                         <div className="text-xs text-gray-500 mt-0.5 ml-2">
-                          Instructions: {med.instructions}
+                          Instructions: {instructionsToBengali(med.instructions)}
                         </div>
                       )}
                     </div>

@@ -43,17 +43,19 @@ export async function buildPdfFromElement(
   const pageHeight = pdf.internal.pageSize.getHeight()
   const imgWidth = pageWidth
   const imgHeight = (canvas.height * imgWidth) / canvas.width
-  const imgData = canvas.toDataURL('image/png')
+  // JPEG (not PNG): this PDF is only ever shared (Email/WhatsApp), so file size matters more
+  // than lossless quality — print/save uses window.print() and never goes through here.
+  const imgData = canvas.toDataURL('image/jpeg', 0.8)
 
   let heightLeft = imgHeight
   let position = 0
-  pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+  pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
   heightLeft -= pageHeight
 
   while (heightLeft > 0) {
     position -= pageHeight
     pdf.addPage()
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
     heightLeft -= pageHeight
   }
 
