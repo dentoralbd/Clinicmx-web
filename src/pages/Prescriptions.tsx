@@ -35,7 +35,7 @@ import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeT
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
-import { translateDrugDefaults, translateDosage, type PrescriptionLanguage } from '@/lib/medicationBengali'
+import { translateDrugDefaults, translateDosage, retranslateMedication, type PrescriptionLanguage } from '@/lib/medicationBengali'
 import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
@@ -1226,7 +1226,13 @@ export function Prescriptions() {
                   <div className="ml-auto flex items-center gap-2">
                     <PrescriptionLanguageToggle
                       value={formData.language}
-                      onChange={(language) => setFormData({ ...formData, language })}
+                      onChange={(language) =>
+                        setFormData({
+                          ...formData,
+                          language,
+                          medications: formData.medications.map((med) => retranslateMedication(med, language)),
+                        })
+                      }
                     />
                     <Button
                       type="button"

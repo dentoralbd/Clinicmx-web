@@ -46,7 +46,7 @@ import { formatBDT } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
-import { translateDrugDefaults, translateDosage, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
+import { translateDrugDefaults, translateDosage, retranslateMedication, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
 import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
@@ -4917,7 +4917,13 @@ function PrescriptionFormModal({
               <div className="ml-auto flex items-center gap-2">
                 <PrescriptionLanguageToggle
                   value={formData.language}
-                  onChange={(language) => setFormData({ ...formData, language })}
+                  onChange={(language) =>
+                    setFormData({
+                      ...formData,
+                      language,
+                      medications: formData.medications.map((med: any) => retranslateMedication(med, language)),
+                    })
+                  }
                 />
                 <Button
                   type="button"

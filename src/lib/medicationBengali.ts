@@ -305,6 +305,53 @@ export const durationToBengali = (value: string) => DURATION_BN[value] ?? value
 
 export const instructionsToBengali = (value: string) => INSTRUCTIONS_BN[value] ?? value
 
+// Reverse maps (Bengali -> English), built from the forward maps above, so the
+// language toggle can retranslate rows that are already filled in — not just
+// future drug picks. Keeps a single source of truth: only the *_BN maps are hand-written.
+function invert(map: Record<string, string>) {
+  const inverted: Record<string, string> = {}
+  for (const [en, bn] of Object.entries(map)) {
+    if (!(bn in inverted)) inverted[bn] = en
+  }
+  return inverted
+}
+
+const DOSAGE_EN = invert(DOSAGE_BN)
+const ROUTE_EN = invert(ROUTE_BN)
+const DURATION_EN = invert(DURATION_BN)
+const INSTRUCTIONS_EN = invert(INSTRUCTIONS_BN)
+const FREQUENCY_EN = invert(FREQUENCY_BN)
+const HOURLY_FREQUENCY_EN = invert(HOURLY_FREQUENCY_BN)
+
+const dosageToEnglish = (value: string) => DOSAGE_EN[value] ?? value
+const routeToEnglish = (value: string) => ROUTE_EN[value] ?? value
+const durationToEnglish = (value: string) => DURATION_EN[value] ?? value
+const instructionsToEnglish = (value: string) => INSTRUCTIONS_EN[value] ?? value
+const frequencyToEnglish = (value: string) => FREQUENCY_EN[value] ?? HOURLY_FREQUENCY_EN[value] ?? value
+
+interface TranslatableMedicationFields {
+  dosage?: string
+  frequency?: string
+  duration?: string
+  instructions?: string
+  route?: string
+}
+
+// Re-runs translation on a medication row already in the form (e.g. when the
+// language toggle is flipped after a drug was picked). Each *ToBengali/*ToEnglish
+// call is a no-op if the value isn't a recognized default string in the source
+// language (custom/free-typed text passes through unchanged either way).
+export function retranslateMedication<T extends TranslatableMedicationFields>(med: T, language: PrescriptionLanguage): T {
+  return {
+    ...med,
+    dosage: med.dosage ? (language === 'en' ? dosageToEnglish(med.dosage) : dosageToBengali(med.dosage)) : med.dosage,
+    frequency: med.frequency ? (language === 'en' ? frequencyToEnglish(med.frequency) : frequencyToBengali(med.frequency)) : med.frequency,
+    duration: med.duration ? (language === 'en' ? durationToEnglish(med.duration) : durationToBengali(med.duration)) : med.duration,
+    instructions: med.instructions ? (language === 'en' ? instructionsToEnglish(med.instructions) : instructionsToBengali(med.instructions)) : med.instructions,
+    route: med.route ? (language === 'en' ? routeToEnglish(med.route) : routeToBengali(med.route)) : med.route,
+  }
+}
+
 export type PrescriptionLanguage = 'bn' | 'en'
 
 // Applied at drug-pick time in both prescription forms (Prescriptions.tsx and
