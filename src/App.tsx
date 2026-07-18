@@ -17,6 +17,7 @@ const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m
 const DoctorProfile = lazy(() => import('./pages/DoctorProfile').then(m => ({ default: m.DoctorProfile })))
 const QrSearch = lazy(() => import('./pages/QrSearch').then(m => ({ default: m.QrSearch })))
 const BackupRestore = lazy(() => import('./pages/BackupRestore').then(m => ({ default: m.BackupRestore })))
+const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
 
 const queryClient = new QueryClient()
 
@@ -53,6 +54,7 @@ function App() {
               <Route path="doctor-profile" element={<DoctorProfile />} />
               <Route path="admin" element={<DoctorProfile />} />
               <Route path="backup" element={<BackupRestore />} />
+              <Route path="analytics" element={<Analytics />} />
             </Route>
           </Routes>
         </Suspense>

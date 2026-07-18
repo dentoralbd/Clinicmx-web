@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, ChevronDown, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, ChevronDown, DatabaseBackup, BarChart3 } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, type AppPageKey } from '@/lib/appSession'
 
 interface SidebarProps {
@@ -243,6 +243,20 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                         <DatabaseBackup className="w-5 h-5" />
                       </span>
                       <span>Backup &amp; Restore</span>
+                    </>
+                  )}
+                </NavLink>
+                <NavLink
+                  to="/analytics"
+                  onClick={onNavClick}
+                  className={navLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={iconChipClass(isActive)}>
+                        <BarChart3 className="w-5 h-5" />
+                      </span>
+                      <span>Analytics</span>
                     </>
                   )}
                 </NavLink>
