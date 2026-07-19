@@ -112,6 +112,7 @@ export interface Database {
           status: string
           notes: string | null
           created_at: string
+          reminder_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -122,6 +123,7 @@ export interface Database {
           status?: string
           notes?: string | null
           created_at?: string
+          reminder_sent_at?: string | null
         }
         Update: {
           id?: string
@@ -132,6 +134,7 @@ export interface Database {
           status?: string
           notes?: string | null
           created_at?: string
+          reminder_sent_at?: string | null
         }
         Relationships: [
           {

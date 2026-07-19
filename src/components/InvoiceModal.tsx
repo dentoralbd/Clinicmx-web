@@ -21,6 +21,7 @@ import { recordInvoicePayment } from '@/lib/payments'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
+import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 
 export interface EditableInvoice {
   id: string
@@ -60,6 +61,7 @@ interface PatientRow {
   first_name: string
   last_name: string
   patient_code: string | null
+  phone?: string | null
 }
 
 interface PendingTreatment {
@@ -89,6 +91,7 @@ export function InvoiceModal({
 }: InvoiceModalProps) {
   const isEditMode = !!editingInvoice
   const [patients, setPatients] = useState<PatientRow[]>([])
+  const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number; invoiceId: string } | null>(null)
   const [formData, setFormData] = useState({
     patient_id: defaultPatientId,
     due_date: editingInvoice?.due_date || '',
@@ -211,7 +214,7 @@ export function InvoiceModal({
   async function loadPatients() {
     const { data } = await supabase
       .from('patients')
-      .select('id, first_name, last_name, patient_code')
+      .select('id, first_name, last_name, patient_code, phone')
       .order('last_name')
     setPatients((data as PatientRow[]) || [])
   }
@@ -619,6 +622,16 @@ export function InvoiceModal({
 
         if (collectPayment && parsedPaymentAmount > 0) {
           await recordImmediatePayment(data.id, parsedPaymentAmount)
+          const paymentPatient = patients.find((p) => p.id === formData.patient_id)
+          if (paymentPatient?.phone) {
+            setThanksPrompt({
+              firstName: paymentPatient.first_name,
+              phone: paymentPatient.phone,
+              amount: parsedPaymentAmount,
+              invoiceId: data.id,
+            })
+            return
+          }
         }
       }
 
@@ -1108,6 +1121,19 @@ export function InvoiceModal({
           </div>
         </form>
       </div>
+
+      {thanksPrompt && (
+        <PaymentThanksPrompt
+          firstName={thanksPrompt.firstName}
+          phone={thanksPrompt.phone}
+          amount={thanksPrompt.amount}
+          onClose={() => {
+            const invoiceId = thanksPrompt.invoiceId
+            setThanksPrompt(null)
+            onSave(invoiceId)
+          }}
+        />
+      )}
     </div>
   )
 }

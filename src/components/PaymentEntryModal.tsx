@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/Button'
 import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
 import { recordInvoicePayment } from '@/lib/payments'
 import { logActivity } from '@/lib/activityLog'
+import { supabase } from '@/lib/supabase'
+import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 
 interface PaymentEntryModalProps {
   invoiceId: string
@@ -27,6 +29,8 @@ export function PaymentEntryModal({
   const [paymentDate, setPaymentDate] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number } | null>(null)
+  const [patientContact, setPatientContact] = useState<{ firstName: string; phone: string | null } | null>(null)
 
   const remaining = useMemo(() => Math.max(invoiceTotal - invoicePaid, 0), [invoiceTotal, invoicePaid])
   const parsedAmount = parseFloat(amount) || 0
@@ -36,6 +40,28 @@ export function PaymentEntryModal({
     setAmount(remaining > 0 ? String(remaining) : '')
     setPaymentDate(new Date().toISOString().slice(0, 10))
   }, [remaining])
+
+  // Fetched purely to offer the post-payment WhatsApp thank-you prompt —
+  // failure here must never block recording the payment.
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('invoices')
+      .select('patients (first_name, phone)')
+      .eq('id', invoiceId)
+      .maybeSingle()
+      .then(
+        ({ data, error }) => {
+          if (cancelled || error) return
+          const patients = (data as any)?.patients
+          if (patients?.first_name) {
+            setPatientContact({ firstName: patients.first_name, phone: patients.phone ?? null })
+          }
+        },
+        () => {}
+      )
+    return () => { cancelled = true }
+  }, [invoiceId])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -79,7 +105,12 @@ export function PaymentEntryModal({
         ? ' Payment total was updated, but detailed payment history could not be stored on this database schema yet.'
         : ''
       alert(`Payment recorded. Remaining balance: ${remainingAfterPayment.toFixed(2)}.${warning}`)
-      onSaved()
+
+      if (patientContact?.phone) {
+        setThanksPrompt({ firstName: patientContact.firstName, phone: patientContact.phone, amount: parsedAmount })
+      } else {
+        onSaved()
+      }
     } catch (error) {
       logBillingError('Failed to record payment', error, { invoiceId, amount: parsedAmount })
       alert(`Failed to record payment: ${getFriendlySupabaseErrorMessage(error)}`)
@@ -158,6 +189,15 @@ export function PaymentEntryModal({
           </div>
         </form>
       </div>
+
+      {thanksPrompt && (
+        <PaymentThanksPrompt
+          firstName={thanksPrompt.firstName}
+          phone={thanksPrompt.phone}
+          amount={thanksPrompt.amount}
+          onClose={() => { setThanksPrompt(null); onSaved() }}
+        />
+      )}
     </div>
   )
 }

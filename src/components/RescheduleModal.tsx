@@ -69,7 +69,7 @@ export function RescheduleModal({
 
       const { error } = await supabase
         .from('appointments')
-        .update({ date_time: startDateTime.toISOString(), status: 'Scheduled' })
+        .update({ date_time: startDateTime.toISOString(), status: 'Scheduled', reminder_sent_at: null })
         .eq('id', appointment.id)
 
       if (error) throw error

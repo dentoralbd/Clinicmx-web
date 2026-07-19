@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { RescheduleModal } from '@/components/RescheduleModal'
+import { ReminderQueue } from '@/components/ReminderQueue'
 import { getPatientDobOrAge } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 
@@ -35,6 +36,7 @@ export function Appointments() {
   const [rescheduleAppointment, setRescheduleAppointment] = useState<Appointment | null>(null)
   const [addVisitPrompt, setAddVisitPrompt] = useState<Appointment | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reminderRefresh, setReminderRefresh] = useState(0)
   const navigate = useNavigate()
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
@@ -159,6 +161,8 @@ export function Appointments() {
         </div>
       )}
 
+      <ReminderQueue refreshToken={reminderRefresh} />
+
       <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold">Week View</h3>
@@ -235,7 +239,7 @@ export function Appointments() {
         <AppointmentModal
           selectedDate={selectedDate}
           onClose={() => setShowModal(false)}
-          onSave={() => { loadAppointments(); loadWeekAppointments(); setShowModal(false) }}
+          onSave={() => { loadAppointments(); loadWeekAppointments(); setReminderRefresh(n => n + 1); setShowModal(false) }}
         />
       )}
 
@@ -243,7 +247,7 @@ export function Appointments() {
         <RescheduleModal
           appointment={rescheduleAppointment}
           onClose={() => setRescheduleAppointment(null)}
-          onSave={() => { loadAppointments(); loadWeekAppointments(); setRescheduleAppointment(null) }}
+          onSave={() => { loadAppointments(); loadWeekAppointments(); setReminderRefresh(n => n + 1); setRescheduleAppointment(null) }}
         />
       )}
 

@@ -8,6 +8,7 @@ import { AppointmentModal } from '@/components/AppointmentModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
@@ -445,6 +446,7 @@ export function PatientProfile() {
   const [visitTreatmentsDone, setVisitTreatmentsDone] = useState<VisitTreatmentEntry[]>([])
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
+  const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number } | null>(null)
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
   // Treatment plan cost confirmation: prescription submit is gated behind this
   // dialog whenever the prescription has plan entries; the doctor enters costs or defers.
@@ -1033,6 +1035,9 @@ export function PatientProfile() {
         }
         if (linkedInvoiceId && insertedVisit?.id) {
           await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
+        }
+        if (patient?.phone) {
+          setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount })
         }
       }
 
@@ -3807,6 +3812,15 @@ export function PatientProfile() {
           dentitionType={patientDentition}
           onSubmit={handleVisitSubmit}
           onClose={() => setShowVisitForm(false)}
+        />
+      )}
+
+      {visitPaymentThanks && (
+        <PaymentThanksPrompt
+          firstName={visitPaymentThanks.firstName}
+          phone={visitPaymentThanks.phone}
+          amount={visitPaymentThanks.amount}
+          onClose={() => setVisitPaymentThanks(null)}
         />
       )}
 
