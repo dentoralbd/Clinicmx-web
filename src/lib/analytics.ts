@@ -33,6 +33,12 @@ export interface AnalyticsAppointment {
   status: string | null
 }
 
+export interface AnalyticsPayment {
+  invoice_id: string
+  amount: number | null
+  payment_date: string
+}
+
 export type AnalyticsRange = '6m' | '12m' | 'all'
 
 // ---------- month axis helpers ----------
@@ -40,6 +46,11 @@ export type AnalyticsRange = '6m' | '12m' | 'all'
 export function monthKey(dateStr: string): string {
   const d = new Date(dateStr)
   return isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM')
+}
+
+export function dayKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  return isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd')
 }
 
 export function monthLabel(key: string): string {
@@ -269,6 +280,81 @@ export function revenueByTreatmentType(
   const unlinked = collectedByType.get(UNLINKED_REVENUE_LABEL) || 0
   if (unlinked > 0) rows.push({ type: UNLINKED_REVENUE_LABEL, collected: unlinked })
   return rows
+}
+
+// ---------- daily revenue (calendar) ----------
+
+/**
+ * Σ payment amounts per calendar day ('yyyy-MM-dd'), from the payments ledger —
+ * i.e. cash actually received that day, regardless of when the invoice was
+ * raised. Payments belonging to Merged invoices are skipped, matching the rest
+ * of this module.
+ */
+export function dailyCollected(
+  payments: AnalyticsPayment[],
+  activeInvoiceIds: Set<string>
+): Map<string, number> {
+  const byDay = new Map<string, number>()
+  for (const p of payments) {
+    if (!activeInvoiceIds.has(p.invoice_id)) continue
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    const key = dayKey(p.payment_date)
+    if (!key) continue
+    byDay.set(key, (byDay.get(key) || 0) + amount)
+  }
+  return byDay
+}
+
+export interface PaymentsByPatientRow {
+  /** null when the payment's invoice has no patient_id — rendered non-clickable. */
+  patientId: string | null
+  name: string
+  collected: number
+  paymentCount: number
+}
+
+/**
+ * Groups a set of payments by the patient of the invoice each was made against.
+ * Used for the day-detail breakdown: a treatment-plan invoice mixes several
+ * procedure types, so who paid is more meaningful there than what was paid for.
+ * Rows sum to exactly what those payments collected. Sorted desc by amount.
+ */
+export function paymentsByPatient(
+  payments: AnalyticsPayment[],
+  invoices: AnalyticsInvoice[],
+  patients: AnalyticsPatient[]
+): PaymentsByPatientRow[] {
+  const nameById = new Map<string, string>()
+  for (const p of patients) {
+    nameById.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown Patient')
+  }
+  const invoiceById = new Map<string, AnalyticsInvoice>()
+  for (const inv of invoices) invoiceById.set(inv.id, inv)
+
+  const byPatient = new Map<string, { patientId: string | null; collected: number; paymentCount: number }>()
+  for (const p of payments) {
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    const inv = invoiceById.get(p.invoice_id)
+    if (!inv || !isActiveInvoice(inv)) continue
+
+    // Payments on patient-less invoices all fold into one "Unknown Patient" row.
+    const key = inv.patient_id || ''
+    const bucket = byPatient.get(key) || { patientId: inv.patient_id, collected: 0, paymentCount: 0 }
+    bucket.collected += amount
+    bucket.paymentCount += 1
+    byPatient.set(key, bucket)
+  }
+
+  return Array.from(byPatient.values())
+    .map(({ patientId, collected, paymentCount }) => ({
+      patientId,
+      name: (patientId && nameById.get(patientId)) || 'Unknown Patient',
+      collected,
+      paymentCount,
+    }))
+    .sort((a, b) => b.collected - a.collected)
 }
 
 export interface TopRevenueSource {

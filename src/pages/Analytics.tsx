@@ -19,9 +19,11 @@ import {
   type AnalyticsAppointment,
   type AnalyticsInvoice,
   type AnalyticsPatient,
+  type AnalyticsPayment,
   type AnalyticsRange,
   type AnalyticsTreatment,
 } from '@/lib/analytics'
+import { RevenueCalendar } from '@/components/analytics/RevenueCalendar'
 import { RevenueSection } from '@/components/analytics/RevenueSection'
 import { PatientSection } from '@/components/analytics/PatientSection'
 import { TreatmentMixSection } from '@/components/analytics/TreatmentMixSection'
@@ -54,6 +56,7 @@ export function Analytics() {
   const [treatments, setTreatments] = useState<AnalyticsTreatment[]>([])
   const [patients, setPatients] = useState<AnalyticsPatient[]>([])
   const [appointments, setAppointments] = useState<AnalyticsAppointment[]>([])
+  const [payments, setPayments] = useState<AnalyticsPayment[]>([])
   const [range, setRange] = useState<AnalyticsRange>('12m')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -70,7 +73,7 @@ export function Analytics() {
       else setLoading(true)
       setLoadError(null)
 
-      const [invoiceRows, treatmentRows, patientRows, appointmentRows] = await Promise.all([
+      const [invoiceRows, treatmentRows, patientRows, appointmentRows, paymentRows] = await Promise.all([
         fetchAllRows<AnalyticsInvoice>(
           'invoices',
           'id, patient_id, items, total_amount, paid_amount, status, created_at',
@@ -79,12 +82,14 @@ export function Analytics() {
         fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
         fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at'),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
+        fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
       ])
 
       setInvoices(invoiceRows)
       setTreatments(treatmentRows)
       setPatients(patientRows)
       setAppointments(appointmentRows)
+      setPayments(paymentRows)
     } catch (error) {
       console.error('Error loading analytics:', error)
       setLoadError('Could not load analytics data. Check your connection and try refreshing.')
@@ -217,6 +222,7 @@ export function Analytics() {
         />
       </div>
 
+      <RevenueCalendar payments={payments} invoices={invoices} patients={patients} />
       <RevenueSection monthly={monthly} byType={byType} topSources={topSources} />
       <PatientSection newPerMonth={newPerMonth} returningVsNew={returningVsNew} />
       <TreatmentMixSection counts={counts} avgCosts={avgCosts} conversion={conversion} />
