@@ -18,11 +18,11 @@ interface DueAppointment {
   } | null
 }
 
-const REMINDER_WINDOW_MS = 6 * 60 * 60 * 1000
+const REMINDER_WINDOW_MS = 12 * 60 * 60 * 1000
 const REFRESH_INTERVAL_MS = 60 * 1000
 
 /**
- * Due-reminder queue: appointments today, within the next 6 hours, that
+ * Due-reminder queue: appointments today, within the next 12 hours, that
  * haven't had a WhatsApp reminder sent yet. One tap opens WhatsApp with a
  * prefilled message and marks the appointment reminded. Renders nothing when
  * the queue is empty (including on error — this must never break the page).

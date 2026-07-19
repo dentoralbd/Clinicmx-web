@@ -2,10 +2,10 @@ import { formatBDT } from '@/lib/utils'
 import { toWhatsAppNumber } from '@/lib/sharePdf'
 
 /** Displayed in reminder/thank-you message text. Edit to match the clinic. */
-export const CLINIC_NAME = 'ClinicMx'
+export const CLINIC_NAME = 'DentOral Dental Care'
 
 export function buildAppointmentReminderMessage(firstName: string, timeStr: string, type: string): string {
-  return `Hello ${firstName}, this is a friendly reminder from ${CLINIC_NAME}: you have a ${type} appointment today at ${timeStr}. Please reply to confirm, or call us if you need to reschedule. Thank you!`
+  return `Hello ${firstName}, this is a friendly reminder from ${CLINIC_NAME}: you have a ${type} appointment today at ${timeStr}. Please call us if you need to reschedule. Thank you!`
 }
 
 export function buildPaymentThanksMessage(firstName: string, amount: number): string {
