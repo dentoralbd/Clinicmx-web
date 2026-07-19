@@ -24,6 +24,7 @@ interface Appointment {
     last_name: string
     date_of_birth?: string | null
     age?: number | string | null
+    phone?: string | null
   }
 }
 
@@ -79,7 +80,7 @@ export function Appointments() {
         .from('appointments')
         .select(`
           *,
-          patients (first_name, last_name, date_of_birth)
+          patients (first_name, last_name, date_of_birth, phone)
         `)
         .gte('date_time', startOfDay.toISOString())
         .lte('date_time', endOfDay.toISOString())

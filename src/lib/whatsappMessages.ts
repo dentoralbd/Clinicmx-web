@@ -12,6 +12,10 @@ export function buildPaymentThanksMessage(firstName: string, amount: number): st
   return `Dear ${firstName}, we have received your payment of ${formatBDT(amount)}. Thank you for choosing ${CLINIC_NAME}. We wish you good health!`
 }
 
+export function buildRescheduleMessage(firstName: string, dateStr: string, timeStr: string): string {
+  return `Hello ${firstName}, your appointment with ${CLINIC_NAME} has been rescheduled to ${dateStr} at ${timeStr}. Please call us if you have any questions. Thank you!`
+}
+
 /**
  * Opens WhatsApp with a prefilled message to the given (stored-format) phone
  * number. Must be called synchronously inside a click handler — browsers

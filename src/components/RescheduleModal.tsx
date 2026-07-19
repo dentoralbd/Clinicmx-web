@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLog'
+import { RescheduleWhatsAppPrompt } from '@/components/RescheduleWhatsAppPrompt'
 
 export function RescheduleModal({
   appointment,
@@ -17,6 +18,7 @@ export function RescheduleModal({
     patients?: {
       first_name: string
       last_name: string
+      phone?: string | null
     }
   }
   onClose: () => void
@@ -28,6 +30,7 @@ export function RescheduleModal({
     time: format(currentDate, 'HH:mm'),
   })
   const [saving, setSaving] = useState(false)
+  const [whatsAppPrompt, setWhatsAppPrompt] = useState<{ dateStr: string; timeStr: string } | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -84,13 +87,32 @@ export function RescheduleModal({
         details: `Rescheduled to ${format(startDateTime, 'MMM d, yyyy h:mm a')}`,
       })
 
-      onSave()
+      if (appointment.patients?.phone) {
+        setWhatsAppPrompt({
+          dateStr: format(startDateTime, 'MMMM d, yyyy'),
+          timeStr: format(startDateTime, 'h:mm a'),
+        })
+      } else {
+        onSave()
+      }
     } catch (error) {
       console.error('Error rescheduling appointment:', error)
       alert('Failed to reschedule appointment')
     } finally {
       setSaving(false)
     }
+  }
+
+  if (whatsAppPrompt) {
+    return (
+      <RescheduleWhatsAppPrompt
+        firstName={appointment.patients?.first_name || 'there'}
+        phone={appointment.patients?.phone ?? null}
+        dateStr={whatsAppPrompt.dateStr}
+        timeStr={whatsAppPrompt.timeStr}
+        onClose={() => { setWhatsAppPrompt(null); onSave() }}
+      />
+    )
   }
 
   return (
