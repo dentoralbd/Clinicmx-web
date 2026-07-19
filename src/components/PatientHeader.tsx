@@ -61,7 +61,7 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
 
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold leading-tight sm:text-2xl">
+              <h1 className="font-display text-xl font-bold leading-tight sm:text-2xl">
                 {patient.first_name} {patient.last_name}
               </h1>
               {patient.patient_code && (

@@ -566,7 +566,7 @@ export function Billing() {
     <div className="space-y-6 page-fade-in">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Billing</h1>
+          <h1 className="font-display text-2xl font-bold">Billing</h1>
           <p className="text-text-secondary mt-1">Invoices, payments, templates, and reports</p>
         </div>
 
@@ -1093,10 +1093,10 @@ function InvoiceRow({
   const itemPreview = buildInvoiceItemPreview(items)
 
   const statusColors: Record<string, string> = {
-    Pending: 'bg-orange-100 text-orange-700',
-    Partial: 'bg-amber-100 text-amber-700',
-    Paid: 'bg-green-100 text-green-700',
-    Overdue: 'bg-red-100 text-red-700',
+    Pending: 'pill-warning',
+    Partial: 'pill-warning',
+    Paid: 'pill-success',
+    Overdue: 'pill-error',
   }
 
   const overdueDays = invoice.due_date && invoice.status !== 'Paid'

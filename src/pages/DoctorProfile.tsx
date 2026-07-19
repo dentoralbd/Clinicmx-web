@@ -555,7 +555,7 @@ export function DoctorProfile() {
             {initials || <Stethoscope className="w-8 h-8" />}
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold truncate">
+            <h1 className="font-display text-2xl font-bold truncate">
               {form.full_name ? `Dr. ${stripDrPrefix(form.full_name)}` : 'Doctor Profile'}
             </h1>
             <p className="text-blue-200 text-sm mt-0.5 truncate">

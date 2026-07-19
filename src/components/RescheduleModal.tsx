@@ -98,7 +98,7 @@ export function RescheduleModal({
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-start justify-between">
           <div>
-            <h2 className="text-xl font-bold">Reschedule Appointment</h2>
+            <h2 className="font-display text-xl font-bold">Reschedule Appointment</h2>
             <p className="text-sm text-text-secondary mt-1">
               {appointment.patients
                 ? `${appointment.patients.first_name} ${appointment.patients.last_name} • `

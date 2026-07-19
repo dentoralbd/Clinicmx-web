@@ -2605,9 +2605,9 @@ export function PatientProfile() {
     planGroupTeeth.forEach((teeth) => teeth.sort((a, b) => a - b))
 
     const statusBadgeClass = (status: string) =>
-      status === 'Completed' ? 'bg-green-100 text-green-800' :
-      status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-      status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+      status === 'Completed' ? 'pill-success' :
+      status === 'In Progress' ? 'pill-warning' :
+      status === 'Cancelled' ? 'pill-error' :
       'bg-gray-100 text-gray-800'
 
     const isTreatmentLinked = (treatment: any) =>
@@ -2683,9 +2683,9 @@ export function PatientProfile() {
               value={treatment.status}
               onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
               className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
-                treatment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                treatment.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                treatment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                treatment.status === 'Completed' ? 'pill-success' :
+                treatment.status === 'In Progress' ? 'pill-warning' :
+                treatment.status === 'Cancelled' ? 'pill-error' :
                 'bg-gray-100 text-gray-800'
               }`}
             >
@@ -2698,11 +2698,11 @@ export function PatientProfile() {
           <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
           <td className="px-4 py-3 text-sm">
             {isLinked ? (
-              <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Invoiced</span>
+              <span className="pill-success text-xs">Invoiced</span>
             ) : treatment.status === 'Cancelled' ? (
               <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Not billable</span>
             ) : (
-              <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">Ready to bill</span>
+              <span className="pill-warning text-xs">Ready to bill</span>
             )}
           </td>
           <td className="px-4 py-3 text-right">
@@ -2785,7 +2785,7 @@ export function PatientProfile() {
             </td>
             <td className="px-4 py-3 text-sm">{formatCurrency(totalCost)}</td>
             <td className="px-4 py-3 text-sm">
-              <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${linkedCount === members.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+              <span className={`text-xs whitespace-nowrap ${linkedCount === members.length ? 'pill-success' : 'pill-warning'}`}>
                 {linkedCount === members.length ? 'Invoiced' : linkedCount === 0 ? 'Ready to bill' : `${linkedCount}/${members.length} invoiced`}
               </span>
             </td>
@@ -3102,10 +3102,10 @@ export function PatientProfile() {
                   {upcomingIds.has(appointment.id) && (
                     <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">Upcoming</span>
                   )}
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    appointment.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                    appointment.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                    'bg-blue-100 text-blue-800'
+                  <span className={`text-xs ${
+                    appointment.status === 'Completed' ? 'pill-success' :
+                    appointment.status === 'Cancelled' ? 'pill-error' :
+                    'pill-info'
                   }`}>
                     {appointment.status}
                   </span>
@@ -3734,7 +3734,7 @@ export function PatientProfile() {
         <button
           onClick={() => setShowQuickAdd((prev) => !prev)}
           aria-label={showQuickAdd ? 'Close quick actions' : 'Open quick actions'}
-          className={`relative z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all duration-200 hover:shadow-xl ${showQuickAdd ? 'rotate-45' : ''}`}
+          className={`relative z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-bright text-white shadow-elevation-high transition-all duration-200 hover:shadow-xl ${showQuickAdd ? 'rotate-45' : ''}`}
         >
           <Plus className="h-6 w-6" />
         </button>
@@ -3814,7 +3814,7 @@ export function PatientProfile() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold">Edit Visit</h2>
+              <h2 className="font-display text-xl font-bold">Edit Visit</h2>
               <button type="button" onClick={() => setEditingVisit(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
@@ -4196,7 +4196,7 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Tooth #{toothNumber}</h2>
+          <h2 className="font-display text-xl font-bold">Tooth #{toothNumber}</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -4317,7 +4317,7 @@ function VisitFormModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Add Visit</h2>
+          <h2 className="font-display text-xl font-bold">Add Visit</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -4815,7 +4815,7 @@ function PrescriptionFormModal({
               <Stethoscope className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">
+              <h2 className="font-display text-lg font-bold text-white">
                 {isEditing ? 'Update Prescription' : 'New Prescription'}
               </h2>
               <p className="text-blue-200 text-xs">Dental Prescription Form</p>
@@ -5508,7 +5508,7 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h2 className="text-xl font-bold">Edit Treatment</h2>
+          <h2 className="font-display text-xl font-bold">Edit Treatment</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -5618,7 +5618,7 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h2 className="text-xl font-bold">New Treatment Plan</h2>
+          <h2 className="font-display text-xl font-bold">New Treatment Plan</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -5823,7 +5823,7 @@ function MedicalHistoryModal({ formData, setFormData, onSubmit, onClose }: any) 
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Medical History</h2>
+          <h2 className="font-display text-xl font-bold">Medical History</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -5893,9 +5893,9 @@ function PatientInvoiceRow({
   const subtotal = getInvoiceItemSubtotal(items)
   const itemPreview = buildInvoiceItemPreview(items)
   const statusColors: Record<string, string> = {
-    Paid: 'bg-green-100 text-green-800',
-    Partial: 'bg-yellow-100 text-yellow-800',
-    Pending: 'bg-red-100 text-red-800',
+    Paid: 'pill-success',
+    Partial: 'pill-warning',
+    Pending: 'pill-warning',
     Merged: 'bg-gray-100 text-gray-500',
   }
   const due = getInvoiceDue(invoice)

@@ -143,7 +143,7 @@ export function Appointments() {
     <div className="space-y-6 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Appointments</h1>
+          <h1 className="font-display text-2xl font-bold">Appointments</h1>
           <p className="text-text-secondary mt-1">Schedule and manage appointments</p>
         </div>
         <Button onClick={() => setShowModal(true)}>
@@ -250,7 +250,7 @@ export function Appointments() {
       {addVisitPrompt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
-            <h2 className="text-lg font-bold">Add visit to patient profile?</h2>
+            <h2 className="font-display text-lg font-bold">Add visit to patient profile?</h2>
             <p className="text-sm text-text-secondary mt-2">
               {addVisitPrompt.patients
                 ? `${addVisitPrompt.patients.first_name} ${addVisitPrompt.patients.last_name} • `
@@ -295,10 +295,10 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
   }
 
   const statusColors: Record<string, string> = {
-    Scheduled: 'bg-blue-100 text-blue-700',
-    Confirmed: 'bg-green-100 text-green-700',
+    Scheduled: 'pill-info',
+    Confirmed: 'pill-success',
     Completed: 'bg-gray-100 text-gray-700',
-    Cancelled: 'bg-red-100 text-red-700',
+    Cancelled: 'pill-error',
   }
 
   const isClosed = appointment.status === 'Cancelled' || appointment.status === 'Completed'

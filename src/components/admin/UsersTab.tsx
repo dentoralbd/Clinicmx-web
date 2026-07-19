@@ -304,7 +304,7 @@ export function UsersTab() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8 max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-bold">{modal === 'create' ? 'Add Account' : `Edit ${selected?.full_name}`}</h2>
+              <h2 className="font-display text-lg font-bold">{modal === 'create' ? 'Add Account' : `Edit ${selected?.full_name}`}</h2>
               <button type="button" onClick={() => setModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
@@ -455,7 +455,7 @@ export function UsersTab() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Reset Password — {selected.full_name}</h2>
+              <h2 className="font-display text-lg font-bold">Reset Password — {selected.full_name}</h2>
               <button type="button" onClick={() => setModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>

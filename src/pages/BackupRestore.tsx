@@ -300,7 +300,7 @@ export function BackupRestore() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold flex items-center gap-2">
           <DatabaseBackup className="w-7 h-7 text-primary" />
           Backup &amp; Restore
         </h1>
@@ -489,7 +489,7 @@ export function BackupRestore() {
 
         {restore.step === 'passphrase' && (
           <div className="space-y-3">
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2">
+            <div className="bg-amber-500/[0.14] border border-amber-500/[0.35] text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               {restore.message}
             </div>
@@ -632,7 +632,7 @@ export function BackupRestore() {
             {restore.warnings.map((w) => (
               <div
                 key={w}
-                className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2"
+                className="bg-amber-500/[0.14] border border-amber-500/[0.35] text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2"
               >
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 {w}
@@ -766,7 +766,7 @@ export function BackupRestore() {
         {restore.step === 'done' && (
           <div className="space-y-4">
             {restore.outcome.tables.some((t) => t.error) ? (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2">
+              <div className="bg-amber-500/[0.14] border border-amber-500/[0.35] text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 Restore finished with errors. Records whose parent table failed will show a foreign-key error —
                 fix the parent problem and run the same restore again (already-restored records are skipped

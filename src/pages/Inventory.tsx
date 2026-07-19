@@ -331,7 +331,7 @@ export function Inventory() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
             <Package className="w-6 h-6 text-primary" />
             Inventory Management
           </h1>
@@ -364,7 +364,7 @@ export function Inventory() {
       {totalAlerts > 0 && (
         <div className="space-y-2">
           {expiringMaterials.length > 0 && (
-            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <div className="flex items-start gap-3 bg-amber-500/[0.14] border border-amber-500/[0.35] rounded-lg px-4 py-3">
               <Calendar className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-amber-800">
@@ -384,7 +384,7 @@ export function Inventory() {
             </div>
           )}
           {(lowStockMaterials.length > 0 || lowStockInstruments.length > 0) && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            <div className="flex items-start gap-3 bg-red-500/[0.14] border border-red-500/[0.35] rounded-lg px-4 py-3">
               <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-red-800">
@@ -794,20 +794,20 @@ function OverviewTab({
 function StockBadge({ status, threshold }: { status: 'ok' | 'low' | 'out'; threshold: number }) {
   if (status === 'out')
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full border border-red-200">
+      <span className="pill-error inline-flex items-center gap-1">
         <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
         Out of Stock
       </span>
     )
   if (status === 'low')
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full border border-orange-200">
+      <span className="pill-warning inline-flex items-center gap-1">
         <span className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
         Low ≤{threshold}
       </span>
     )
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-200">
+    <span className="pill-success inline-flex items-center gap-1">
       <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
       OK
     </span>
@@ -819,13 +819,13 @@ function ExpiryBadge({ expiry_date, days }: { expiry_date: string | null; days: 
   if (days === null) return <span className="text-xs text-text-secondary">{safeFormat(expiry_date, 'MMM d, yyyy')}</span>
   if (days < 0)
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full border border-red-200">
+      <span className="pill-error inline-flex items-center gap-1">
         Expired
       </span>
     )
   if (days <= EXPIRY_WARNING_DAYS)
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full border border-amber-200">
+      <span className="pill-warning inline-flex items-center gap-1">
         <Clock className="w-3 h-3" />
         {days}d left
       </span>
@@ -935,7 +935,7 @@ function ItemFormModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold">{editing ? 'Edit Item' : `Add ${formData.category} Item`}</h2>
+          <h2 className="font-display text-xl font-bold">{editing ? 'Edit Item' : `Add ${formData.category} Item`}</h2>
           <div className="flex items-center gap-2">
             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${CATEGORY_COLORS[formData.category as Category]}`}>
               {formData.category}
@@ -1098,7 +1098,7 @@ function AdjustStockModal({
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-5 border-b border-gray-200 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-bold">Adjust Stock — {item.name}</h2>
+            <h2 className="font-display text-lg font-bold">Adjust Stock — {item.name}</h2>
             <p className="text-sm text-text-secondary mt-1">
               Current: <span className="font-semibold">{item.quantity} {item.unit}</span>
             </p>

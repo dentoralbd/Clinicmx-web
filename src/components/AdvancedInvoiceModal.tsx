@@ -167,7 +167,7 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold">New Advanced Invoice</h2>
+          <h2 className="font-display text-xl font-bold">New Advanced Invoice</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>

@@ -153,7 +153,7 @@ export function BackupReminderBanner() {
       {banners.map(({ category, instant }) => (
         <div
           key={category}
-          className="bg-amber-50 border-b border-amber-200 text-amber-800 px-4 py-2 flex items-center gap-2 text-sm"
+          className="bg-amber-500/[0.14] border-b border-amber-500/[0.35] text-amber-800 px-4 py-2 flex items-center gap-2 text-sm"
         >
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span className="flex-1">

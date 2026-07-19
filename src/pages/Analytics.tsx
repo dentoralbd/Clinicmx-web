@@ -151,7 +151,7 @@ export function Analytics() {
     <div className="space-y-6 page-fade-in">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Clinic Analytics</h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight">Clinic Analytics</h1>
           <p className="text-text-secondary mt-1">Revenue, patient, and treatment trends.</p>
         </div>
         <div className="flex items-center gap-2">

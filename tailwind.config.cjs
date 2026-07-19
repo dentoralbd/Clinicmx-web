@@ -8,6 +8,8 @@ module.exports = {
         primary: {
           DEFAULT: '#0D9488',
           hover: '#0F766E',
+          bright: '#14B8A6',
+          deep: '#115E59',
         },
         highlight: {
           DEFAULT: '#E91E8C',
@@ -20,14 +22,17 @@ module.exports = {
         background: '#F0FDFB',
         card: '#FFFFFF',
         text: {
-          primary: '#1B2733',
-          secondary: '#5A7184',
+          primary: '#0B1F26',
+          secondary: '#51707B',
         },
       },
       boxShadow: {
-        'elevation-low': '0 1px 2px 0 rgba(16, 24, 40, 0.05), 0 1px 3px 0 rgba(16, 24, 40, 0.06)',
-        'elevation-md': '0 4px 12px -2px rgba(16, 24, 40, 0.10), 0 2px 4px -2px rgba(16, 24, 40, 0.06)',
-        'elevation-high': '0 12px 28px -6px rgba(16, 24, 40, 0.16), 0 6px 12px -4px rgba(16, 24, 40, 0.08)',
+        'elevation-low': '0 1px 2px rgba(11,31,38,.05), 0 8px 24px -12px rgba(13,148,136,.18)',
+        'elevation-md': '0 2px 4px rgba(11,31,38,.06), 0 12px 32px -14px rgba(13,148,136,.22)',
+        'elevation-high': '0 2px 6px rgba(11,31,38,.06), 0 18px 44px -16px rgba(13,148,136,.28)',
+      },
+      fontFamily: {
+        display: ['"Space Grotesk"', 'Inter', 'system-ui', 'sans-serif'],
       },
     },
   },

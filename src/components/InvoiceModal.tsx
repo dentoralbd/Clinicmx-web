@@ -664,7 +664,7 @@ export function InvoiceModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
       <div className="modal-content bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-3 sm:p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold">{isEditMode ? 'Edit Invoice' : 'New Invoice'}</h2>
+          <h2 className="font-display text-xl font-bold">{isEditMode ? 'Edit Invoice' : 'New Invoice'}</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>

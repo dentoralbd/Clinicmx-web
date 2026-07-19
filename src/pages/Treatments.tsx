@@ -240,7 +240,7 @@ export function Treatments() {
     <div className="space-y-6 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Treatments</h1>
+          <h1 className="font-display text-2xl font-bold">Treatments</h1>
           <p className="text-text-secondary mt-1">Manage treatment plans and procedures</p>
         </div>
         <Button onClick={() => setShowModal(true)}>
@@ -478,10 +478,10 @@ const STATUS_TRANSITIONS: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  Planned: 'bg-blue-100 text-blue-700',
-  'In Progress': 'bg-yellow-100 text-yellow-700',
-  Completed: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
+  Planned: 'pill-info',
+  'In Progress': 'pill-warning',
+  Completed: 'pill-success',
+  Cancelled: 'pill-error',
 }
 
 function GroupTreatmentRow({ members, expanded, onToggle, onDelete, onStatusChange, onGroupStatusChange, onEdit, onBill }: {
@@ -603,9 +603,9 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, 
               </span>
             )}
             {linked ? (
-              <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Invoiced</span>
+              <span className="pill-success text-xs">Invoiced</span>
             ) : readyToBill ? (
-              <span className="text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">Ready to bill</span>
+              <span className="pill-warning text-xs">Ready to bill</span>
             ) : null}
           </div>
           {treatment.description && (
@@ -694,7 +694,7 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h2 className="text-xl font-bold">Edit Treatment</h2>
+          <h2 className="font-display text-xl font-bold">Edit Treatment</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
@@ -894,7 +894,7 @@ function TreatmentModal({ onClose, onSave }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10 flex items-center justify-between">
-          <h2 className="text-xl font-bold">New Treatment</h2>
+          <h2 className="font-display text-xl font-bold">New Treatment</h2>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>

@@ -11,15 +11,6 @@ import { format } from 'date-fns'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 
-const avatarColors = [
-  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
-  'bg-pink-500', 'bg-teal-500', 'bg-indigo-500', 'bg-rose-500',
-]
-
-function getAvatarColor(id: string) {
-  return avatarColors[id.charCodeAt(0) % avatarColors.length]
-}
-
 function deriveDateOfBirthFromAge(age: number) {
   const today = new Date()
   const approximateBirthDate = new Date(today.getFullYear() - age, today.getMonth(), today.getDate())
@@ -204,7 +195,7 @@ export function Patients() {
     <div className="space-y-6 page-fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Patients</h1>
+          <h1 className="font-display text-2xl font-bold">Patients</h1>
           <p className="text-text-secondary">Manage patient records</p>
         </div>
         <Button onClick={() => setShowForm(true)}>
@@ -271,7 +262,7 @@ export function Patients() {
                         className="flex items-center gap-3 cursor-pointer"
                         onClick={() => navigate(`/patients/${patient.id}`)}
                       >
-                        <div className={`w-8 h-8 ${getAvatarColor(patient.id)} rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0`}>
+                        <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-bright rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                           {patient.first_name?.[0] || '?'}
                         </div>
                         <span className="font-medium group-hover:text-primary transition-colors">
@@ -326,7 +317,7 @@ export function Patients() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="text-xl font-bold">{editingId ? 'Edit Patient' : 'Add New Patient'}</h2>
+              <h2 className="font-display text-xl font-bold">{editingId ? 'Edit Patient' : 'Add New Patient'}</h2>
               <button type="button" onClick={() => { setShowForm(false); resetForm() }} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>

@@ -53,7 +53,7 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[15px] font-medium transition-all duration-150 ${
     isActive
-      ? 'bg-gradient-to-r from-primary to-primary-hover text-white shadow-elevation-md'
+      ? 'bg-gradient-to-r from-primary to-primary-bright text-white shadow-elevation-md'
       : 'text-text-secondary hover:bg-primary/5 hover:text-primary hover:translate-x-0.5'
   }`
 
@@ -287,7 +287,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
               onClick={onToggleDesignPreview}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-150 text-sm font-medium ${
                 designPreview
-                  ? 'bg-gradient-to-r from-primary to-primary-hover text-white shadow-elevation-low'
+                  ? 'bg-gradient-to-r from-primary to-primary-bright text-white shadow-elevation-low'
                   : 'text-text-secondary hover:bg-primary/5 hover:text-primary border border-dashed border-gray-300'
               }`}
             >

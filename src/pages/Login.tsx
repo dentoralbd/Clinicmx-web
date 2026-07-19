@@ -263,7 +263,7 @@ export function Login() {
               <img src="/logo.png" alt="ClinicMx Logo" className="w-20 h-20 object-contain" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">ClinicMx</h1>
+          <h1 className="font-display text-3xl font-bold text-gray-900 mb-2">ClinicMx</h1>
           <p className="text-text-secondary">Dental Clinic Management</p>
         </div>
 

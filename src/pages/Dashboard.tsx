@@ -125,7 +125,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6 page-fade-in">
       {getAppRole() === 'admin' && pendingIpCount > 0 && !ipBannerDismissed && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+        <div className="flex items-center gap-3 bg-amber-500/[0.14] border border-amber-500/[0.35] rounded-xl px-4 py-3">
           <Wifi className="w-5 h-5 text-amber-600 shrink-0" />
           <p className="text-sm text-amber-800 flex-1">
             {pendingIpCount} network access request{pendingIpCount > 1 ? 's' : ''} waiting for your
@@ -148,7 +148,7 @@ export function Dashboard() {
       )}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-text-secondary mt-1">Welcome back! Here's your clinic overview.</p>
           <p className="text-xs font-medium text-primary/70 mt-1">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
@@ -362,7 +362,7 @@ function StatCard({ title, value, icon, color, onClick }: any) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">{title}</p>
-          <p className="text-3xl font-bold tracking-tight mt-1.5">{value}</p>
+          <p className="font-display text-3xl font-bold tracking-tight mt-1.5">{value}</p>
         </div>
         <div className={`w-12 h-12 rounded-xl ${colors[color].chip} flex items-center justify-center shadow-elevation-low group-hover:scale-110 transition-transform duration-150`}>
           {icon}
@@ -378,10 +378,10 @@ function StatCard({ title, value, icon, color, onClick }: any) {
 }
 
 const statusColors: Record<string, string> = {
-  Scheduled: 'bg-blue-100 text-blue-700',
-  Confirmed: 'bg-green-100 text-green-700',
+  Scheduled: 'pill-info',
+  Confirmed: 'pill-success',
   Completed: 'bg-gray-100 text-gray-600',
-  Cancelled: 'bg-red-100 text-red-700',
+  Cancelled: 'pill-error',
 }
 
 function AppointmentItem({ time, patient, patientMeta, type, status }: any) {
@@ -404,19 +404,13 @@ function AppointmentItem({ time, patient, patientMeta, type, status }: any) {
   )
 }
 
-const avatarColors = [
-  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
-  'bg-pink-500', 'bg-teal-500', 'bg-indigo-500', 'bg-rose-500',
-]
-
-function PatientItem({ id, name, lastVisit, onClick }: any) {
-  const colorIndex = id ? id.charCodeAt(0) % avatarColors.length : 0
+function PatientItem({ id: _id, name, lastVisit, onClick }: any) {
   return (
     <button
       onClick={onClick}
       className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 w-full text-left hover:bg-primary/5 hover:border-primary/20 hover:shadow-elevation-low hover:-translate-y-0.5 transition-all duration-150 group"
     >
-      <div className={`w-10 h-10 ${avatarColors[colorIndex]} rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0`}>
+      <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-bright rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
         {name[0]}
       </div>
       <div className="flex-1 min-w-0">

@@ -91,7 +91,7 @@ export function QrSearch() {
   return (
     <div className="space-y-6 page-fade-in">
       <div>
-        <h1 className="text-2xl font-bold">QR Search</h1>
+        <h1 className="font-display text-2xl font-bold">QR Search</h1>
         <p className="text-text-secondary mt-1">
           Scan the QR code on a printed prescription to open the patient's profile
         </p>

@@ -784,7 +784,7 @@ export function Prescriptions() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Prescriptions</h1>
+          <h1 className="font-display text-2xl font-bold">Prescriptions</h1>
           <p className="text-text-secondary">Manage patient prescriptions and investigations</p>
         </div>
         <Button onClick={() => { resetForm(); setShowForm(true) }}>
@@ -941,7 +941,7 @@ export function Prescriptions() {
                   <Stethoscope className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">
+                  <h2 className="font-display text-lg font-bold text-white">
                     {editingId ? 'Update Prescription' : 'New Prescription'}
                   </h2>
                   <p className="text-blue-200 text-xs">Dental Prescription Form</p>
