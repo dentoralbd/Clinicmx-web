@@ -5,7 +5,13 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { getPatientDobOrAge, safeFormat, formatBDT } from '@/lib/utils'
 import { Users, Calendar, DollarSign, TrendingUp, RefreshCw, ArrowRight, DatabaseBackup, Wifi, X } from 'lucide-react'
 import { getAppRole } from '@/lib/appSession'
-import { BACKUP_CATEGORIES, getBackupSettings, type BackupCategory } from '@/lib/backupReminders'
+import {
+  BACKUP_CATEGORIES,
+  getBackupSettings,
+  getOverdueCategories,
+  type BackupCategory,
+  type BackupSettings,
+} from '@/lib/backupReminders'
 import { getDriveBackupStatus, type DriveBackupStatus } from '@/lib/deviceBackup'
 import { countPendingIpRequests } from '@/lib/ipAccess'
 
@@ -287,27 +293,19 @@ export function Dashboard() {
 
 const CATEGORY_LABEL: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' }
 
-// How stale a category's most recent Drive backup can be before it's no
-// longer "fresh" — roughly one missed cycle of slack on top of its cadence.
-const CATEGORY_FRESHNESS_MS: Record<BackupCategory, number> = {
-  daily: 36 * 60 * 60 * 1000,
-  weekly: 9 * 24 * 60 * 60 * 1000,
-  monthly: 35 * 24 * 60 * 60 * 1000,
-}
-
 function BackupHealthTile({ onClick }: { onClick: () => void }) {
-  // Which schedules THIS device has configured is legitimately local (it
-  // controls this device's own smart-upload), but freshness/timestamps come
-  // from Drive — the actual shared backups — so every browser/device shows
-  // the same "Backup health", not just what happened to run locally.
-  const settings = getBackupSettings()
-  const enabledCategories = BACKUP_CATEGORIES.filter((c) => settings[c].enabled)
-
+  // Both the schedule (Supabase) and the actual backup times (Drive) are now
+  // shared/system-wide, so every device shows the identical "Backup health"
+  // — not just what happened to run locally.
+  const [settings, setSettings] = useState<BackupSettings | null>(null)
   const [drive, setDrive] = useState<DriveBackupStatus | null>(null)
   const [driveError, setDriveError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    getBackupSettings().then((s) => {
+      if (!cancelled) setSettings(s)
+    })
     getDriveBackupStatus()
       .then((status) => {
         if (!cancelled) setDrive(status)
@@ -320,27 +318,28 @@ function BackupHealthTile({ onClick }: { onClick: () => void }) {
     }
   }, [])
 
+  const enabledCategories = settings ? BACKUP_CATEGORIES.filter((c) => settings[c].enabled) : []
+  const overdueCategories =
+    settings && drive ? new Set(getOverdueCategories(settings, drive).map((o) => o.category)) : new Set<BackupCategory>()
+
   const lastBackupAt = drive?.lastBackupAt ?? null
   const ageMs = lastBackupAt ? Date.now() - lastBackupAt.getTime() : null
   const overallStatus: 'loading' | 'fresh' | 'stale' | 'overdue' =
     !drive && !driveError
       ? 'loading'
-      : ageMs !== null && ageMs < 36 * 60 * 60 * 1000
-        ? 'fresh'
-        : ageMs !== null
-          ? 'stale'
-          : 'overdue'
+      : overdueCategories.size > 0
+        ? 'overdue'
+        : ageMs !== null && ageMs < 36 * 60 * 60 * 1000
+          ? 'fresh'
+          : ageMs !== null
+            ? 'stale'
+            : 'overdue'
   const dotClass = {
     loading: 'bg-gray-300',
     fresh: 'bg-green-500',
     stale: 'bg-amber-500',
     overdue: 'bg-red-500',
   }[overallStatus]
-
-  const isCategoryFresh = (category: BackupCategory) => {
-    const at = drive?.perCategory[category]
-    return !!at && Date.now() - at.getTime() < CATEGORY_FRESHNESS_MS[category]
-  }
 
   return (
     <button
@@ -372,13 +371,13 @@ function BackupHealthTile({ onClick }: { onClick: () => void }) {
                   : 'never'}
           </span>
         </div>
-        {enabledCategories.length === 0 ? (
-          <span className="text-xs text-text-secondary">No schedules enabled on this device</span>
+        {!settings ? null : enabledCategories.length === 0 ? (
+          <span className="text-xs text-text-secondary">No schedules enabled</span>
         ) : (
           enabledCategories.map((c) => (
             <span key={c} className="flex items-center gap-1.5 text-xs text-text-secondary">
               <span
-                className={`w-2 h-2 rounded-full ${!drive ? 'bg-gray-300' : isCategoryFresh(c) ? 'bg-green-500' : 'bg-red-500'}`}
+                className={`w-2 h-2 rounded-full ${!drive ? 'bg-gray-300' : overdueCategories.has(c) ? 'bg-red-500' : 'bg-green-500'}`}
               />
               {CATEGORY_LABEL[c]}
             </span>

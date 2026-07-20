@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { AlertTriangle, X } from 'lucide-react'
 import { getAppRole } from '@/lib/appSession'
 import {
+  getBackupSettings,
   getOverdueCategories,
   isBannerDismissedFor,
   shouldNotifyFor,
@@ -14,7 +15,7 @@ import {
   markRestoreDrillNudged,
   type BackupCategory,
 } from '@/lib/backupReminders'
-import { buildSerializedBackup, uploadSerializedBackup } from '@/lib/deviceBackup'
+import { buildSerializedBackup, uploadSerializedBackup, getDriveBackupStatus } from '@/lib/deviceBackup'
 import { addNotification } from '@/lib/notifications'
 
 const CATEGORY_LABEL: Record<BackupCategory, string> = {
@@ -48,7 +49,18 @@ export function BackupReminderBanner() {
       if (checking.current) return
       checking.current = true
       try {
-        const overdue = getOverdueCategories()
+        // Both reads are shared/system-wide (Supabase schedule + Drive's
+        // actual last-backup times) so every device computes the same
+        // overdue set — whichever device happens to be open handles it. If
+        // Drive is briefly unreachable, skip this cycle rather than risk a
+        // false "overdue" (or a spurious auto-upload) from stale/missing data.
+        let overdue: ReturnType<typeof getOverdueCategories> = []
+        try {
+          const [settings, drive] = await Promise.all([getBackupSettings(), getDriveBackupStatus()])
+          overdue = getOverdueCategories(settings, drive)
+        } catch {
+          return
+        }
         const visible: OverdueBanner[] = []
 
         for (const { category, instant, autoUpload } of overdue) {

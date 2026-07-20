@@ -1,4 +1,5 @@
 import { addDays, addMonths, addWeeks, isAfter, parseISO, set, setDay, subDays, subMonths, subWeeks } from 'date-fns'
+import { supabase } from './supabase'
 
 export type BackupCategory = 'daily' | 'weekly' | 'monthly'
 export const BACKUP_CATEGORIES: BackupCategory[] = ['daily', 'weekly', 'monthly']
@@ -19,9 +20,14 @@ export interface BackupSettings {
   updated_at?: string
 }
 
-const SETTINGS_KEY = 'clinicmx_backup_settings'
+// Reminder settings used to live in localStorage (per-device). They're now a
+// shared row in Supabase (backup_settings, a singleton table like
+// invoice_settings) so every device — phone, laptop, whatever — reads and
+// writes the SAME Daily/Weekly/Monthly schedule. Only one device needs to
+// configure it; any device with the app open can act on it.
+const SETTINGS_ROW_ID = 1
+const LOCAL_SETTINGS_CACHE_KEY = 'clinicmx_backup_settings_cache'
 const LAST_BACKUP_KEY = 'clinicmx_last_backup_at'
-const lastBackupCategoryKey = (c: BackupCategory) => `clinicmx_last_backup_at_${c}`
 const notifiedForKey = (c: BackupCategory) => `clinicmx_backup_notified_for_${c}`
 const bannerDismissedForKey = (c: BackupCategory) => `clinicmx_backup_banner_dismissed_for_${c}`
 
@@ -43,37 +49,69 @@ function isValidSchedule(value: unknown): value is ScheduleSettings {
   )
 }
 
-// Any older/malformed format (including the pre-multi-schedule single
-// `frequency` shape) is treated as "not set" and falls back to defaults per
-// category, rather than crashing or silently misreading it.
-export function getBackupSettings(): BackupSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (!raw) return { ...DEFAULT_BACKUP_SETTINGS }
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_BACKUP_SETTINGS }
-    return {
-      daily: isValidSchedule(parsed.daily) ? parsed.daily : { ...DEFAULT_SCHEDULE },
-      weekly: isValidSchedule(parsed.weekly) ? parsed.weekly : { ...DEFAULT_SCHEDULE },
-      monthly: isValidSchedule(parsed.monthly) ? parsed.monthly : { ...DEFAULT_SCHEDULE },
-      updated_at: typeof parsed.updated_at === 'string' ? parsed.updated_at : undefined,
-    }
-  } catch {
-    return { ...DEFAULT_BACKUP_SETTINGS }
+function normalizeSettings(raw: unknown): BackupSettings {
+  const parsed = (raw ?? {}) as Record<string, unknown>
+  return {
+    daily: isValidSchedule(parsed.daily) ? (parsed.daily as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
+    weekly: isValidSchedule(parsed.weekly) ? (parsed.weekly as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
+    monthly: isValidSchedule(parsed.monthly) ? (parsed.monthly as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
+    updated_at: typeof parsed.updated_at === 'string' ? parsed.updated_at : undefined,
   }
 }
 
-export function saveBackupSettings(settings: Omit<BackupSettings, 'updated_at'>): BackupSettings {
-  const next: BackupSettings = { ...settings, updated_at: new Date().toISOString() }
+function readSettingsCache(): BackupSettings | null {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
+    const raw = localStorage.getItem(LOCAL_SETTINGS_CACHE_KEY)
+    return raw ? normalizeSettings(JSON.parse(raw)) : null
   } catch {
-    // localStorage unavailable – silently skip
+    return null
   }
+}
+
+function writeSettingsCache(settings: BackupSettings) {
+  try {
+    localStorage.setItem(LOCAL_SETTINGS_CACHE_KEY, JSON.stringify(settings))
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Reads the shared schedule from Supabase (backup_settings, row id=1).
+ * Falls back to the last-known cached copy (then hard defaults) if offline
+ * or the table isn't reachable, so reminder checks still work without a
+ * network hiccup breaking the app.
+ */
+export async function getBackupSettings(): Promise<BackupSettings> {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('backup_settings')
+      .select('daily, weekly, monthly, updated_at')
+      .eq('id', SETTINGS_ROW_ID)
+      .maybeSingle()
+    if (error) throw error
+    const settings = normalizeSettings(data)
+    writeSettingsCache(settings)
+    return settings
+  } catch {
+    return readSettingsCache() ?? { ...DEFAULT_BACKUP_SETTINGS }
+  }
+}
+
+export async function saveBackupSettings(settings: Omit<BackupSettings, 'updated_at'>): Promise<BackupSettings> {
+  const next: BackupSettings = { ...settings, updated_at: new Date().toISOString() }
+  const { error } = await (supabase as any)
+    .from('backup_settings')
+    .upsert({ id: SETTINGS_ROW_ID, ...next }, { onConflict: 'id' })
+  if (error) throw new Error(`Could not save backup schedule: ${error.message}`)
+  writeSettingsCache(next)
   return next
 }
 
-/** Overall "last backup from this device" shown in Card 1, regardless of category. */
+/** "Last backup from this device" shown in Card 1 — deliberately per-device
+ * (it answers "did I personally just back up from here", not the shared
+ * fact — see deviceBackup.ts getDriveBackupStatus() for the shared truth
+ * used by the Dashboard health tile and overdue detection). */
 export function getLastBackupAt(): Date | null {
   try {
     const raw = localStorage.getItem(LAST_BACKUP_KEY)
@@ -83,27 +121,18 @@ export function getLastBackupAt(): Date | null {
   }
 }
 
-export function getLastBackupAtForCategory(category: BackupCategory): Date | null {
-  try {
-    const raw = localStorage.getItem(lastBackupCategoryKey(category))
-    return raw ? parseISO(raw) : null
-  } catch {
-    return null
-  }
-}
-
 /**
- * Stamp a completed device backup. Always updates the overall "last backup"
- * timestamp; when a category is given (a scheduled daily/weekly/monthly
- * backup, auto or manual-but-tagged), also stamps that category specifically
- * and clears its reminder markers so it stops nagging for this instant.
+ * Stamp a completed device backup. Updates the local "last backup from this
+ * device" timestamp and, when a category is given, clears this device's own
+ * reminder markers so its banner/notification clears immediately (overdue
+ * detection itself is Drive-based now, so other devices self-resolve too on
+ * their next check — this is just for snappier same-device UI feedback).
  */
 export function markBackupDone(category?: BackupCategory) {
   const now = new Date().toISOString()
   try {
     localStorage.setItem(LAST_BACKUP_KEY, now)
     if (category) {
-      localStorage.setItem(lastBackupCategoryKey(category), now)
       localStorage.removeItem(notifiedForKey(category))
       localStorage.removeItem(bannerDismissedForKey(category))
     }
@@ -154,14 +183,26 @@ export interface OverdueCategory {
   autoUpload: boolean
 }
 
+/** Shape of deviceBackup.ts's DriveBackupStatus, duplicated here (not
+ * imported) to avoid a circular dependency between the two modules. */
+export interface DriveBackupTimes {
+  lastBackupAt: Date | null
+  perCategory: Record<BackupCategory, Date | null>
+}
+
 /**
  * Every category that is currently overdue (its scheduled instant passed
- * with no backup done for that category since). Baselines against
+ * with no backup done for that category since), using Drive as the ground
+ * truth for "was a backup actually done" — the shared fact every device
+ * agrees on, not each device's own memory. Baselines against
  * settings.updated_at too, so enabling a schedule never instantly flags an
  * instant from before it was configured.
  */
-export function getOverdueCategories(now: Date = new Date()): OverdueCategory[] {
-  const settings = getBackupSettings()
+export function getOverdueCategories(
+  settings: BackupSettings,
+  drive: DriveBackupTimes,
+  now: Date = new Date()
+): OverdueCategory[] {
   const settingsUpdated = settings.updated_at ? parseISO(settings.updated_at) : null
   const result: OverdueCategory[] = []
 
@@ -171,13 +212,13 @@ export function getOverdueCategories(now: Date = new Date()): OverdueCategory[] 
 
     const prev = getPreviousScheduledInstant(category, schedule, now)
     // Any backup counts toward "am I overdue" — a plain manual Download/Upload
-    // (untagged) reasonably satisfies a pending Daily/Weekly/Monthly nudge too,
-    // not just a category-tagged one. Baseline is the latest of: this
-    // category's own last tagged backup, the overall last-backup-at, and when
-    // the schedule was (re)configured.
-    let baseline = getLastBackupAtForCategory(category)
-    const overallLastBackup = getLastBackupAt()
-    if (overallLastBackup && (!baseline || isAfter(overallLastBackup, baseline))) baseline = overallLastBackup
+    // (untagged, or from any other device) reasonably satisfies a pending
+    // Daily/Weekly/Monthly nudge too, not just a category-tagged one from
+    // this same device. Baseline is the latest of: this category's own last
+    // Drive backup, the overall last Drive backup, and when the schedule was
+    // (re)configured.
+    let baseline = drive.perCategory[category]
+    if (drive.lastBackupAt && (!baseline || isAfter(drive.lastBackupAt, baseline))) baseline = drive.lastBackupAt
     if (settingsUpdated && (!baseline || isAfter(settingsUpdated, baseline))) baseline = settingsUpdated
 
     if (!baseline || isAfter(prev, baseline)) {

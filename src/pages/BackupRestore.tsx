@@ -38,6 +38,7 @@ import {
 } from '@/lib/deviceBackup'
 import {
   BACKUP_CATEGORIES,
+  DEFAULT_BACKUP_SETTINGS,
   getBackupSettings,
   saveBackupSettings,
   getLastBackupAt,
@@ -104,8 +105,10 @@ export function BackupRestore() {
   >({ status: 'idle' })
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
-  const [settings, setSettings] = useState(() => getBackupSettings())
+  const [settings, setSettings] = useState(DEFAULT_BACKUP_SETTINGS)
+  const [settingsLoading, setSettingsLoading] = useState(true)
   const [settingsSavedAt, setSettingsSavedAt] = useState<Date | null>(null)
+  const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null)
   const [notifPermission, setNotifPermission] = useState(() => getNotificationPermission())
 
   useEffect(() => {
@@ -123,6 +126,13 @@ export function BackupRestore() {
       setEncryptEnabled(enabled)
       setHasPassphrase(!!passphrase)
     })
+  }, [])
+
+  useEffect(() => {
+    // Shared/system-wide schedule (Supabase) — same values on every device.
+    getBackupSettings()
+      .then(setSettings)
+      .finally(() => setSettingsLoading(false))
   }, [])
 
   // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
@@ -276,10 +286,15 @@ export function BackupRestore() {
     setRestore({ step: 'done', outcome, mode })
   }
 
-  const handleSaveSettings = () => {
-    const saved = saveBackupSettings(settings)
-    setSettings(saved)
-    setSettingsSavedAt(new Date())
+  const handleSaveSettings = async () => {
+    setSettingsSaveError(null)
+    try {
+      const saved = await saveBackupSettings(settings)
+      setSettings(saved)
+      setSettingsSavedAt(new Date())
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : 'Could not save the schedule.')
+    }
   }
 
   const updateSchedule = (category: BackupCategory, patch: Partial<ScheduleSettings>) => {
@@ -835,11 +850,19 @@ export function BackupRestore() {
           Backup reminders
         </h2>
         <p className="text-sm text-text-secondary mb-4">
-          Enable Daily, Weekly, and/or Monthly on their own schedule. When a scheduled time passes, either a
-          reminder appears (bell icon + banner + browser notification) asking you to back up manually, or —
-          with <span className="font-medium">Smart upload</span> turned on — the app automatically backs up and
+          Enable Daily, Weekly, and/or Monthly on their own schedule. This schedule is shared across every
+          device — set it up once, and whichever device has the app open at the scheduled time handles it; you
+          don't need to configure it again elsewhere. When a scheduled time passes, either a reminder appears
+          (bell icon + banner + browser notification) asking you to back up manually, or — with{' '}
+          <span className="font-medium">Smart upload</span> turned on — the app automatically backs up and
           uploads to Google Drive by itself, and just notifies you of the result.
         </p>
+        {settingsLoading ? (
+          <div className="flex items-center gap-2 text-sm text-text-secondary py-4">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading schedule…
+          </div>
+        ) : (
         <div className="space-y-4">
           {BACKUP_CATEGORIES.map((category) => {
             const schedule = settings[category]
@@ -885,10 +908,17 @@ export function BackupRestore() {
             )
           })}
         </div>
-        <Button variant="secondary" onClick={handleSaveSettings} className="mt-4">
+        )}
+        <Button variant="secondary" onClick={handleSaveSettings} disabled={settingsLoading} className="mt-4">
           Save settings
         </Button>
-        {settingsSavedAt && <p className="text-sm text-green-700 mt-2">Saved.</p>}
+        {settingsSavedAt && <p className="text-sm text-green-700 mt-2">Saved — this schedule now applies to every device.</p>}
+        {settingsSaveError && (
+          <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm flex items-center gap-2">
+            <XCircle className="w-4 h-4 shrink-0" />
+            {settingsSaveError}
+          </div>
+        )}
         {isNotificationSupported() && (
           <div className="mt-4 flex items-center gap-3">
             {notifPermission === 'granted' ? (

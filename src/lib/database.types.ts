@@ -685,6 +685,30 @@ export interface Database {
         }
         Relationships: []
       }
+      backup_settings: {
+        Row: {
+          id: number
+          daily: Json
+          weekly: Json
+          monthly: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          daily?: Json
+          weekly?: Json
+          monthly?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          daily?: Json
+          weekly?: Json
+          monthly?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       dental_records: {
         Row: {
           id: string
