@@ -211,6 +211,93 @@ export interface Database {
           }
         ]
       }
+      lab_work: {
+        Row: {
+          id: string
+          patient_id: string
+          lab_name: string
+          work_type: string
+          teeth: Json
+          unit_count: number
+          shade: string | null
+          material: string | null
+          pricing_mode: string
+          unit_price: number
+          flat_price: number
+          status: string
+          date_sent: string | null
+          expected_date: string | null
+          date_received: string | null
+          is_paid: boolean
+          notes: string | null
+          source_plan_group_id: string | null
+          source_treatment_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          patient_id: string
+          lab_name?: string
+          work_type?: string
+          teeth?: Json
+          unit_count?: number
+          shade?: string | null
+          material?: string | null
+          pricing_mode?: string
+          unit_price?: number
+          flat_price?: number
+          status?: string
+          date_sent?: string | null
+          expected_date?: string | null
+          date_received?: string | null
+          is_paid?: boolean
+          notes?: string | null
+          source_plan_group_id?: string | null
+          source_treatment_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          lab_name?: string
+          work_type?: string
+          teeth?: Json
+          unit_count?: number
+          shade?: string | null
+          material?: string | null
+          pricing_mode?: string
+          unit_price?: number
+          flat_price?: number
+          status?: string
+          date_sent?: string | null
+          expected_date?: string | null
+          date_received?: string | null
+          is_paid?: boolean
+          notes?: string | null
+          source_plan_group_id?: string | null
+          source_treatment_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'lab_work_patient_id_fkey'
+            columns: ['patient_id']
+            isOneToOne: false
+            referencedRelation: 'patients'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'lab_work_source_treatment_id_fkey'
+            columns: ['source_treatment_id']
+            isOneToOne: false
+            referencedRelation: 'treatments'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       prescriptions: {
         Row: {
           id: string

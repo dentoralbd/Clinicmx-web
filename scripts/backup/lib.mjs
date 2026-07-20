@@ -8,7 +8,7 @@ import { google } from 'googleapis';
 
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-// All 24 tables as of migration 027. Ordered parents-before-children so a
+// All 25 tables as of migration 030. Ordered parents-before-children so a
 // full restore satisfies foreign keys (patients → appointments → invoices → payments...).
 export const TABLES_IN_DEPENDENCY_ORDER = [
   'patients',
@@ -31,6 +31,7 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'prescriptions',
   'invoices',
   'treatments', // after invoices: treatments.invoice_id (migration 010)
+  'lab_work', // after treatments: lab_work.source_treatment_id (migration 030)
   'payments',
   'payment_plans',
   'invoice_history',
@@ -46,6 +47,7 @@ export const PATIENT_LINKED_TABLES = [
   'prescriptions',
   'invoices',
   'treatments',
+  'lab_work',
 ];
 
 export const STORAGE_BUCKET = 'patient-files';

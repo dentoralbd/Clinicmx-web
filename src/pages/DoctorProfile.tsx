@@ -109,7 +109,7 @@ interface EditHistoryRow {
   reverted_at: string | null
 }
 
-type EditHistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'inventory_item'
+type EditHistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'inventory_item' | 'lab_work'
 
 const EDIT_HISTORY_FILTERS: Array<{ value: EditHistoryFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -118,6 +118,7 @@ const EDIT_HISTORY_FILTERS: Array<{ value: EditHistoryFilter; label: string }> =
   { value: 'treatment', label: 'Treatments' },
   { value: 'invoice', label: 'Invoices' },
   { value: 'inventory_item', label: 'Inventory' },
+  { value: 'lab_work', label: 'Lab' },
 ]
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -128,9 +129,10 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   patient_file: 'Patient File',
   inventory_item: 'Inventory Item',
   patient_visit: 'Visit',
+  lab_work: 'Lab Work',
 }
 
-type HistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'patient_file' | 'inventory_item'
+type HistoryFilter = 'all' | 'patient' | 'prescription' | 'treatment' | 'invoice' | 'patient_file' | 'inventory_item' | 'lab_work'
 
 const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -140,6 +142,7 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'invoice', label: 'Invoices' },
   { value: 'patient_file', label: 'Pt. Files' },
   { value: 'inventory_item', label: 'Inventory' },
+  { value: 'lab_work', label: 'Lab' },
 ]
 
 function humanizeKey(key: string) {

@@ -53,6 +53,7 @@ import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { logActivity } from '@/lib/activityLog'
+import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
 
@@ -663,6 +664,12 @@ export function PatientProfile() {
       })
       const { error } = await supabase.from('treatments').insert(rows)
       if (error) throw error
+
+      // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
+      // lab-related items in this plan (Crown, Bridge, Denture, etc.). Never
+      // throws and never blocks — the treatments above are already committed.
+      autoCreateLabWorkForTreatments({ patientId: id, planGroupId, rows })
+
       logActivity({
         action: 'create',
         entityType: 'treatment',
@@ -1001,6 +1008,13 @@ export function PatientProfile() {
           .select('id, treatment_type, description, tooth_number, cost')
         if (error) throw error
         insertedTreatments = data || []
+
+        // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
+        // lab-related items done at this visit. Never throws and never blocks —
+        // the treatments above are already committed. No plan group here, so a
+        // fresh group id is generated internally for this submission.
+        autoCreateLabWorkForTreatments({ patientId: id, planGroupId: null, rows: insertedTreatments })
+
         logActivity({
           action: 'create',
           entityType: 'treatment',

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, ChevronDown, DatabaseBackup, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3 } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, type AppPageKey } from '@/lib/appSession'
 
 interface SidebarProps {
@@ -34,7 +34,10 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
         label: 'Patients',
         path: '/patients',
         page: 'patients',
-        children: [{ icon: Activity, label: 'Treatments', path: '/treatments', page: 'treatments' }],
+        children: [
+          { icon: Activity, label: 'Treatments', path: '/treatments', page: 'treatments' },
+          { icon: FlaskConical, label: 'Lab', path: '/lab', page: 'lab' },
+        ],
       },
       { icon: Calendar, label: 'Appointments', path: '/appointments', page: 'appointments' },
       { icon: FileText, label: 'Prescriptions', path: '/prescriptions', page: 'prescriptions' },

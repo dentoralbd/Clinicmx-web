@@ -39,6 +39,7 @@ export const BACKUP_TABLES = [
   'prescriptions',
   'invoices',
   'treatments',
+  'lab_work',
   'payments',
   'payment_plans',
   'invoice_history',

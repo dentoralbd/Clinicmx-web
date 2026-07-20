@@ -36,6 +36,7 @@ const ENTITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'patient', label: 'Patients' },
   { value: 'appointment', label: 'Appointments' },
   { value: 'treatment', label: 'Treatments' },
+  { value: 'lab_work', label: 'Lab' },
   { value: 'prescription', label: 'Prescriptions' },
   { value: 'invoice', label: 'Invoices' },
   { value: 'payment', label: 'Payments' },

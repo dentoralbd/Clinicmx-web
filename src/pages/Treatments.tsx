@@ -9,6 +9,7 @@ import { logActivity } from '@/lib/activityLog'
 import { ToothSelector } from '@/components/ToothSelector'
 import { getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { formatBDT } from '@/lib/utils'
+import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
 import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -862,6 +863,11 @@ function TreatmentModal({ onClose, onSave }: {
       const { error } = await supabase.from('treatments').insert(rows)
 
       if (error) throw error
+
+      // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
+      // lab-related items in this plan (Crown, Bridge, Denture, etc.). Never
+      // throws and never blocks — the treatments above are already committed.
+      autoCreateLabWorkForTreatments({ patientId: formData.patient_id, planGroupId, rows })
 
       const selectedPatient = patients.find((p) => p.id === formData.patient_id)
       const totalCost = rows.reduce((sum, row) => sum + (row.cost || 0), 0)

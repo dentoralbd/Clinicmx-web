@@ -9,6 +9,7 @@ export type AppPageKey =
   | 'patients'
   | 'appointments'
   | 'treatments'
+  | 'lab'
   | 'prescriptions'
   | 'billing'
   | 'inventory'
@@ -28,6 +29,7 @@ const ALL_PAGES_ON: Record<AppPageKey, boolean> = {
   patients: true,
   appointments: true,
   treatments: true,
+  lab: true,
   prescriptions: true,
   billing: true,
   inventory: true,

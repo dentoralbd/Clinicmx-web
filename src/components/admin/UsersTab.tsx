@@ -20,6 +20,7 @@ const PAGE_OPTIONS: Array<{ key: AppPageKey; label: string }> = [
   { key: 'patients', label: 'Patients' },
   { key: 'appointments', label: 'Appointments' },
   { key: 'treatments', label: 'Treatments' },
+  { key: 'lab', label: 'Lab' },
   { key: 'prescriptions', label: 'Prescriptions' },
   { key: 'billing', label: 'Billing' },
   { key: 'inventory', label: 'Inventory' },

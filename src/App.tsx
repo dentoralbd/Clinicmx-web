@@ -10,6 +10,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m
 const Patients = lazy(() => import('./pages/Patients').then(m => ({ default: m.Patients })))
 const Appointments = lazy(() => import('./pages/Appointments').then(m => ({ default: m.Appointments })))
 const Treatments = lazy(() => import('./pages/Treatments').then(m => ({ default: m.Treatments })))
+const Lab = lazy(() => import('./pages/Lab').then(m => ({ default: m.Lab })))
 const Prescriptions = lazy(() => import('./pages/Prescriptions').then(m => ({ default: m.Prescriptions })))
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })))
 const PatientProfile = lazy(() => import('./pages/PatientProfile').then(m => ({ default: m.PatientProfile })))
@@ -47,6 +48,7 @@ function App() {
               <Route path="patients/:id" element={<RequirePage page="patients"><PatientProfile /></RequirePage>} />
               <Route path="appointments" element={<RequirePage page="appointments"><Appointments /></RequirePage>} />
               <Route path="treatments" element={<RequirePage page="treatments"><Treatments /></RequirePage>} />
+              <Route path="lab" element={<RequirePage page="lab"><Lab /></RequirePage>} />
               <Route path="prescriptions" element={<RequirePage page="prescriptions"><Prescriptions /></RequirePage>} />
               <Route path="billing" element={<RequirePage page="billing"><Billing /></RequirePage>} />
               <Route path="inventory" element={<RequirePage page="inventory"><Inventory /></RequirePage>} />
