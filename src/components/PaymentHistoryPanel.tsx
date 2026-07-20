@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 import { PaymentReceiptPrint } from '@/components/PaymentReceiptPrint'
 import { canDeletePayment, getAuditActor } from '@/lib/appSession'
+import { logActivity } from '@/lib/activityLog'
 
 interface PaymentHistoryPanelProps {
   invoiceId: string
@@ -21,6 +22,8 @@ interface PaymentHistoryPanelProps {
     phone?: string | null
     patient_code?: string | null
   }
+  /** Enables patient-scoped audit logging (Pt. Log) on payment delete. */
+  patientId?: string | null
   /** Called after a payment is deleted so the parent can refresh invoice-level totals/status. */
   onChanged?: () => void
 }
@@ -39,7 +42,7 @@ interface PaymentRow {
   } | null
 }
 
-export function PaymentHistoryPanel({ invoiceId, invoice, patient, onChanged }: PaymentHistoryPanelProps) {
+export function PaymentHistoryPanel({ invoiceId, invoice, patient, patientId, onChanged }: PaymentHistoryPanelProps) {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
@@ -122,6 +125,17 @@ export function PaymentHistoryPanel({ invoiceId, invoice, patient, onChanged }: 
           })
           .then(() => {}, () => {})
       }
+
+      const methodLabel = payment.payment_method || payment.payment_methods?.name || 'Cash'
+      logActivity({
+        action: 'delete',
+        entityType: 'payment',
+        entityId: payment.id,
+        entityLabel: invoice?.invoice_number ?? null,
+        patientId: patientId ?? null,
+        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        details: `${formatBDT(payment.amount)} (${methodLabel}) removed from invoice ${invoice?.invoice_number || ''}`.trim(),
+      })
 
       setPayments((prev) => prev.filter((p) => p.id !== payment.id))
       onChanged?.()

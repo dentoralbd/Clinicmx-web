@@ -274,6 +274,12 @@ export function Billing() {
         patientId: (invoice as any)?.patient_id ?? null,
         patientName: invoice ? `${(invoice as any).patients?.first_name || ''} ${(invoice as any).patients?.last_name || ''}`.trim() || null : null,
         payload: invoice || { id },
+        // payments.invoice_id is ON DELETE CASCADE — any recorded payments are
+        // silently dropped with the invoice, so call that out here since it's
+        // otherwise the only surviving mention of the lost payment ledger.
+        details: (invoice?.paid_amount || 0) > 0
+          ? `Total ${formatBDT(invoice?.total_amount || 0)}; ${formatBDT(invoice?.paid_amount || 0)} in recorded payments also removed`
+          : `Total ${formatBDT(invoice?.total_amount || 0)}`,
       })
       // Free the invoiced treatments so they can be billed again. Must run before the
       // delete: the FK ON DELETE SET NULL wipes treatments.invoice_id once the invoice
@@ -962,6 +968,11 @@ export function Billing() {
         <InvoiceModal
           defaultPatientId={editingInvoiceRecord.patient_id}
           hidePatientSelect
+          defaultPatientName={
+            editingInvoiceRecord.patients
+              ? `${editingInvoiceRecord.patients.first_name} ${editingInvoiceRecord.patients.last_name}`.trim()
+              : null
+          }
           editingInvoice={editingInvoiceRecord}
           onClose={() => setEditingInvoiceRecord(null)}
           onSave={async (invoiceId) => {
@@ -1304,7 +1315,7 @@ function InvoiceRow({
 
           <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
-            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} onChanged={onPaymentRecorded} />
+            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} patientId={invoice.patient_id} onChanged={onPaymentRecorded} />
           </div>
 
           <InvoiceTimelinePanel invoiceId={invoice.id} />

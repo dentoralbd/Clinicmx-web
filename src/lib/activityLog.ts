@@ -105,3 +105,25 @@ export async function listActivityLog(
   }
   return (data || []) as ActivityLogRow[]
 }
+
+export const PATIENT_LOG_PAGE_SIZE = 30
+
+/**
+ * Patient-scoped invoice/payment activity feed for the "Pt. Log" section of
+ * the Patient Profile page — everyone's creates/edits/deletes on this
+ * patient's invoices and payments, newest first.
+ */
+export async function listPatientBillingLog(patientId: string, page: number): Promise<ActivityLogRow[]> {
+  const from = page * PATIENT_LOG_PAGE_SIZE
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('*')
+    .eq('patient_id', patientId)
+    .in('entity_type', ['invoice', 'payment'])
+    .order('occurred_at', { ascending: false })
+    .range(from, from + PATIENT_LOG_PAGE_SIZE - 1)
+  if (error) {
+    throw new Error(`Failed to load patient billing log: ${error.message}`)
+  }
+  return (data || []) as ActivityLogRow[]
+}

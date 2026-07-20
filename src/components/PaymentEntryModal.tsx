@@ -5,6 +5,7 @@ import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
 import { recordInvoicePayment } from '@/lib/payments'
 import { logActivity } from '@/lib/activityLog'
 import { supabase } from '@/lib/supabase'
+import { formatBDT } from '@/lib/utils'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 
 interface PaymentEntryModalProps {
@@ -31,6 +32,7 @@ export function PaymentEntryModal({
   const [saving, setSaving] = useState(false)
   const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number } | null>(null)
   const [patientContact, setPatientContact] = useState<{ firstName: string; phone: string | null } | null>(null)
+  const [invoiceMeta, setInvoiceMeta] = useState<{ patientId: string | null; patientName: string | null; invoiceNumber: string | null } | null>(null)
 
   const remaining = useMemo(() => Math.max(invoiceTotal - invoicePaid, 0), [invoiceTotal, invoicePaid])
   const parsedAmount = parseFloat(amount) || 0
@@ -41,13 +43,14 @@ export function PaymentEntryModal({
     setPaymentDate(new Date().toISOString().slice(0, 10))
   }, [remaining])
 
-  // Fetched purely to offer the post-payment WhatsApp thank-you prompt —
+  // Fetched purely to offer the post-payment WhatsApp thank-you prompt, and
+  // (patient/invoice identity) to attach useful details to the audit log —
   // failure here must never block recording the payment.
   useEffect(() => {
     let cancelled = false
     supabase
       .from('invoices')
-      .select('patients (first_name, phone)')
+      .select('invoice_number, patient_id, patients (first_name, last_name, phone)')
       .eq('id', invoiceId)
       .maybeSingle()
       .then(
@@ -57,6 +60,11 @@ export function PaymentEntryModal({
           if (patients?.first_name) {
             setPatientContact({ firstName: patients.first_name, phone: patients.phone ?? null })
           }
+          setInvoiceMeta({
+            patientId: (data as any)?.patient_id ?? null,
+            patientName: patients?.first_name ? `${patients.first_name} ${patients.last_name || ''}`.trim() : null,
+            invoiceNumber: (data as any)?.invoice_number ?? null,
+          })
         },
         () => {}
       )
@@ -94,10 +102,14 @@ export function PaymentEntryModal({
       })
 
       if (result.paymentStored) {
+        const invoiceLabel = invoiceMeta?.invoiceNumber || invoiceId.slice(0, 8).toUpperCase()
         logActivity({
           action: 'create',
           entityType: 'payment',
-          details: `${parsedAmount.toFixed(2)} (${paymentMethod}) against invoice ${invoiceId.slice(0, 8).toUpperCase()}`,
+          entityLabel: invoiceMeta?.invoiceNumber ?? null,
+          patientId: invoiceMeta?.patientId ?? null,
+          patientName: invoiceMeta?.patientName ?? null,
+          details: `${formatBDT(parsedAmount)} (${paymentMethod}) against invoice ${invoiceLabel}`,
         })
       }
 

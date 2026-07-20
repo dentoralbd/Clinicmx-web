@@ -11,6 +11,8 @@ export interface EditLogInput {
   patientId?: string | null
   patientName?: string | null
   previousPayload: object
+  /** Optional human-readable summary passed through to the activity log. */
+  details?: string | null
 }
 
 /**
@@ -39,6 +41,7 @@ export async function logEdit(input: EditLogInput) {
     entityLabel: input.entityLabel,
     patientId: input.patientId,
     patientName: input.patientName,
+    details: input.details,
   })
 }
 

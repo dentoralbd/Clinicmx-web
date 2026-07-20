@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { Bell, Wifi, X } from 'lucide-react'
+import { Bell, Receipt, Wifi, X } from 'lucide-react'
 import {
   getNotifications,
   getUnreadCount,
@@ -10,17 +10,21 @@ import {
   subscribeToNotifications,
   type AppNotification,
 } from '@/lib/notifications'
-import { getAppRole, getAppUser } from '@/lib/appSession'
+import { getAppRole, getAppUser, formatAuditActor } from '@/lib/appSession'
 import { countPendingIpRequests, listPendingIpRequestsForUser } from '@/lib/ipAccess'
+import { listRecentBillingAlerts, getBillingAlertsSeen, setBillingAlertsSeen } from '@/lib/billingAlerts'
 
 /** Synthetic, never-persisted entry derived live from Supabase (network
- * access status) — always identical across every device since it's read
- * fresh from the database, unlike the stored list which is per-browser. */
+ * access status, billing changes) — always identical across every device
+ * since it's read fresh from the database, unlike the stored list which is
+ * per-browser. */
 interface LiveEntry {
   id: string
+  kind: 'ip' | 'billing'
   title: string
   message: string
   linkTo?: string
+  unread: boolean
 }
 
 const LIVE_POLL_MS = 20000
@@ -34,6 +38,9 @@ export function NotificationBell() {
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  /** Newest occurred_at seen across billing-alert polls, used to advance the
+   * per-device "seen" watermark when the bell is opened. */
+  const latestBillingIsoRef = useRef<string | null>(null)
 
   useEffect(() => {
     const refresh = () => {
@@ -51,20 +58,36 @@ export function NotificationBell() {
     const refreshLive = async () => {
       try {
         if (role === 'admin') {
-          const count = await countPendingIpRequests()
+          const [count, billingRows] = await Promise.all([countPendingIpRequests(), listRecentBillingAlerts()])
           if (cancelled) return
-          setLiveEntries(
+
+          const seen = getBillingAlertsSeen()
+          if (billingRows[0]) latestBillingIsoRef.current = billingRows[0].occurred_at
+
+          const ipEntries: LiveEntry[] =
             count > 0
               ? [
                   {
                     id: 'live-ip-admin',
+                    kind: 'ip',
                     title: 'Network access pending',
                     message: `${count} network access request${count > 1 ? 's' : ''} waiting for your approval.`,
                     linkTo: '/doctor-profile',
+                    unread: true,
                   },
                 ]
               : []
-          )
+
+          const billingEntries: LiveEntry[] = billingRows.map((row) => ({
+            id: `live-billing-${row.id}`,
+            kind: 'billing',
+            title: `${row.entity_type === 'invoice' ? 'Invoice' : 'Payment'} ${row.action === 'delete' ? 'deleted' : 'edited'}`,
+            message: `${row.patient_name ?? 'Unknown patient'} — ${row.details ?? row.entity_label ?? ''} · by ${formatAuditActor(row.actor)}`,
+            linkTo: row.patient_id ? `/patients/${row.patient_id}?section=ptlog` : undefined,
+            unread: row.occurred_at > seen,
+          }))
+
+          setLiveEntries([...ipEntries, ...billingEntries])
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
@@ -73,8 +96,10 @@ export function NotificationBell() {
           setLiveEntries(
             rows.map((row) => ({
               id: `live-ip-${row.id}`,
+              kind: 'ip',
               title: 'Access pending on another device',
               message: `Your login from IP ${row.ip} is waiting for admin approval.`,
+              unread: true,
             }))
           )
         }
@@ -105,6 +130,10 @@ export function NotificationBell() {
       const next = !prev
       if (next) {
         markAllRead()
+        if (latestBillingIsoRef.current) {
+          setBillingAlertsSeen(latestBillingIsoRef.current)
+          setLiveEntries((prev) => prev.map((entry) => (entry.kind === 'billing' ? { ...entry, unread: false } : entry)))
+        }
         // Fixed-position, computed from the button's actual on-screen rect
         // rather than a CSS anchor — the bell isn't the header's rightmost
         // icon (profile/logout follow it), so a plain `right-0` dropdown can
@@ -129,7 +158,7 @@ export function NotificationBell() {
     })
   }
 
-  const unread = unreadCount + liveEntries.length
+  const unread = unreadCount + liveEntries.filter((n) => n.unread).length
 
   return (
     <div className="relative" ref={ref}>
@@ -156,7 +185,7 @@ export function NotificationBell() {
               {liveEntries.map((n) => (
                 <div
                   key={n.id}
-                  className={`px-4 py-3 flex items-start gap-2 bg-amber-50/60 ${n.linkTo ? 'hover:bg-amber-50 transition-colors cursor-pointer' : ''}`}
+                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
                   onClick={() => {
                     if (n.linkTo) {
                       setOpen(false)
@@ -164,7 +193,11 @@ export function NotificationBell() {
                     }
                   }}
                 >
-                  <Wifi className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  {n.kind === 'billing' ? (
+                    <Receipt className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <Wifi className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900">{n.title}</p>
                     <p className="text-xs text-text-secondary mt-0.5">{n.message}</p>

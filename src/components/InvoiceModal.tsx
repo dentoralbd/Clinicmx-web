@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase'
 import { recordInvoicePayment } from '@/lib/payments'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
+import { logEdit } from '@/lib/editHistory'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 
@@ -46,6 +47,11 @@ interface InvoiceModalProps {
   onSave: (invoiceId?: string) => void
   defaultPatientId?: string
   hidePatientSelect?: boolean
+  /** Fallback patient name for audit logging when hidePatientSelect skips
+   *  fetching the full patient list (so `patients.find` below can't resolve
+   *  one) — pass the already-known patient's name so edit/delete log entries
+   *  and the admin notification bell can still identify the patient. */
+  defaultPatientName?: string | null
   invoiceType?: 'basic' | 'advanced'
   template?: InvoiceTemplateData | null
   /** Preselect only this treatment plan's items (falls back to all pending if the group is empty) */
@@ -84,6 +90,7 @@ export function InvoiceModal({
   onSave,
   defaultPatientId = '',
   hidePatientSelect = false,
+  defaultPatientName = null,
   invoiceType = 'basic',
   template = null,
   preferredPlanGroupId = null,
@@ -381,6 +388,19 @@ export function InvoiceModal({
     const paidAmount = editingInvoice.paid_amount || 0
     const status = paidAmount >= totalAmount && totalAmount > 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Pending'
 
+    const invoicePatient = patients.find((p) => p.id === formData.patient_id)
+    // Snapshot before the write (log-first, edit-second) so the pre-edit
+    // version is always recoverable.
+    await logEdit({
+      entityType: 'invoice',
+      entityId: editingInvoice.id,
+      entityLabel: formData.invoice_number || null,
+      patientId: formData.patient_id,
+      patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : defaultPatientName,
+      previousPayload: editingInvoice,
+      details: `Updated total ${formatBDT(totalAmount)}`,
+    })
+
     const basePayload = buildLegacySafeInvoicePayload({
       patientId: formData.patient_id,
       items: normalizedItems,
@@ -427,17 +447,6 @@ export function InvoiceModal({
       event_type: 'invoice_edited',
       event_data: { added_treatment_ids: idsToLink, removed_treatment_ids: idsToUnlink },
     }).then(() => {}, () => {})
-
-    const invoicePatient = patients.find((p) => p.id === formData.patient_id)
-    logActivity({
-      action: 'edit',
-      entityType: 'invoice',
-      entityId: editingInvoice.id,
-      entityLabel: formData.invoice_number || null,
-      patientId: formData.patient_id,
-      patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null,
-      details: `Updated total ${formatBDT(totalAmount)}`,
-    })
 
     onSave(editingInvoice.id)
   }

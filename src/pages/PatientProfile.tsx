@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -12,6 +12,7 @@ import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
+import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
@@ -278,6 +279,7 @@ type SectionId =
   | 'referrals'
   | 'consultations'
   | 'billing'
+  | 'ptlog'
 
 type TabId = 'overview' | 'clinical' | 'prescriptions' | 'appointments' | 'files' | 'billing'
 
@@ -287,7 +289,7 @@ const tabOptions: Array<{ id: TabId; label: string; shortLabel: string; icon: an
   { id: 'prescriptions', label: 'Prescriptions', shortLabel: 'Rx', icon: Pill, sections: ['prescriptions'] },
   { id: 'appointments', label: 'Appointments', shortLabel: 'Appts', icon: CalendarIcon, sections: ['appointments'] },
   { id: 'files', label: 'Files & Forms', shortLabel: 'Files', icon: FolderOpen, sections: ['files', 'forms'] },
-  { id: 'billing', label: 'Billing', shortLabel: 'Billing', icon: DollarSign, sections: ['billing', 'operations'] },
+  { id: 'billing', label: 'Billing', shortLabel: 'Billing', icon: DollarSign, sections: ['billing', 'operations', 'ptlog'] },
 ]
 
 const sectionToTab = Object.fromEntries(
@@ -314,6 +316,7 @@ const sectionOptions: Array<{
   { id: 'referrals', label: 'Referrals', description: 'External coordination snapshot', icon: FileText },
   { id: 'consultations', label: 'Consultations', description: 'Latest consultation summaries', icon: Activity },
   { id: 'billing', label: 'Billing', description: 'Invoices, payments, and due amounts', icon: DollarSign },
+  { id: 'ptlog', label: 'Pt. Log', description: 'Invoice and payment change history', icon: ScrollText },
 ]
 
 const legacySectionMap: Record<string, SectionId> = {
@@ -1719,6 +1722,12 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: invoice || { id: invoiceId },
+        // payments.invoice_id is ON DELETE CASCADE — any recorded payments are
+        // silently dropped with the invoice, so call that out here since it's
+        // otherwise the only surviving mention of the lost payment ledger.
+        details: (invoice?.paid_amount || 0) > 0
+          ? `Total ${formatBDT(invoice?.total_amount || 0)}; ${formatBDT(invoice?.paid_amount || 0)} in recorded payments also removed`
+          : `Total ${formatBDT(invoice?.total_amount || 0)}`,
       })
       // Free the invoiced treatments so they can be billed again. Must run before the
       // delete: the FK ON DELETE SET NULL wipes treatments.invoice_id once the invoice
@@ -3599,6 +3608,8 @@ export function PatientProfile() {
         return renderConsultationsSection()
       case 'billing':
         return renderBillingSection()
+      case 'ptlog':
+        return id ? <PatientBillingLogPanel patientId={id} /> : null
       default:
         return renderProfileSection()
     }
@@ -4069,6 +4080,7 @@ export function PatientProfile() {
         <InvoiceModal
           defaultPatientId={id}
           hidePatientSelect
+          defaultPatientName={patient ? `${patient.first_name} ${patient.last_name}`.trim() : null}
           editingInvoice={editingInvoiceRecord}
           onClose={() => setEditingInvoiceRecord(null)}
           onSave={async (invoiceId) => {
@@ -6098,7 +6110,7 @@ function PatientInvoiceRow({
           </div>
           <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 mt-3">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
-            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={patient} onChanged={onPaymentRecorded} />
+            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={patient} patientId={invoice.patient_id} onChanged={onPaymentRecorded} />
           </div>
 
           <div className="mt-3">
