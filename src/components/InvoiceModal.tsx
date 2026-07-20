@@ -228,18 +228,31 @@ export function InvoiceModal({
 
   async function loadPendingTreatments(patientId: string): Promise<PendingTreatment[]> {
     try {
-      const { data, error } = await supabase
-        .from('treatments')
-        .select('id, treatment_type, description, tooth_number, status, cost, original_cost, is_invoiced, invoice_id, treatment_plan_group_id')
-        .eq('patient_id', patientId)
-        .order('created_at', { ascending: false })
+      const [{ data, error }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+        supabase
+          .from('treatments')
+          .select('id, treatment_type, description, tooth_number, status, cost, original_cost, is_invoiced, invoice_id, treatment_plan_group_id')
+          .eq('patient_id', patientId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('invoices')
+          .select('items')
+          .eq('patient_id', patientId)
+          .neq('status', 'Merged'),
+      ])
       if (error) throw error
+      if (invoicesError) throw invoicesError
 
-      // invoice_id (not is_invoiced) is the source of truth — the FK's ON DELETE SET NULL
-      // keeps it accurate even if an invoice was deleted by an older app version that left
-      // is_invoiced stuck true.
+      // invoice_id (not is_invoiced) is normally the source of truth — the FK's ON DELETE
+      // SET NULL keeps it accurate even if an invoice was deleted by an older app version
+      // that left is_invoiced stuck true. But invoice_id can still go stale on its own (a
+      // restored invoice doesn't always re-link every treatment it lists) — cross-check
+      // against live invoices' items JSON too before offering something as billable again.
+      const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+        (invoicesData || []).flatMap((invoice: { items?: unknown }) => (Array.isArray(invoice.items) ? invoice.items : []))
+      )
       const safeTreatments = ((data as PendingTreatment[]) || []).filter(
-        (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id
+        (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id && !linkedTreatmentIds.has(treatment.id)
       )
       setPendingTreatments(safeTreatments)
       return safeTreatments

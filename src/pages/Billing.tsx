@@ -224,18 +224,30 @@ export function Billing() {
     }
 
     try {
-      // invoice_id (not is_invoiced) is the source of truth — the FK's ON DELETE SET NULL
-      // keeps it accurate even if an invoice was deleted by an older app version that left
-      // is_invoiced stuck true.
-      const { data, error } = await supabase
-        .from('treatments')
-        .select('id, patient_id, invoice_id, patients (first_name, last_name)')
-        .is('invoice_id', null)
-        .neq('status', 'Cancelled')
+      // invoice_id (not is_invoiced) is normally the source of truth — the FK's ON DELETE
+      // SET NULL keeps it accurate even if an invoice was deleted by an older app version
+      // that left is_invoiced stuck true. But invoice_id can still go stale on its own (a
+      // restored invoice doesn't always re-link every treatment it lists) — cross-check
+      // against live invoices' items JSON too before calling something unbilled.
+      const [{ data, error }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+        supabase
+          .from('treatments')
+          .select('id, patient_id, invoice_id, patients (first_name, last_name)')
+          .is('invoice_id', null)
+          .neq('status', 'Cancelled'),
+        supabase.from('invoices').select('items').neq('status', 'Merged'),
+      ])
 
       if (error) throw error
+      if (invoicesError) throw invoicesError
 
-      setPendingPatients(groupByPatient((data || []) as PendingTreatmentRow[]))
+      const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+        (invoicesData || []).flatMap((invoice: { items?: unknown }) => (Array.isArray(invoice.items) ? invoice.items : []))
+      )
+
+      setPendingPatients(
+        groupByPatient(((data || []) as PendingTreatmentRow[]).filter((row) => !linkedTreatmentIds.has(row.id)))
+      )
     } catch {
       // treatments.is_invoiced / invoice_id are added by a later migration —
       // fall back to cross-referencing treatment ids stored in invoice items

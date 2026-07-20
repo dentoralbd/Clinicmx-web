@@ -3,6 +3,7 @@ import type { Json } from './database.types'
 import { getAuditActor } from './appSession'
 import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
+import { extractTreatmentIdsFromInvoiceItems } from './billing'
 
 export type DeletedEntityType = TrackedEntityType | 'patient_file'
 
@@ -92,6 +93,20 @@ export async function restoreDeletion(entry: RestorableEntry): Promise<{ ok: tru
       return { ok: false, reason: 'A related record no longer exists (e.g. its patient is still deleted). Restore the patient first, then try again.' }
     }
     return { ok: false, reason: `Restore failed: ${error.message}` }
+  }
+
+  // Deleting an invoice frees its treatments (invoice_id set to null) so they can be
+  // rebilled — restoring the invoice must re-link them, or they're stranded showing as
+  // unbilled forever even though the restored invoice still lists them in its items.
+  if (entry.entity_type === 'invoice' && Array.isArray(row.items)) {
+    const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(row.items as unknown[])
+    if (linkedTreatmentIds.size > 0) {
+      await supabase
+        .from('treatments')
+        .update({ invoice_id: row.id as string, is_invoiced: true })
+        .in('id', Array.from(linkedTreatmentIds))
+        .then(() => {}, () => {})
+    }
   }
 
   const { error: markError } = await supabase
