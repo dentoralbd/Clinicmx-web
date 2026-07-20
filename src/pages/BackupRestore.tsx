@@ -125,6 +125,11 @@ export function BackupRestore() {
     getBackupEncryption().then(({ enabled, passphrase }) => {
       setEncryptEnabled(enabled)
       setHasPassphrase(!!passphrase)
+      // Encryption defaults to on for a device that's never configured it,
+      // but nothing is actually encrypted until a passphrase exists — open
+      // the editor right away so setting one is a single, obvious step
+      // instead of requiring a checkbox hunt first.
+      if (enabled && !passphrase) setShowPassphraseEditor(true)
     })
   }, [])
 
@@ -417,25 +422,33 @@ export function BackupRestore() {
             </div>
           )}
           {showPassphraseEditor && (
-            <div className="mt-2 ml-6 flex items-center gap-2">
-              <input
-                type="password"
-                value={passphraseDraft}
-                onChange={(e) => setPassphraseDraft(e.target.value)}
-                placeholder="New passphrase"
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSaveEncryption(true)}
-                disabled={!passphraseDraft.trim()}
-              >
-                Save
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => { setShowPassphraseEditor(false); setPassphraseDraft('') }}>
-                Cancel
-              </Button>
+            <div className="mt-2 ml-6">
+              {!hasPassphrase && (
+                <p className="text-xs text-text-secondary mb-1.5">
+                  Encryption is on by default — set a passphrase to activate it. Backups stay unencrypted
+                  until you do.
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={passphraseDraft}
+                  onChange={(e) => setPassphraseDraft(e.target.value)}
+                  placeholder="New passphrase"
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSaveEncryption(true)}
+                  disabled={!passphraseDraft.trim()}
+                >
+                  Save
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setShowPassphraseEditor(false); setPassphraseDraft('') }}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </div>

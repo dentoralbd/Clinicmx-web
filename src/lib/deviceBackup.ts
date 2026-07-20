@@ -100,9 +100,15 @@ const ENCRYPT_ENABLED_KEY = 'clinicmx_backup_encrypt'
 const PASSPHRASE_STORAGE_KEY = 'clinicmx_backup_passphrase'
 
 export async function getBackupEncryption(): Promise<{ enabled: boolean; passphrase: string | null }> {
-  let enabled = false
+  // Defaults to true on a device that's never touched this setting (nudges
+  // toward encryption being the norm), but a passphrase still has to be set
+  // before anything is actually encrypted — see buildSerializedBackup's
+  // `enabled && passphrase` check. An explicit 'false' (the user turned it
+  // off) is respected and distinguished from "never set".
+  let enabled = true
   try {
-    enabled = localStorage.getItem(ENCRYPT_ENABLED_KEY) === 'true'
+    const raw = localStorage.getItem(ENCRYPT_ENABLED_KEY)
+    if (raw !== null) enabled = raw === 'true'
   } catch {
     // ignore
   }
