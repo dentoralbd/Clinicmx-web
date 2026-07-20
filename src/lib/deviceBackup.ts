@@ -440,6 +440,38 @@ export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
   return body.files || []
 }
 
+export interface DriveBackupStatus {
+  /** Most recent backup of any kind, anywhere — the one true "last backup"
+   * every device agrees on (unlike getLastBackupAt(), which is per-device
+   * localStorage and only knows about backups *this browser* made). */
+  lastBackupAt: Date | null
+  perCategory: Record<BackupCategory, Date | null>
+}
+
+/**
+ * Ground-truth backup freshness, read directly from Drive instead of
+ * localStorage. Two browsers/devices checking this always see the same
+ * answer, because it reflects what's actually in the shared Drive folder —
+ * not which device happened to run the upload.
+ */
+export async function getDriveBackupStatus(): Promise<DriveBackupStatus> {
+  const files = await listBackupsFromDrive()
+  const perCategory: Record<BackupCategory, Date | null> = { daily: null, weekly: null, monthly: null }
+  let lastBackupAt: Date | null = null
+
+  for (const f of files) {
+    if (!f.modifiedTime) continue
+    const modified = new Date(f.modifiedTime)
+    if (!lastBackupAt || modified > lastBackupAt) lastBackupAt = modified
+    const category = parseBackupCategory(f.name)
+    if (category !== 'manual' && (!perCategory[category] || modified > perCategory[category]!)) {
+      perCategory[category] = modified
+    }
+  }
+
+  return { lastBackupAt, perCategory }
+}
+
 // Fetches one Drive backup's content and wraps it as a File so it can feed
 // straight into the same parseBackupFile/handleFileChosen path used for a
 // locally-picked file — the rest of the restore flow needs no changes.
