@@ -4,6 +4,7 @@ export const MEMORY_KEYS = {
   EXAMINATIONS: 'clinicmx_examinations',
   MEDICATIONS: 'clinicmx_medications',
   INVESTIGATIONS: 'clinicmx_investigations',
+  VISIT_NOTES: 'clinicmx_visit_notes',
 }
 
 // Save a string value to memory (max 30, deduplicated by lowercase trim)

@@ -19,7 +19,7 @@ import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
-import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
+import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
@@ -963,6 +963,7 @@ export function PatientProfile() {
         patientId: id,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
       })
+      rememberItem(MEMORY_KEYS.VISIT_NOTES, visitForm.notes)
 
       // Planned treatments ticked as done: update the existing rows (no duplicates)
       const billablePlanIds = new Set(billableFromPlan.map(({ treatment }) => treatment.id))
@@ -4269,6 +4270,56 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
   )
 }
 
+// Suggests previously-written visit notes so the doctor can pick a repeated
+// line instead of retyping it. Bootstraps from recent DB visits once if the
+// local memory is empty (fresh device / first use), stripping the auto-appended
+// Treatment Done / Payment summary lines via splitVisitNotes() so only the
+// doctor's own text is offered back.
+function VisitNoteChips({ onSelect }: { onSelect: (text: string) => void }) {
+  const [items, setItems] = useState<string[]>(() => getMemory(MEMORY_KEYS.VISIT_NOTES).slice(0, 8))
+
+  useEffect(() => {
+    if (items.length > 0) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('patient_visits')
+        .select('notes')
+        .not('notes', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (cancelled || !data) return
+      // Reversed so the most recent visit ends up first in memory (rememberItem prepends).
+      for (const row of [...data].reverse()) {
+        const doctorText = splitVisitNotes(row.notes).rest
+        if (doctorText) rememberItem(MEMORY_KEYS.VISIT_NOTES, doctorText)
+      }
+      if (!cancelled) setItems(getMemory(MEMORY_KEYS.VISIT_NOTES).slice(0, 8))
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (items.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item, idx) => (
+        <button
+          key={idx}
+          type="button"
+          title={item}
+          onClick={() => onSelect(item)}
+          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+        >
+          {item.length > 40 ? item.slice(0, 40) + '…' : item}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function VisitFormModal({
   formData,
   setFormData,
@@ -4613,6 +4664,14 @@ function VisitFormModal({
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <VisitNoteChips
+              onSelect={(text) =>
+                setFormData({
+                  ...formData,
+                  notes: formData.notes?.trim() ? `${formData.notes.trim()}\n${text}` : text,
+                })
+              }
             />
           </div>
 
