@@ -1304,7 +1304,7 @@ function InvoiceRow({
 
           <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
-            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} />
+            <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} onChanged={onPaymentRecorded} />
           </div>
 
           <InvoiceTimelinePanel invoiceId={invoice.id} />

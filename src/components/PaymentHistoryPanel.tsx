@@ -3,6 +3,7 @@ import { getFriendlySupabaseErrorMessage, isSchemaCompatibilityError, logBilling
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
 import { PaymentReceiptPrint } from '@/components/PaymentReceiptPrint'
+import { canDeletePayment, getAuditActor } from '@/lib/appSession'
 
 interface PaymentHistoryPanelProps {
   invoiceId: string
@@ -20,6 +21,8 @@ interface PaymentHistoryPanelProps {
     phone?: string | null
     patient_code?: string | null
   }
+  /** Called after a payment is deleted so the parent can refresh invoice-level totals/status. */
+  onChanged?: () => void
 }
 
 interface PaymentRow {
@@ -36,11 +39,13 @@ interface PaymentRow {
   } | null
 }
 
-export function PaymentHistoryPanel({ invoiceId, invoice, patient }: PaymentHistoryPanelProps) {
+export function PaymentHistoryPanel({ invoiceId, invoice, patient, onChanged }: PaymentHistoryPanelProps) {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
   const [receiptPayment, setReceiptPayment] = useState<PaymentRow | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const canDeletePayments = canDeletePayment()
 
   useEffect(() => {
     loadPayments()
@@ -81,6 +86,50 @@ export function PaymentHistoryPanel({ invoiceId, invoice, patient }: PaymentHist
       setSchemaUnavailable(isSchemaCompatibilityError(error) || /payments/i.test(getFriendlySupabaseErrorMessage(error)))
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDelete(payment: PaymentRow) {
+    if (!confirm(`Delete this ${formatBDT(payment.amount)} payment? This cannot be undone.`)) return
+
+    setDeletingId(payment.id)
+    try {
+      const { error: deleteError } = await supabase.from('payments').delete().eq('id', payment.id)
+      if (deleteError) throw deleteError
+
+      if (invoice) {
+        const remaining = payments.filter((p) => p.id !== payment.id)
+        const newPaid = Math.max(remaining.reduce((sum, p) => sum + p.amount, 0), 0)
+        const newStatus =
+          newPaid >= invoice.total_amount && invoice.total_amount > 0 ? 'Paid' : newPaid > 0 ? 'Partial' : 'Pending'
+
+        const { error: invoiceError } = await supabase
+          .from('invoices')
+          .update({ paid_amount: newPaid, status: newStatus })
+          .eq('id', invoice.id)
+        if (invoiceError) throw invoiceError
+
+        await supabase
+          .from('invoice_history')
+          .insert({
+            invoice_id: invoice.id,
+            event_type: 'payment_deleted',
+            event_data: {
+              amount: payment.amount,
+              payment_method: payment.payment_method || payment.payment_methods?.name || null,
+              deleted_by: getAuditActor(),
+            },
+          })
+          .then(() => {}, () => {})
+      }
+
+      setPayments((prev) => prev.filter((p) => p.id !== payment.id))
+      onChanged?.()
+    } catch (error) {
+      logBillingError('Failed to delete payment', error, { invoiceId, paymentId: payment.id })
+      alert('Failed to delete payment')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -130,14 +179,25 @@ export function PaymentHistoryPanel({ invoiceId, invoice, patient }: PaymentHist
             Method: {payment.payment_method || payment.payment_methods?.name || 'Not specified'}
           </div>
           {payment.notes && <p className="text-xs mt-1">{payment.notes}</p>}
-          {invoice && patient && (
-            <button
-              onClick={() => setReceiptPayment(payment)}
-              className="text-xs text-primary hover:underline mt-1.5"
-            >
-              Print receipt
-            </button>
-          )}
+          <div className="flex items-center gap-3 mt-1.5">
+            {invoice && patient && (
+              <button
+                onClick={() => setReceiptPayment(payment)}
+                className="text-xs text-primary hover:underline"
+              >
+                Print receipt
+              </button>
+            )}
+            {canDeletePayments && (
+              <button
+                onClick={() => handleDelete(payment)}
+                disabled={deletingId === payment.id}
+                className="text-xs text-red-600 hover:underline disabled:opacity-50"
+              >
+                {deletingId === payment.id ? 'Deleting...' : 'Delete'}
+              </button>
+            )}
+          </div>
         </div>
       ))}
 

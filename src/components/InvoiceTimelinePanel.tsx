@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
+import { formatAuditActor } from '@/lib/appSession'
 
 interface InvoiceTimelinePanelProps {
   invoiceId: string
@@ -22,6 +23,12 @@ function describeEvent(row: HistoryRow): string {
       const amount = typeof data.amount === 'number' ? formatBDT(data.amount) : null
       const method = typeof data.payment_method === 'string' ? data.payment_method : null
       return amount ? `Payment recorded — ${amount}${method ? ` (${method})` : ''}` : 'Payment recorded'
+    }
+    case 'payment_deleted': {
+      const amount = typeof data.amount === 'number' ? formatBDT(data.amount) : null
+      const deletedBy = typeof data.deleted_by === 'string' ? formatAuditActor(data.deleted_by) : null
+      const base = amount ? `Payment deleted — ${amount}` : 'Payment deleted'
+      return deletedBy ? `${base} (by ${deletedBy})` : base
     }
     case 'status_updated': {
       const status = typeof data.status === 'string' ? data.status : null

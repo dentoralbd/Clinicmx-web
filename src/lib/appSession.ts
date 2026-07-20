@@ -118,6 +118,11 @@ export function canDelete() {
   return getAppUser()?.permissions?.can_delete === true
 }
 
+export function canDeletePayment() {
+  const role = getAppRole()
+  return role === 'admin' || role === 'doctor'
+}
+
 export function canRevert() {
   const role = getAppRole()
   if (role === 'admin') return true
