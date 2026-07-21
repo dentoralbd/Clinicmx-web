@@ -16,7 +16,7 @@ import {
   type BackupCategory,
 } from '@/lib/backupReminders'
 import { buildSerializedBackup, uploadSerializedBackup, getDriveBackupStatus } from '@/lib/deviceBackup'
-import { addNotification } from '@/lib/notifications'
+import { addNotification, addNotificationOnce } from '@/lib/notifications'
 
 const CATEGORY_LABEL: Record<BackupCategory, string> = {
   daily: 'Daily',
@@ -121,12 +121,18 @@ export function BackupReminderBanner() {
               visible.push({ category, instant })
             }
           } else {
-            addNotification({
-              title: `${CATEGORY_LABEL[category]} backup overdue`,
-              message: `No backup since the scheduled time (${format(instant, 'MMM d, HH:mm')}).`,
-              linkTo: '/backup',
-              audience: 'admin',
-            })
+            // addNotificationOnce: two devices open at the same overdue
+            // instant both reach this branch — dedup by title+instant so
+            // only one shared row gets posted, not one per device.
+            addNotificationOnce(
+              {
+                title: `${CATEGORY_LABEL[category]} backup overdue`,
+                message: `No backup since the scheduled time (${format(instant, 'MMM d, HH:mm')}).`,
+                linkTo: '/backup',
+                audience: 'admin',
+              },
+              instant.toISOString()
+            )
             fireBrowserNotification(
               'ClinicMx backup due',
               `Your ${CATEGORY_LABEL[category].toLowerCase()} backup has not been made yet.`

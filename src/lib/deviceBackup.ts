@@ -381,7 +381,8 @@ export async function uploadSerializedBackup(
   } catch {
     throw new Error('Could not reach the upload service. Check your internet connection.')
   }
-  let body: { ok?: boolean; name?: string; webViewLink?: string; id?: string; error?: string } | null = null
+  let body: { ok?: boolean; name?: string; webViewLink?: string; id?: string; sha256?: string; error?: string } | null =
+    null
   try {
     body = await response.json()
   } catch {
@@ -394,19 +395,28 @@ export async function uploadSerializedBackup(
     throw new Error(body?.error || `Upload failed (HTTP ${response.status}).`)
   }
 
-  // Verification (P2): re-download by id and compare hashes. Best-effort — a
-  // verification hiccup doesn't undo a successful upload, it just reports
-  // verified: false so the UI/notification can flag it.
+  // Verification (P2). Primary path: Drive computes sha256Checksum server-side
+  // during the upload itself, so the server's response already tells us
+  // whether the bytes landed intact — pure local string comparison, no extra
+  // network round-trip, immune to slow/unstable connections. Fallback (older
+  // deployed function, or Drive omitted the field): re-download and compare,
+  // with a couple of retries — a single re-download racing Drive's eventually
+  // -consistent file listing shouldn't be reported as "unverified".
   let verified = false
-  if (body.id) {
-    try {
-      const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`)
-      if (check.ok) {
-        const echoed = new Uint8Array(await check.arrayBuffer())
-        verified = (await sha256Hex(echoed)) === serialized.sha256
+  if (body.sha256) {
+    verified = body.sha256 === serialized.sha256
+  } else if (body.id) {
+    for (let attempt = 0; attempt < 3 && !verified; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`)
+        if (check.ok) {
+          const echoed = new Uint8Array(await check.arrayBuffer())
+          verified = (await sha256Hex(echoed)) === serialized.sha256
+        }
+      } catch {
+        // leave verified = false, try again (or fall through)
       }
-    } catch {
-      // leave verified = false
     }
   }
 

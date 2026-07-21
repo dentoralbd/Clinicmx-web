@@ -709,6 +709,36 @@ export interface Database {
         }
         Relationships: []
       }
+      app_notifications: {
+        Row: {
+          id: string
+          title: string
+          message: string
+          link_to: string | null
+          audience: string | null
+          read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          message: string
+          link_to?: string | null
+          audience?: string | null
+          read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          message?: string
+          link_to?: string | null
+          audience?: string | null
+          read?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       dental_records: {
         Row: {
           id: string

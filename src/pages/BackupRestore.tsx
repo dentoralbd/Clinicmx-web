@@ -21,6 +21,7 @@ import {
   uploadSerializedBackup,
   listBackupsFromDrive,
   fetchBackupFromDrive,
+  getDriveBackupStatus,
   getAutoPruneEnabled,
   setAutoPruneEnabled,
   getBackupEncryption,
@@ -41,7 +42,6 @@ import {
   DEFAULT_BACKUP_SETTINGS,
   getBackupSettings,
   saveBackupSettings,
-  getLastBackupAt,
   getNextScheduledInstant,
   getNotificationPermission,
   requestNotificationPermission,
@@ -77,7 +77,12 @@ function formatBytes(bytes: number): string {
 export function BackupRestore() {
   const [backingUp, setBackingUp] = useState(false)
   const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
-  const [lastBackupAt, setLastBackupAt] = useState<Date | null>(() => getLastBackupAt())
+  // Ground truth from Drive (see getDriveBackupStatus) — a backup from ANY
+  // device shows up here, not just this one, so this line reads the same on
+  // every device instead of each having its own memory of "did I back up".
+  const [lastBackupAt, setLastBackupAt] = useState<Date | null>(null)
+  const [lastBackupLoading, setLastBackupLoading] = useState(true)
+  const [lastBackupError, setLastBackupError] = useState(false)
   const [lastDownloadedFile, setLastDownloadedFile] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ name: string; webViewLink?: string; verified: boolean } | null>(null)
@@ -140,6 +145,17 @@ export function BackupRestore() {
       .finally(() => setSettingsLoading(false))
   }, [])
 
+  const refreshLastBackupAt = () => {
+    setLastBackupLoading(true)
+    setLastBackupError(false)
+    getDriveBackupStatus()
+      .then((status) => setLastBackupAt(status.lastBackupAt))
+      .catch(() => setLastBackupError(true))
+      .finally(() => setLastBackupLoading(false))
+  }
+
+  useEffect(refreshLastBackupAt, [])
+
   // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
   if (getAppRole() !== 'admin') return <Navigate to="/dashboard" replace />
 
@@ -168,7 +184,8 @@ export function BackupRestore() {
       const serialized = await buildSerializedBackup({ onProgress: setBackupProgress, onAnomaly: confirmAnomaly })
       if (!serialized) return
       const filename = downloadSerializedBackup(serialized)
-      setLastBackupAt(getLastBackupAt())
+      // A local-only download never touches Drive, so it doesn't move the
+      // shared "Last backup (any device)" timestamp — only an upload does.
       setLastDownloadedFile(filename)
     } catch (error) {
       alert(`Backup failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -188,7 +205,9 @@ export function BackupRestore() {
       if (!serialized) return
       setBackupProgress(null)
       const result = await uploadSerializedBackup(serialized)
-      setLastBackupAt(getLastBackupAt())
+      // Optimistic: we just uploaded successfully, so we know the new shared
+      // "last backup" without another round-trip to Drive.
+      setLastBackupAt(new Date())
       setUploadResult(result)
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.')
@@ -374,7 +393,14 @@ export function BackupRestore() {
             )}
           </Button>
           <span className="text-sm text-text-secondary">
-            Last backup from this device: {lastBackupAt ? format(lastBackupAt, 'PPp') : 'Never'}
+            Last backup (any device):{' '}
+            {lastBackupError
+              ? 'unknown (Drive unreachable)'
+              : lastBackupLoading
+                ? 'checking…'
+                : lastBackupAt
+                  ? format(lastBackupAt, 'PPp')
+                  : 'Never'}
           </span>
         </div>
         <label className="flex items-start gap-2 cursor-pointer mt-3">

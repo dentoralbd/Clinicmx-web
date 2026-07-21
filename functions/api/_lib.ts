@@ -107,13 +107,18 @@ export async function ensureSubfolder(token: string, parentId: string): Promise<
   return data.id
 }
 
+export interface UploadedFile {
+  id: string
+  sha256Checksum?: string
+}
+
 export async function uploadNew(
   token: string,
   folderId: string,
   filename: string,
   content: string | Uint8Array,
   contentType = 'application/json'
-): Promise<string> {
+): Promise<UploadedFile> {
   const boundary = 'clinicmx-' + crypto.randomUUID()
   // Multipart body built as a Blob so binary payloads (gzip/encrypted
   // backups) pass through byte-exact — string concatenation would corrupt them.
@@ -124,8 +129,10 @@ export async function uploadNew(
     content as BlobPart,
     `\r\n--${boundary}--`,
   ])
+  // fields=id,sha256Checksum: Drive computes the checksum server-side during
+  // upload, so we get a verified-correct hash for free — no re-download needed.
   const res = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,sha256Checksum',
     {
       method: 'POST',
       headers: {
@@ -135,9 +142,9 @@ export async function uploadNew(
       body,
     }
   )
-  const data = (await res.json()) as { id?: string; error?: { message?: string } }
+  const data = (await res.json()) as { id?: string; sha256Checksum?: string; error?: { message?: string } }
   if (!res.ok || !data.id) throw new Error(`Drive upload failed: ${data.error?.message || res.status}`)
-  return data.id
+  return { id: data.id, sha256Checksum: data.sha256Checksum }
 }
 
 export async function updateExisting(
@@ -145,9 +152,9 @@ export async function updateExisting(
   fileId: string,
   content: string | Uint8Array,
   contentType = 'application/json'
-): Promise<void> {
+): Promise<UploadedFile> {
   const res = await fetch(
-    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,sha256Checksum`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
@@ -158,6 +165,8 @@ export async function updateExisting(
     const data = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
     throw new Error(`Drive update failed: ${data?.error?.message || res.status}`)
   }
+  const data = (await res.json()) as { id?: string; sha256Checksum?: string }
+  return { id: data.id || fileId, sha256Checksum: data.sha256Checksum }
 }
 
 export async function getWebViewLink(token: string, fileId: string): Promise<string | undefined> {

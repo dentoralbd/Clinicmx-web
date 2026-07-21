@@ -205,17 +205,20 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
       `name = '${filename}' and '${folderId}' in parents and trashed = false`
     )
     let fileId: string
+    let sha256Checksum: string | undefined
     if (existing.length) {
       fileId = existing[0].id
-      await updateExisting(token, fileId, content, contentType)
+      ;({ sha256Checksum } = await updateExisting(token, fileId, content, contentType))
     } else {
-      fileId = await uploadNew(token, folderId, filename, content, contentType)
+      const uploaded = await uploadNew(token, folderId, filename, content, contentType)
+      fileId = uploaded.id
+      sha256Checksum = uploaded.sha256Checksum
     }
 
     await pruneOldUploads(token, folderId, prune)
 
     const webViewLink = await getWebViewLink(token, fileId)
-    return json(200, { ok: true, name: filename, webViewLink, id: fileId })
+    return json(200, { ok: true, name: filename, webViewLink, id: fileId, sha256: sha256Checksum })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed.'
     return json(502, { ok: false, error: message })

@@ -4,7 +4,6 @@ import { formatDistanceToNow } from 'date-fns'
 import { Bell, Receipt, Wifi, X } from 'lucide-react'
 import {
   getNotifications,
-  getUnreadCount,
   markAllRead,
   dismissNotification,
   subscribeToNotifications,
@@ -32,8 +31,7 @@ const LIVE_POLL_MS = 20000
 export function NotificationBell() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => getNotifications())
-  const [unreadCount, setUnreadCount] = useState(() => getUnreadCount())
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [liveEntries, setLiveEntries] = useState<LiveEntry[]>([])
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
   const ref = useRef<HTMLDivElement>(null)
@@ -43,11 +41,23 @@ export function NotificationBell() {
   const latestBillingIsoRef = useRef<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     const refresh = () => {
-      setNotifications(getNotifications())
-      setUnreadCount(getUnreadCount())
+      getNotifications().then((list) => {
+        if (!cancelled) setNotifications(list)
+      })
     }
-    return subscribeToNotifications(refresh)
+    refresh()
+    const unsubscribe = subscribeToNotifications(refresh)
+    // Cross-device changes (another admin posting/dismissing/reading on a
+    // different device) only show up here on the next poll, matching the
+    // cadence of the live IP/billing entries below.
+    const interval = setInterval(refresh, LIVE_POLL_MS)
+    return () => {
+      cancelled = true
+      unsubscribe()
+      clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -129,6 +139,10 @@ export function NotificationBell() {
     setOpen((prev) => {
       const next = !prev
       if (next) {
+        // Optimistic local update so the dot clears immediately on this
+        // device; the actual write is global (every device's unread state
+        // clears too, on their next poll).
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
         markAllRead()
         if (latestBillingIsoRef.current) {
           setBillingAlertsSeen(latestBillingIsoRef.current)
@@ -158,7 +172,7 @@ export function NotificationBell() {
     })
   }
 
-  const unread = unreadCount + liveEntries.filter((n) => n.unread).length
+  const unread = notifications.filter((n) => !n.read).length + liveEntries.filter((n) => n.unread).length
 
   return (
     <div className="relative" ref={ref}>
@@ -227,6 +241,9 @@ export function NotificationBell() {
                     className="p-1 rounded hover:bg-gray-200 shrink-0"
                     onClick={(e) => {
                       e.stopPropagation()
+                      // Optimistic local removal; the actual delete is
+                      // global so it disappears from every device too.
+                      setNotifications((prev) => prev.filter((item) => item.id !== n.id))
                       dismissNotification(n.id)
                     }}
                   >
