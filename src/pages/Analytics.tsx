@@ -80,7 +80,7 @@ export function Analytics() {
           (q) => q.neq('status', 'Merged')
         ),
         fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
-        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at', (q) => q.neq('patient_type', 'consultation')),
+        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at, patient_type'),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
         fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
       ])
@@ -99,9 +99,15 @@ export function Analytics() {
     }
   }
 
+  // `patients` includes consultation-only walk-ins so revenue attribution
+  // (Top Revenue Sources, the Daily Earnings breakdown) can still resolve
+  // their name instead of showing "Unknown Patient". New-patient counts are
+  // the one place that should exclude them until they convert.
+  const fullPatients = useMemo(() => patients.filter((p) => p.patient_type !== 'consultation'), [patients])
+
   const rangeInvoices = useMemo(() => filterByRange(invoices, (inv) => inv.created_at, range), [invoices, range])
   const rangeTreatments = useMemo(() => filterByRange(treatments, (t) => t.created_at, range), [treatments, range])
-  const rangePatients = useMemo(() => filterByRange(patients, (p) => p.created_at, range), [patients, range])
+  const rangePatients = useMemo(() => filterByRange(fullPatients, (p) => p.created_at, range), [fullPatients, range])
 
   const monthAxis = useMemo(
     () =>
@@ -118,7 +124,7 @@ export function Analytics() {
   // All treatments (not range-filtered) so items linking to older treatments still resolve a type.
   const byType = useMemo(() => revenueByTreatmentType(rangeInvoices, treatments), [rangeInvoices, treatments])
   const topSources = useMemo(() => topRevenueSources(rangeInvoices, patients), [rangeInvoices, patients])
-  const newPerMonth = useMemo(() => newPatientsPerMonth(patients, monthAxis), [patients, monthAxis])
+  const newPerMonth = useMemo(() => newPatientsPerMonth(fullPatients, monthAxis), [fullPatients, monthAxis])
   // Full appointment history: first-ever visits must be computed across all time.
   const returningVsNew = useMemo(() => returningVsNewByMonth(appointments, monthAxis), [appointments, monthAxis])
   const counts = useMemo(() => procedureCountsByType(rangeTreatments), [rangeTreatments])

@@ -25,6 +25,7 @@ export interface AnalyticsPatient {
   first_name: string | null
   last_name: string | null
   created_at: string
+  patient_type?: string | null
 }
 
 export interface AnalyticsAppointment {

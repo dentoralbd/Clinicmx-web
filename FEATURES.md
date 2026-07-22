@@ -122,7 +122,7 @@ Charts (recharts) over live data with a **6M / 12M / All** range selector (clien
 
 Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar link renders only for admin.
 
-**Consultation-only patients excluded from patient counts (2026-07-22):** the patient fetch backing new-registrations/returning-vs-new filters out `patient_type = 'consultation'` rows so walk-ins who haven't converted to full patients don't inflate those charts. Their consultation-fee invoices are *not* filtered from the invoices/payments fetch, so the fee still counts in Revenue Collected/Outstanding — see §3b.
+**Consultation-only patients excluded from new-patient counts, but not from revenue attribution (2026-07-22):** `Analytics.tsx` fetches all patients (unfiltered) so revenue features that need a name — Top Revenue Sources, the Daily Earnings calendar's per-patient breakdown — can still resolve a consultation-only patient's name instead of showing "Unknown Patient" (a bug in the initial cut: the fetch was filtered at the query level, breaking name lookups for anyone who'd paid a consultation fee but not converted). Only the "New Patients" stat tile and the new-registrations/returning-vs-new charts use a separately filtered `fullPatients` list (`patient_type !== 'consultation'`) so walk-ins who haven't converted don't inflate those. Consultation-fee invoices/payments are never filtered, so the fee always counts in Revenue Collected/Outstanding — see §3b.
 
 ## 16. Notifications
 
