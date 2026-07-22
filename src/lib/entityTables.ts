@@ -14,7 +14,7 @@ export type TrackedEntityType =
 export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; columns: string[] }> = {
   patient: {
     table: 'patients',
-    columns: ['id', 'patient_code', 'first_name', 'last_name', 'phone', 'email', 'date_of_birth', 'gender', 'weight', 'address', 'medical_history', 'notes', 'created_at', 'updated_at'],
+    columns: ['id', 'patient_code', 'first_name', 'last_name', 'phone', 'email', 'date_of_birth', 'gender', 'weight', 'address', 'medical_history', 'notes', 'patient_type', 'created_at', 'updated_at'],
   },
   treatment: {
     table: 'treatments',

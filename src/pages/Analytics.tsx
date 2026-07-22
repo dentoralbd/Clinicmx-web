@@ -80,7 +80,7 @@ export function Analytics() {
           (q) => q.neq('status', 'Merged')
         ),
         fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
-        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at'),
+        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at', (q) => q.neq('patient_type', 'consultation')),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
         fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
       ])

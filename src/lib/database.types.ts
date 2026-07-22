@@ -65,6 +65,7 @@ export interface Database {
           address: string | null
           medical_history: string | null
           notes: string | null
+          patient_type: string
           created_at: string
           updated_at: string
         }
@@ -81,6 +82,7 @@ export interface Database {
           address?: string | null
           medical_history?: string | null
           notes?: string | null
+          patient_type?: string
           created_at?: string
           updated_at?: string
         }
@@ -97,6 +99,7 @@ export interface Database {
           address?: string | null
           medical_history?: string | null
           notes?: string | null
+          patient_type?: string
           created_at?: string
           updated_at?: string
         }

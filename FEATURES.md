@@ -30,6 +30,18 @@ Live stats (patients, today's appointments, revenue/dues) + today's appointment 
 - **Medical history:** structured fields (`MedicalHistoryFields`) stored on the patient and pulled into prescriptions.
 - Patient name is clickable → profile everywhere it appears.
 
+## 3b. Consultation (`/consultations`)
+
+- Entry point for a walk-in who only came for a paid consultation — no treatment plan, no appointment. Sidebar: Patients → Consultation.
+- **Add Consultation:** only name, age, sex required; phone/email/DOB/address/notes are optional (collapsed "More details"); a Consultation Fee is required. Saving creates a `patients` row with `patient_type = 'consultation'` (still gets a real `PT-1xxxxx` code) and immediately opens the invoice modal prefilled with a single "Consultation" line item — "mark paid now" collects payment in the same step.
+- **Consultation-only patients are hidden from full-patient screens** (Patients list, Dashboard patient count/recent list, Appointments/Billing/Treatments/Lab/Prescriptions* patient pickers, Analytics new-patient charts) until converted. *Prescriptions is the one exception — a consultation-only patient can be prescribed to directly (see §7).
+- **Row actions:** Invoice fee (repeat/follow-up consultation), **Convert to patient** (flips `patient_type` to `full`; the row moves to the main Patients list, code unchanged), Write prescription (jumps to Prescriptions, patient now selectable there), Edit, Delete — fully audited like Patients.
+- **Post-intake prescription prompt:** after the invoice step for a new consultation finishes (saved or skipped), a dialog asks "Write a prescription now?" — one tap routes to `/prescriptions`.
+- **Consultation-only patients can also be created from Prescriptions:** New Prescription → New Patient has a "Consultation only" checkbox (+ required Consultation Fee field) above the name fields — checking it creates the patient with `patient_type = 'consultation'` instead of `full`; once the prescription saves, the same invoice-with-prefilled-fee flow used here opens automatically.
+- **Own patient-code series (migration 034):** consultation-only patients get `CO-4xxxxx` codes (starting at `CO-400001`, migration 035 revised the initial 034 start of 200001) instead of sharing the `PT-1xxxxx` series with full patients — a `BEFORE INSERT` trigger on `patients` (`assign_patient_code()`) picks the generator based on `NEW.patient_type`, replacing the plain column default (which can't see other columns in the same insert). Existing consultation patients created before this migration keep their original PT- code (not backfilled). The prescription-QR code pattern (`src/lib/prescriptionQr.ts`) accepts both prefixes.
+- **Consultation-only patient profiles show a reduced tab set** until converted: Clinical (Visits/Consultations/Investigations only — Medical and the dental-chart sub-tab hidden), Prescriptions, Appointments, Billing (Pt. Log and treatment-invoicing sub-tab hidden); Overview and Files & Forms tabs are hidden entirely. A "Consultation-only patient" banner with a **Convert to Patient** button appears at the top of the profile — same conversion as the Consultation page's row action, just reachable from inside the profile too. The "New Treatment Plan" quick action and "Upload File" quick-action chip are hidden until conversion, matching the hidden tabs.
+- Consultation fee revenue flows into Analytics (Revenue Collected/Outstanding) through the normal invoice/payment pipeline; because the fee has no linked `treatments` row, it lands in Analytics' "Other / Unlinked" Revenue-by-Treatment bucket rather than its own named category.
+
 ## 4. Appointments (`/appointments`)
 
 - Day + week calendar views; day dots for load; booking modal supports **existing patient** (search-select) or **inline new patient** (name/age/sex/mobile creates the patient record).
@@ -57,7 +69,7 @@ Live stats (patients, today's appointments, revenue/dues) + today's appointment 
 
 ## 7. Prescriptions (`/prescriptions` + profile tab)
 
-- **Patient selection flow on the Prescriptions page is FROZEN** — search existing or inline-create new patient; do not modify without explicit request.
+- **Patient selection flow on the Prescriptions page is FROZEN** — search existing or inline-create new patient; do not modify without explicit request. (2026-07-22: the patient list it queries now includes consultation-only patients — a data-source change, not a flow change — so a prescription can be written before a walk-in is converted to a full patient.)
 - **Clinical fields (multi-entry):** Chief Complaint, On Examination, Diagnosis, Treatment Plan — each a list of entries with optional per-entry **tooth tags** (FDI selector + quadrant picker for C/C); autocomplete suggestions from prior entries (prescription memory); reusable **section templates** (saved encrypted locally).
 - **Medications:** DrugPicker over the BD drug database — search by brand/generic/company, category-grouped dropdown with color chips; picking a drug prefills dosage/frequency/duration/instructions/route for the patient's **age tier** (infant/child/adult); syrup/suspension/drops forms with **weight-based ml-dose calculator** (mg/kg → ml, using patient weight; weight snapshot stored on the prescription). AI dose features are prefills only — dentist confirms.
 - **Investigations:** list with templates.
@@ -109,6 +121,8 @@ Charts (recharts) over live data with a **6M / 12M / All** range selector (clien
 - **Treatments:** procedure counts and average recorded cost per type (freeform `treatment_type` grouped case-insensitively, top 10 + Others; zero-cost rows excluded from averages), and a Planned → In Progress → Completed pipeline with completion rate (Cancelled shown separately).
 
 Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar link renders only for admin.
+
+**Consultation-only patients excluded from patient counts (2026-07-22):** the patient fetch backing new-registrations/returning-vs-new filters out `patient_type = 'consultation'` rows so walk-ins who haven't converted to full patients don't inflate those charts. Their consultation-fee invoices are *not* filtered from the invoices/payments fetch, so the fee still counts in Revenue Collected/Outstanding — see §3b.
 
 ## 16. Notifications
 

@@ -63,6 +63,7 @@ export function Dashboard() {
       const { count: patientsCount } = await supabase
         .from('patients')
         .select('*', { count: 'exact', head: true })
+        .neq('patient_type', 'consultation')
 
       const { data: appointments } = await supabase
         .from('appointments')
@@ -91,6 +92,7 @@ export function Dashboard() {
       const { data: patients } = await supabase
         .from('patients')
         .select('*')
+        .neq('patient_type', 'consultation')
         .order('created_at', { ascending: false })
         .limit(5)
 

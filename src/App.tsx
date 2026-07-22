@@ -8,6 +8,7 @@ import { Login } from './pages/Login'
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })))
 const Patients = lazy(() => import('./pages/Patients').then(m => ({ default: m.Patients })))
+const Consultations = lazy(() => import('./pages/Consultations').then(m => ({ default: m.Consultations })))
 const Appointments = lazy(() => import('./pages/Appointments').then(m => ({ default: m.Appointments })))
 const Treatments = lazy(() => import('./pages/Treatments').then(m => ({ default: m.Treatments })))
 const Lab = lazy(() => import('./pages/Lab').then(m => ({ default: m.Lab })))
@@ -46,6 +47,7 @@ function App() {
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="patients" element={<RequirePage page="patients"><Patients /></RequirePage>} />
               <Route path="patients/:id" element={<RequirePage page="patients"><PatientProfile /></RequirePage>} />
+              <Route path="consultations" element={<RequirePage page="patients"><Consultations /></RequirePage>} />
               <Route path="appointments" element={<RequirePage page="appointments"><Appointments /></RequirePage>} />
               <Route path="treatments" element={<RequirePage page="treatments"><Treatments /></RequirePage>} />
               <Route path="lab" element={<RequirePage page="lab"><Lab /></RequirePage>} />

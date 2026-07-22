@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { InvoiceModal } from '@/components/InvoiceModal'
+import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch, normalizePhoneForSearch } from '@/lib/patients'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
@@ -95,7 +97,11 @@ export function Prescriptions() {
   const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
   const [newPatientData, setNewPatientData] = useState({
     first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male',
+    isConsultation: false, consultationFee: '',
   })
+  // After a new consultation-only patient's prescription is saved, opens the
+  // same invoice flow as the Consultation page's "Add Consultation" modal.
+  const [consultationInvoiceTarget, setConsultationInvoiceTarget] = useState<{ patientId: string; patientName: string; fee: number } | null>(null)
 
   // Weight for this visit — kept separate from formData so it can never interact with
   // the patient_id select's onChange/selectPatientHistory wiring below.
@@ -255,6 +261,13 @@ export function Prescriptions() {
         alert('Please provide Date of Birth or Age for the new patient')
         return
       }
+      if (newPatientData.isConsultation) {
+        const parsedFee = Number.parseFloat(newPatientData.consultationFee)
+        if (!Number.isFinite(parsedFee) || parsedFee < 0) {
+          alert('Please enter a valid consultation fee')
+          return
+        }
+      }
     } else if (!formData.patient_id) {
       alert('Please select or create a patient')
       return
@@ -287,6 +300,9 @@ export function Prescriptions() {
   async function savePrescription(entryCosts: Record<string, string>) {
     try {
       let patientId = formData.patient_id
+      // Captured before resetForm() clears newPatientData, so the post-save
+      // consultation-invoice prompt still knows who/what to invoice.
+      let newConsultationPatient: { patientId: string; patientName: string; fee: number } | null = null
 
       if (patientMode === 'new') {
         if (!newPatientData.first_name || !newPatientData.last_name || !newPatientData.phone) {
@@ -301,14 +317,30 @@ export function Prescriptions() {
           alert('Please provide Date of Birth or Age for the new patient')
           return
         }
+        let consultationFee = 0
+        if (newPatientData.isConsultation) {
+          consultationFee = Number.parseFloat(newPatientData.consultationFee)
+          if (!Number.isFinite(consultationFee) || consultationFee < 0) {
+            alert('Please enter a valid consultation fee')
+            return
+          }
+        }
         const newPatient = await createPatient({
           first_name: newPatientData.first_name,
           last_name: newPatientData.last_name,
           phone: newPatientData.phone.replace(/\D/g, ''),
           date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
+          patient_type: newPatientData.isConsultation ? 'consultation' : 'full',
         })
         patientId = newPatient.id
+        if (newPatientData.isConsultation) {
+          newConsultationPatient = {
+            patientId: newPatient.id,
+            patientName: `${newPatientData.first_name} ${newPatientData.last_name}`.trim(),
+            fee: consultationFee,
+          }
+        }
       }
 
       if (!patientId) {
@@ -493,6 +525,9 @@ export function Prescriptions() {
       loadPrescriptions()
       loadTemplates()
       loadPatients()
+      if (newConsultationPatient) {
+        setConsultationInvoiceTarget(newConsultationPatient)
+      }
     } catch (error) {
       console.error('Error saving prescription:', error)
       alert('Failed to save prescription')
@@ -572,7 +607,7 @@ export function Prescriptions() {
     })
     setMedicalHistoryForm({ checked: [], other: '' })
     setPatientMode('existing')
-    setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male' })
+    setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male', isConsultation: false, consultationFee: '' })
     setPrescriptionWeight('')
     setAiPanelOpenIndex(null)
     setPatientSearch('')
@@ -1052,6 +1087,32 @@ export function Prescriptions() {
                     </div>
                   ) : (
                     <>
+                      <div className="md:col-span-2 flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-300">
+                        <input
+                          id="new-patient-consultation"
+                          type="checkbox"
+                          checked={newPatientData.isConsultation}
+                          onChange={(e) => setNewPatientData({ ...newPatientData, isConsultation: e.target.checked })}
+                          className="w-4 h-4"
+                        />
+                        <label htmlFor="new-patient-consultation" className="text-sm font-medium text-gray-700 flex-1">
+                          Consultation only (walk-in, no treatment yet)
+                        </label>
+                      </div>
+                      {newPatientData.isConsultation && (
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Consultation Fee (BDT) *</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            required
+                            value={newPatientData.consultationFee}
+                            onChange={(e) => setNewPatientData({ ...newPatientData, consultationFee: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          />
+                        </div>
+                      )}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
                         <input
@@ -1830,6 +1891,37 @@ export function Prescriptions() {
             await savePrescription(costs)
           }}
           onCancel={() => setCostDialogEntries(null)}
+        />
+      )}
+
+      {consultationInvoiceTarget && (
+        <InvoiceModal
+          invoiceType="basic"
+          defaultPatientId={consultationInvoiceTarget.patientId}
+          defaultPatientName={consultationInvoiceTarget.patientName}
+          hidePatientSelect
+          template={
+            {
+              id: '',
+              name: 'Consultation',
+              description: null,
+              invoice_type: 'basic',
+              items: [
+                {
+                  description: 'Consultation',
+                  amount: consultationInvoiceTarget.fee,
+                  quantity: 1,
+                  unit_price: consultationInvoiceTarget.fee,
+                  line_total: consultationInvoiceTarget.fee,
+                },
+              ],
+              discount_amount: 0,
+              tax_rate: 0,
+              payment_terms: null,
+            } as InvoiceTemplateData
+          }
+          onClose={() => setConsultationInvoiceTarget(null)}
+          onSave={() => setConsultationInvoiceTarget(null)}
         />
       )}
     </div>

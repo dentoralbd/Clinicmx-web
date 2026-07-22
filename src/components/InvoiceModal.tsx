@@ -222,6 +222,7 @@ export function InvoiceModal({
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name, patient_code, phone')
+      .neq('patient_type', 'consultation')
       .order('last_name')
     setPatients((data as PatientRow[]) || [])
   }

@@ -63,6 +63,7 @@ export function Patients() {
       const { data } = await supabase
         .from('patients')
         .select('*')
+        .neq('patient_type', 'consultation')
         .order('created_at', { ascending: false })
       setPatients(data || [])
     } catch (error) {

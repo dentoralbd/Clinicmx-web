@@ -13,6 +13,7 @@ interface CreatePatientPayload {
   address?: string | null
   medical_history?: string | null
   notes?: string | null
+  patient_type?: 'full' | 'consultation'
 }
 
 export async function createPatient(payload: CreatePatientPayload) {

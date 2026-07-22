@@ -454,6 +454,7 @@ function LabWorkModal({ record, onClose, onSave }: {
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name, date_of_birth')
+      .neq('patient_type', 'consultation')
       .order('last_name')
     setPatients(data || [])
   }

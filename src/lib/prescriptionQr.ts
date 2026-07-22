@@ -15,7 +15,8 @@ export interface ParsedPrescriptionQr {
   patientCode?: string
 }
 
-const PATIENT_CODE_PATTERN = /^PT-\d+$/i
+// PT- (full patients) or CO- (consultation-only, see migration 034)
+const PATIENT_CODE_PATTERN = /^(PT|CO)-\d+$/i
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function buildPrescriptionQrPayload(data: PrescriptionQrData): string {

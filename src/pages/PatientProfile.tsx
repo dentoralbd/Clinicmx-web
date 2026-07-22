@@ -296,6 +296,12 @@ const sectionToTab = Object.fromEntries(
   tabOptions.flatMap((tab) => tab.sections.map((sectionId) => [sectionId, tab.id]))
 ) as Record<SectionId, TabId>
 
+// Consultation-only patients (patient_type = 'consultation') haven't been
+// converted to a full patient yet, so tabs that assume an ongoing treatment
+// relationship (dental chart, treatment plans, files, medical history, Pt.
+// Log) are hidden until conversion — everything else works normally.
+const CONSULTATION_VISIBLE_SECTIONS: SectionId[] = ['prescriptions', 'appointments', 'visits', 'consultations', 'investigations', 'billing']
+
 const sectionOptions: Array<{
   id: SectionId
   label: string
@@ -1890,12 +1896,23 @@ export function PatientProfile() {
     return <div className="p-6">Patient not found</div>
   }
 
+  const isConsultationOnly = patient.patient_type === 'consultation'
+  const visibleTabOptions = isConsultationOnly
+    ? tabOptions
+        .map((tab) => ({ ...tab, sections: tab.sections.filter((s) => CONSULTATION_VISIBLE_SECTIONS.includes(s)) }))
+        .filter((tab) => tab.sections.length > 0)
+    : tabOptions
+
   const requestedSection = searchParams.get('section') || 'profile'
-  const activeSection = sectionOptions.some((section) => section.id === requestedSection)
+  const resolvedSection = sectionOptions.some((section) => section.id === requestedSection)
     ? requestedSection as SectionId
     : (legacySectionMap[requestedSection] || 'profile')
+  const activeSection =
+    isConsultationOnly && !CONSULTATION_VISIBLE_SECTIONS.includes(resolvedSection)
+      ? 'prescriptions'
+      : resolvedSection
   const activeTab = sectionToTab[activeSection] ?? 'overview'
-  const activeTabMeta = tabOptions.find((tab) => tab.id === activeTab) || tabOptions[0]
+  const activeTabMeta = visibleTabOptions.find((tab) => tab.id === activeTab) || visibleTabOptions[0]
   const activeInvoices = invoices.filter((invoice) => invoice.status !== 'Merged')
   const totalBilled = activeInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
   const totalPaid = activeInvoices.reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
@@ -3620,6 +3637,36 @@ export function PatientProfile() {
     }
   }
 
+  async function handleConvertToPatient() {
+    if (!patient || !confirm(`Convert ${patient.first_name} ${patient.last_name} to a full patient record?`)) return
+    try {
+      const patientName = `${patient.first_name} ${patient.last_name}`.trim()
+      await logEdit({
+        entityType: 'patient',
+        entityId: patient.id,
+        entityLabel: patientName,
+        patientId: patient.id,
+        patientName,
+        previousPayload: patient,
+      })
+      const { error } = await supabase.from('patients').update({ patient_type: 'full' }).eq('id', patient.id)
+      if (error) throw error
+      logActivity({
+        action: 'edit',
+        entityType: 'patient',
+        entityId: patient.id,
+        entityLabel: patientName,
+        patientId: patient.id,
+        patientName,
+        details: 'Converted from consultation to full patient',
+      })
+      setPatient((prev: any) => (prev ? { ...prev, patient_type: 'full' } : prev))
+    } catch (error) {
+      console.error('Error converting consultation to patient:', error)
+      alert('Failed to convert to full patient')
+    }
+  }
+
   return (
     <div className="space-y-6 pb-40 md:pb-6 page-fade-in">
       <div className="flex items-center gap-3">
@@ -3642,6 +3689,18 @@ export function PatientProfile() {
         ]}
       />
 
+      {isConsultationOnly && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-highlight/20 bg-highlight/5 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Consultation-only patient</p>
+            <p className="text-xs text-text-secondary">Some tabs are hidden until this patient is converted to a full patient record.</p>
+          </div>
+          <Button size="sm" variant="highlight" onClick={handleConvertToPatient}>
+            Convert to Patient
+          </Button>
+        </div>
+      )}
+
       <div className="flex gap-2 overflow-x-auto pb-1">
         <QuickActionButton icon={Plus} label="New Prescription" onClick={startNewPrescription} />
         <QuickActionButton icon={CalendarIcon} label="New Appointment" onClick={() => setShowAppointmentForm(true)} />
@@ -3651,7 +3710,9 @@ export function PatientProfile() {
           disabled={pendingInvoices.length === 0}
           onClick={openPaymentFlow}
         />
-        <QuickActionButton icon={Upload} label="Upload File" onClick={() => fileInputRef.current?.click()} />
+        {!isConsultationOnly && (
+          <QuickActionButton icon={Upload} label="Upload File" onClick={() => fileInputRef.current?.click()} />
+        )}
         {patient.phone && (
           <a
             href={`tel:${patient.phone}`}
@@ -3664,7 +3725,7 @@ export function PatientProfile() {
       </div>
 
       <div className="hidden md:flex gap-1.5 rounded-3xl border border-gray-200 bg-card p-2">
-        {tabOptions.map((tab) => {
+        {visibleTabOptions.map((tab) => {
           const Icon = tab.icon
           const badge = getSectionBadge(tab.sections[0])
           const isActive = activeTab === tab.id
@@ -3721,7 +3782,7 @@ export function PatientProfile() {
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-1 py-3 backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-xl gap-0.5">
-          {tabOptions.map((tab) => (
+          {visibleTabOptions.map((tab) => (
             <BottomNavButton
               key={tab.id}
               active={activeTab === tab.id}
@@ -3738,13 +3799,15 @@ export function PatientProfile() {
           <>
             <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowQuickAdd(false)} />
             <div className="absolute bottom-16 right-0 z-50 w-56 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-xl">
-              <button
-                onClick={() => { setShowQuickAdd(false); setShowTreatmentPlanForm(true) }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100"
-              >
-                <Activity className="h-4 w-4 text-primary" />
-                New Treatment Plan
-              </button>
+              {!isConsultationOnly && (
+                <button
+                  onClick={() => { setShowQuickAdd(false); setShowTreatmentPlanForm(true) }}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100"
+                >
+                  <Activity className="h-4 w-4 text-primary" />
+                  New Treatment Plan
+                </button>
+              )}
               <button
                 onClick={() => { setShowQuickAdd(false); setShowVisitForm(true) }}
                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-100"
