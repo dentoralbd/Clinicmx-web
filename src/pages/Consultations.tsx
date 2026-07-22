@@ -83,7 +83,7 @@ export function Consultations() {
   const [invoiceTarget, setInvoiceTarget] = useState<{ patientId: string; patientName: string; fee?: number } | null>(null)
   // Asked once the invoice step (save or skip) for a freshly-created
   // consultation is done — offers to jump straight to writing a prescription.
-  const [prescriptionPrompt, setPrescriptionPrompt] = useState<{ patientName: string } | null>(null)
+  const [prescriptionPrompt, setPrescriptionPrompt] = useState<{ patientId: string; patientName: string } | null>(null)
 
   useEffect(() => {
     loadConsultations()
@@ -258,24 +258,30 @@ export function Consultations() {
   async function handleConvert(patient: ConsultationPatient) {
     if (!confirm(`Convert ${patient.first_name} ${patient.last_name} to a full patient record?`)) return
     try {
+      const patientName = `${patient.first_name} ${patient.last_name}`.trim()
       await logEdit({
         entityType: 'patient',
         entityId: patient.id,
-        entityLabel: `${patient.first_name} ${patient.last_name}`.trim(),
+        entityLabel: patientName,
         patientId: patient.id,
-        patientName: `${patient.first_name} ${patient.last_name}`.trim(),
+        patientName,
         previousPayload: patient,
       })
-      const { error } = await supabase.from('patients').update({ patient_type: 'full' }).eq('id', patient.id)
+      const { data: newCode, error: codeError } = await (supabase as any).rpc('generate_patient_code')
+      if (codeError || !newCode) throw codeError || new Error('Failed to assign a patient code')
+      const { error } = await supabase
+        .from('patients')
+        .update({ patient_type: 'full', patient_code: newCode })
+        .eq('id', patient.id)
       if (error) throw error
       logActivity({
         action: 'edit',
         entityType: 'patient',
         entityId: patient.id,
-        entityLabel: `${patient.first_name} ${patient.last_name}`.trim(),
+        entityLabel: patientName,
         patientId: patient.id,
-        patientName: `${patient.first_name} ${patient.last_name}`.trim(),
-        details: 'Converted from consultation to full patient',
+        patientName,
+        details: `Converted from consultation to full patient (${patient.patient_code || 'CO-?'} → ${newCode})`,
       })
       loadConsultations()
     } catch (error) {
@@ -403,7 +409,9 @@ export function Consultations() {
                               <ReceiptText className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => navigate('/prescriptions')}
+                              onClick={() =>
+                                navigate('/prescriptions', { state: { newPrescriptionPatientId: patient.id } })
+                              }
                               className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
                               title="Write prescription"
                             >
@@ -622,15 +630,15 @@ export function Consultations() {
           hidePatientSelect
           template={consultationTemplate}
           onClose={() => {
-            const patientName = invoiceTarget.patientName
+            const { patientId, patientName } = invoiceTarget
             setInvoiceTarget(null)
-            setPrescriptionPrompt({ patientName })
+            setPrescriptionPrompt({ patientId, patientName })
           }}
           onSave={() => {
-            const patientName = invoiceTarget.patientName
+            const { patientId, patientName } = invoiceTarget
             setInvoiceTarget(null)
             loadConsultations()
-            setPrescriptionPrompt({ patientName })
+            setPrescriptionPrompt({ patientId, patientName })
           }}
         />
       )}
@@ -643,7 +651,14 @@ export function Consultations() {
               Write a prescription for {prescriptionPrompt.patientName} now?
             </p>
             <div className="flex gap-3">
-              <Button className="flex-1" onClick={() => { setPrescriptionPrompt(null); navigate('/prescriptions') }}>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  const { patientId } = prescriptionPrompt
+                  setPrescriptionPrompt(null)
+                  navigate('/prescriptions', { state: { newPrescriptionPatientId: patientId } })
+                }}
+              >
                 Write Prescription
               </Button>
               <Button variant="outline" className="flex-1" onClick={() => setPrescriptionPrompt(null)}>

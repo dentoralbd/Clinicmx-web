@@ -3649,7 +3649,12 @@ export function PatientProfile() {
         patientName,
         previousPayload: patient,
       })
-      const { error } = await supabase.from('patients').update({ patient_type: 'full' }).eq('id', patient.id)
+      const { data: newCode, error: codeError } = await (supabase as any).rpc('generate_patient_code')
+      if (codeError || !newCode) throw codeError || new Error('Failed to assign a patient code')
+      const { error } = await supabase
+        .from('patients')
+        .update({ patient_type: 'full', patient_code: newCode })
+        .eq('id', patient.id)
       if (error) throw error
       logActivity({
         action: 'edit',
@@ -3658,9 +3663,9 @@ export function PatientProfile() {
         entityLabel: patientName,
         patientId: patient.id,
         patientName,
-        details: 'Converted from consultation to full patient',
+        details: `Converted from consultation to full patient (${patient.patient_code || 'CO-?'} → ${newCode})`,
       })
-      setPatient((prev: any) => (prev ? { ...prev, patient_type: 'full' } : prev))
+      setPatient((prev: any) => (prev ? { ...prev, patient_type: 'full', patient_code: newCode } : prev))
     } catch (error) {
       console.error('Error converting consultation to patient:', error)
       alert('Failed to convert to full patient')
@@ -3670,7 +3675,7 @@ export function PatientProfile() {
   return (
     <div className="space-y-6 pb-40 md:pb-6 page-fade-in">
       <div className="flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => navigate('/patients')}>
+        <Button variant="outline" size="sm" onClick={() => navigate(isConsultationOnly ? '/consultations' : '/patients')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>

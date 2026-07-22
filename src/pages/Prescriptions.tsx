@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -58,6 +58,7 @@ function mergeRecentItem(items: any[], item: any) {
 
 export function Prescriptions() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
   const [medicationTemplates, setMedicationTemplates] = useState<any[]>([])
@@ -123,6 +124,19 @@ export function Prescriptions() {
     const { items, other } = getMedicalHistoryChecks(selected?.medical_history)
     setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
   }
+
+  // Arriving from the Consultation page's "Write prescription" action or
+  // post-intake prompt — pre-opens the form with that patient selected.
+  // Guarded on patients.length so it waits for loadPatients() to finish.
+  useEffect(() => {
+    const patientId = (location.state as any)?.newPrescriptionPatientId
+    if (!patientId || patients.length === 0) return
+    setPatientMode('existing')
+    setFormData((prev) => ({ ...prev, patient_id: patientId }))
+    selectPatientHistory(patientId)
+    setShowForm(true)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [patients, location.state])
 
   const [patientSearch, setPatientSearch] = useState('')
   const [patientSearchResults, setPatientSearchResults] = useState<any[] | null>(null)
