@@ -8,8 +8,11 @@ export function buildAppointmentReminderMessage(firstName: string, timeStr: stri
   return `Hello ${firstName}, this is a friendly reminder from ${CLINIC_NAME}: you have a ${type} appointment today at ${timeStr}. Please call us if you need to reschedule. Thank you!`
 }
 
-export function buildPaymentThanksMessage(firstName: string, amount: number): string {
-  return `Dear ${firstName}, we have received your payment of ${formatBDT(amount)}. Thank you for choosing ${CLINIC_NAME}. We wish you good health!`
+export function buildPaymentThanksMessage(firstName: string, amount: number, totalPaid: number): string {
+  // Only mention the running total when earlier installments exist —
+  // repeating the same figure twice on a first payment reads oddly.
+  const totalLine = totalPaid > amount ? ` Total paid so far: ${formatBDT(totalPaid)}.` : ''
+  return `Dear ${firstName}, we have received your payment of ${formatBDT(amount)}.${totalLine} Thank you for choosing ${CLINIC_NAME}. We wish you good health!`
 }
 
 export function buildRescheduleMessage(firstName: string, dateStr: string, timeStr: string): string {

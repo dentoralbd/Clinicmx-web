@@ -7,6 +7,8 @@ interface PaymentThanksPromptProps {
   firstName: string
   phone: string | null
   amount: number
+  /** Invoice's paid_amount after this payment — included in the message when it exceeds `amount`. */
+  totalPaid: number
   onClose: () => void
 }
 
@@ -15,9 +17,9 @@ interface PaymentThanksPromptProps {
  * to send a cordial WhatsApp thank-you. Nothing is persisted — this is a
  * prompt, not a tracked feature; Skip/close just dismisses it.
  */
-export function PaymentThanksPrompt({ firstName, phone, amount, onClose }: PaymentThanksPromptProps) {
+export function PaymentThanksPrompt({ firstName, phone, amount, totalPaid, onClose }: PaymentThanksPromptProps) {
   function handleSend() {
-    const message = buildPaymentThanksMessage(firstName, amount)
+    const message = buildPaymentThanksMessage(firstName, amount, totalPaid)
     openWhatsAppMessage(phone, message)
     onClose()
   }

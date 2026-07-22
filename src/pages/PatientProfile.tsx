@@ -450,7 +450,7 @@ export function PatientProfile() {
   const [visitTreatmentsDone, setVisitTreatmentsDone] = useState<VisitTreatmentEntry[]>([])
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
-  const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number } | null>(null)
+  const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
   // Treatment plan cost confirmation: prescription submit is gated behind this
   // dialog whenever the prescription has plan entries; the doctor enters costs or defers.
@@ -1038,24 +1038,27 @@ export function PatientProfile() {
         // amounts (prefer a newly-created invoice as the visit's "own" bill).
         let remaining = paymentAmount
         let linkedInvoiceId: string | null = null
+        let touchedTotalPaid = 0
         if (billableTreatments.length > 0 && remaining > 0) {
           const newInvoicePortion = Math.min(remaining, treatmentsTotal)
           const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
           if (newInvoiceId) linkedInvoiceId = newInvoiceId
+          touchedTotalPaid += newInvoicePortion
           remaining -= newInvoicePortion
         }
         for (const invoice of existingInvoicesWithDue) {
           if (remaining <= 0) break
           const applied = Math.min(remaining, getInvoiceDue(invoice))
-          await applyPaymentToExistingInvoice(invoice, applied)
+          const newPaid = await applyPaymentToExistingInvoice(invoice, applied)
           if (!linkedInvoiceId) linkedInvoiceId = invoice.id
+          touchedTotalPaid += newPaid
           remaining -= applied
         }
         if (linkedInvoiceId && insertedVisit?.id) {
           await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
         }
         if (patient?.phone) {
-          setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount })
+          setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount, totalPaid: touchedTotalPaid })
         }
       }
 
@@ -1190,7 +1193,7 @@ export function PatientProfile() {
     return invoice.id as string
   }
 
-  async function applyPaymentToExistingInvoice(invoice: any, amount: number) {
+  async function applyPaymentToExistingInvoice(invoice: any, amount: number): Promise<number> {
     // Same fallback chain as createVisitInvoiceWithPayment for older payments schemas
     const paymentDateIso = new Date().toISOString()
     let paymentStored = false
@@ -1246,6 +1249,8 @@ export function PatientProfile() {
     if (!paymentStored && paymentSchemaError) {
       logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount })
     }
+
+    return newPaid
   }
 
   function openVisitEdit(visit: any) {
@@ -3846,6 +3851,7 @@ export function PatientProfile() {
           firstName={visitPaymentThanks.firstName}
           phone={visitPaymentThanks.phone}
           amount={visitPaymentThanks.amount}
+          totalPaid={visitPaymentThanks.totalPaid}
           onClose={() => setVisitPaymentThanks(null)}
         />
       )}

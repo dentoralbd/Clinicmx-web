@@ -1149,6 +1149,7 @@ export function InvoiceModal({
           firstName={thanksPrompt.firstName}
           phone={thanksPrompt.phone}
           amount={thanksPrompt.amount}
+          totalPaid={thanksPrompt.amount}
           onClose={() => {
             const invoiceId = thanksPrompt.invoiceId
             setThanksPrompt(null)

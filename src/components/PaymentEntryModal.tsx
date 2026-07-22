@@ -30,7 +30,7 @@ export function PaymentEntryModal({
   const [paymentDate, setPaymentDate] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
-  const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number } | null>(null)
+  const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
   const [patientContact, setPatientContact] = useState<{ firstName: string; phone: string | null } | null>(null)
   const [invoiceMeta, setInvoiceMeta] = useState<{ patientId: string | null; patientName: string | null; invoiceNumber: string | null } | null>(null)
 
@@ -119,7 +119,7 @@ export function PaymentEntryModal({
       alert(`Payment recorded. Remaining balance: ${remainingAfterPayment.toFixed(2)}.${warning}`)
 
       if (patientContact?.phone) {
-        setThanksPrompt({ firstName: patientContact.firstName, phone: patientContact.phone, amount: parsedAmount })
+        setThanksPrompt({ firstName: patientContact.firstName, phone: patientContact.phone, amount: parsedAmount, totalPaid: result.newPaidAmount })
       } else {
         onSaved()
       }
@@ -207,6 +207,7 @@ export function PaymentEntryModal({
           firstName={thanksPrompt.firstName}
           phone={thanksPrompt.phone}
           amount={thanksPrompt.amount}
+          totalPaid={thanksPrompt.totalPaid}
           onClose={() => { setThanksPrompt(null); onSaved() }}
         />
       )}
