@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Mail, MessageCircle, Printer, X } from 'lucide-react'
-import { getTreatmentOriginalCost, getTreatmentPlanDiscountTotal } from '@/lib/billing'
-import type { TreatmentPlanTreatment } from '@/lib/treatmentPlanPdf'
+import { computeTreatmentPlanTotals, type TreatmentPlanInvoiceLike, type TreatmentPlanTreatment } from '@/lib/treatmentPlanTotals'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
@@ -9,6 +8,7 @@ import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface TreatmentPlanPrintProps {
   treatments: TreatmentPlanTreatment[]
+  invoices?: TreatmentPlanInvoiceLike[]
   patient: {
     first_name: string
     last_name: string
@@ -27,12 +27,11 @@ function treatmentStatusBadgeClass(status: string) {
     'bg-gray-100 text-gray-800'
 }
 
-export function TreatmentPlanPrint({ treatments, patient, doctor, onClose }: TreatmentPlanPrintProps) {
+export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor, onClose }: TreatmentPlanPrintProps) {
   const [showShareMenu, setShowShareMenu] = useState(false)
+  const [showDiscount, setShowDiscount] = useState(true)
 
-  const subtotal = treatments.reduce((sum, t) => sum + getTreatmentOriginalCost(t), 0)
-  const discountTotal = getTreatmentPlanDiscountTotal(treatments)
-  const total = treatments.reduce((sum, t) => sum + (t.cost ?? 0), 0)
+  const { subtotal, discount: discountTotal, total } = computeTreatmentPlanTotals(treatments, invoices)
 
   const [logoSrc, setLogoSrc] = useState(doctor?.logo_data || '/logo.png')
   useEffect(() => {
@@ -79,7 +78,7 @@ export function TreatmentPlanPrint({ treatments, patient, doctor, onClose }: Tre
     }
 
     const { buildTreatmentPlanPdf, treatmentPlanPdfFileName } = await import('@/lib/treatmentPlanPdf')
-    const pdf = buildTreatmentPlanPdf(treatments, patient, doctor, { logoSrc })
+    const pdf = buildTreatmentPlanPdf(treatments, patient, doctor, { logoSrc, invoices, showDiscount })
     const fileName = treatmentPlanPdfFileName(patient)
     const subject = `Treatment Plan - ${patient.first_name} ${patient.last_name}`
     const text = `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your treatment plan. Total: ${formatBDT(total)}.`
@@ -149,6 +148,12 @@ export function TreatmentPlanPrint({ treatments, patient, doctor, onClose }: Tre
             <X className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Close</span>
           </button>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 px-3 pb-2 sm:px-4 sm:pb-3 text-sm text-gray-700">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={showDiscount} onChange={(e) => setShowDiscount(e.target.checked)} />
+            Show discount breakdown
+          </label>
         </div>
       </div>
 
@@ -262,15 +267,19 @@ export function TreatmentPlanPrint({ treatments, patient, doctor, onClose }: Tre
 
         <div className="mt-4 flex justify-end">
           <div className="w-64 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{formatBDT(subtotal)}</span>
-            </div>
-            {discountTotal > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span>Discount</span>
-                <span>-{formatBDT(discountTotal)}</span>
-              </div>
+            {showDiscount && (
+              <>
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>{formatBDT(subtotal)}</span>
+                </div>
+                {discountTotal > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Discount</span>
+                    <span>-{formatBDT(discountTotal)}</span>
+                  </div>
+                )}
+              </>
             )}
             <div className="flex justify-between font-bold text-base border-t-2 border-gray-800 pt-2">
               <span>Total</span>

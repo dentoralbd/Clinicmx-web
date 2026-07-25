@@ -15,6 +15,7 @@ import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { TreatmentPlanPrint } from '@/components/TreatmentPlanPrint'
+import { computeTreatmentPlanTotals } from '@/lib/treatmentPlanTotals'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
@@ -403,7 +404,8 @@ export function PatientProfile() {
   const [invoicePlanGroupId, setInvoicePlanGroupId] = useState<string | null>(null)
   const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<any | null>(null)
   const [estimateJob, setEstimateJob] = useState<{ treatments: any[] } | null>(null)
-  const [treatmentPlanPrintJob, setTreatmentPlanPrintJob] = useState<{ treatments: any[] } | null>(null)
+  const [treatmentPlanPrintJob, setTreatmentPlanPrintJob] = useState<{ treatments: any[]; invoices: any[] } | null>(null)
+  const [showTreatmentPlanDiscount, setShowTreatmentPlanDiscount] = useState(true)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
   const [showPayPicker, setShowPayPicker] = useState(false)
   const [mergeMode, setMergeMode] = useState(false)
@@ -2350,9 +2352,11 @@ export function PatientProfile() {
       status === 'Cancelled' ? 'pill-error' :
       'bg-gray-100 text-gray-800'
 
-    const treatmentPlanSubtotal = treatments.reduce((sum: number, t: any) => sum + Number(t.original_cost ?? t.cost ?? 0), 0)
-    const treatmentPlanDiscount = getTreatmentPlanDiscountTotal(treatments)
-    const treatmentPlanTotal = treatments.reduce((sum: number, t: any) => sum + Number(t.cost ?? 0), 0)
+    const {
+      subtotal: treatmentPlanSubtotal,
+      discount: treatmentPlanDiscount,
+      total: treatmentPlanTotal,
+    } = computeTreatmentPlanTotals(treatments, invoices)
 
     return (
       <div className="space-y-6">
@@ -2420,7 +2424,7 @@ export function PatientProfile() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => setTreatmentPlanPrintJob({ treatments })}
+                onClick={() => setTreatmentPlanPrintJob({ treatments, invoices })}
                 disabled={treatments.length === 0}
               >
                 <Printer className="w-4 h-4 mr-1" />
@@ -2428,6 +2432,16 @@ export function PatientProfile() {
               </Button>
             </div>
           </div>
+          {treatments.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer mb-3">
+              <input
+                type="checkbox"
+                checked={showTreatmentPlanDiscount}
+                onChange={(e) => setShowTreatmentPlanDiscount(e.target.checked)}
+              />
+              Show discount breakdown
+            </label>
+          )}
           {treatments.length === 0 ? (
             <EmptyState message="No treatments recorded yet. Add a treatment plan from the Operations tab." />
           ) : (
@@ -2467,15 +2481,19 @@ export function PatientProfile() {
                 )}
               </div>
               <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col items-end gap-1 text-sm">
-                <div className="flex justify-between w-full max-w-xs">
-                  <span className="text-text-secondary">Subtotal</span>
-                  <span>{formatBDT(treatmentPlanSubtotal)}</span>
-                </div>
-                {treatmentPlanDiscount > 0 && (
-                  <div className="flex justify-between w-full max-w-xs text-text-secondary">
-                    <span>Discount</span>
-                    <span>-{formatBDT(treatmentPlanDiscount)}</span>
-                  </div>
+                {showTreatmentPlanDiscount && (
+                  <>
+                    <div className="flex justify-between w-full max-w-xs">
+                      <span className="text-text-secondary">Subtotal</span>
+                      <span>{formatBDT(treatmentPlanSubtotal)}</span>
+                    </div>
+                    {treatmentPlanDiscount > 0 && (
+                      <div className="flex justify-between w-full max-w-xs text-text-secondary">
+                        <span>Discount</span>
+                        <span>-{formatBDT(treatmentPlanDiscount)}</span>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="flex justify-between w-full max-w-xs font-semibold">
                   <span>Total</span>
@@ -4275,6 +4293,7 @@ export function PatientProfile() {
       {treatmentPlanPrintJob && patient && (
         <TreatmentPlanPrint
           treatments={treatmentPlanPrintJob.treatments}
+          invoices={treatmentPlanPrintJob.invoices}
           patient={patient}
           doctor={doctorProfile}
           onClose={() => setTreatmentPlanPrintJob(null)}

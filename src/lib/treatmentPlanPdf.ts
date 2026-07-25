@@ -1,20 +1,15 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { getTreatmentOriginalCost, getTreatmentPlanDiscountTotal } from '@/lib/billing'
 import { drawFooter, drawLetterhead, drawTotalsBlock, type PdfPatient } from '@/lib/invoicePdf'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { formatBDT, safeFormat } from '@/lib/utils'
+import {
+  computeTreatmentPlanTotals,
+  type TreatmentPlanInvoiceLike,
+  type TreatmentPlanTreatment,
+} from '@/lib/treatmentPlanTotals'
 
-export interface TreatmentPlanTreatment {
-  id: string
-  treatment_type: string
-  description?: string | null
-  tooth_number?: number | null
-  cost?: number | null
-  original_cost?: number | null
-  status: string
-  notes?: string | null
-}
+export type { TreatmentPlanTreatment, TreatmentPlanInvoiceLike } from '@/lib/treatmentPlanTotals'
 
 function lastAutoTableY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
@@ -24,7 +19,7 @@ export function buildTreatmentPlanPdf(
   treatments: TreatmentPlanTreatment[],
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
-  options: { logoSrc?: string } = {}
+  options: { logoSrc?: string; invoices?: TreatmentPlanInvoiceLike[]; showDiscount?: boolean } = {}
 ): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
@@ -86,12 +81,14 @@ export function buildTreatmentPlanPdf(
     y = 50
   }
 
-  const subtotal = treatments.reduce((sum, t) => sum + getTreatmentOriginalCost(t), 0)
-  const discountTotal = getTreatmentPlanDiscountTotal(treatments)
-  const total = treatments.reduce((sum, t) => sum + (t.cost ?? 0), 0)
+  const { subtotal, discount: discountTotal, total } = computeTreatmentPlanTotals(treatments, options.invoices || [])
+  const showDiscount = options.showDiscount ?? true
 
-  const totalsLines: Array<[string, string, boolean]> = [['Subtotal', formatBDT(subtotal), false]]
-  if (discountTotal > 0) totalsLines.push(['Discount', `-${formatBDT(discountTotal)}`, false])
+  const totalsLines: Array<[string, string, boolean]> = []
+  if (showDiscount) {
+    totalsLines.push(['Subtotal', formatBDT(subtotal), false])
+    if (discountTotal > 0) totalsLines.push(['Discount', `-${formatBDT(discountTotal)}`, false])
+  }
   totalsLines.push(['Total', formatBDT(total), true])
 
   y = drawTotalsBlock(doc, y, totalsLines) + 16
