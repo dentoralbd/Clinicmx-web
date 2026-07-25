@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Mail, MessageCircle, Printer, X } from 'lucide-react'
-import { computeTreatmentPlanTotals, type TreatmentPlanInvoiceLike, type TreatmentPlanTreatment } from '@/lib/treatmentPlanTotals'
+import {
+  buildTreatmentPlanRows,
+  computeTreatmentPlanTotals,
+  type TreatmentPlanInvoiceLike,
+  type TreatmentPlanTreatment,
+} from '@/lib/treatmentPlanTotals'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
@@ -30,8 +35,10 @@ function treatmentStatusBadgeClass(status: string) {
 export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor, onClose }: TreatmentPlanPrintProps) {
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [showDiscount, setShowDiscount] = useState(true)
+  const [groupSimilar, setGroupSimilar] = useState(false)
 
   const { subtotal, discount: discountTotal, total } = computeTreatmentPlanTotals(treatments, invoices)
+  const displayRows = buildTreatmentPlanRows(treatments, groupSimilar)
 
   const [logoSrc, setLogoSrc] = useState(doctor?.logo_data || '/logo.png')
   useEffect(() => {
@@ -78,7 +85,7 @@ export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor,
     }
 
     const { buildTreatmentPlanPdf, treatmentPlanPdfFileName } = await import('@/lib/treatmentPlanPdf')
-    const pdf = buildTreatmentPlanPdf(treatments, patient, doctor, { logoSrc, invoices, showDiscount })
+    const pdf = buildTreatmentPlanPdf(treatments, patient, doctor, { logoSrc, invoices, showDiscount, groupSimilar })
     const fileName = treatmentPlanPdfFileName(patient)
     const subject = `Treatment Plan - ${patient.first_name} ${patient.last_name}`
     const text = `Dear ${patient.first_name || 'Patient'},\n\nPlease find attached your treatment plan. Total: ${formatBDT(total)}.`
@@ -150,6 +157,10 @@ export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor,
           </button>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 px-3 pb-2 sm:px-4 sm:pb-3 text-sm text-gray-700">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={groupSimilar} onChange={(e) => setGroupSimilar(e.target.checked)} />
+            Group similar
+          </label>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={showDiscount} onChange={(e) => setShowDiscount(e.target.checked)} />
             Show discount breakdown
@@ -244,22 +255,22 @@ export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor,
             </tr>
           </thead>
           <tbody>
-            {treatments.map((treatment) => (
-              <tr key={treatment.id} className="border-b border-gray-200 align-top">
-                <td className="py-2 pr-2 text-center">{treatment.tooth_number ? `T${treatment.tooth_number}` : '—'}</td>
-                <td className="py-2 px-2">{treatment.treatment_type}</td>
+            {displayRows.map((row) => (
+              <tr key={row.id} className="border-b border-gray-200 align-top">
+                <td className="py-2 pr-2 text-center">{row.toothLabel}</td>
+                <td className="py-2 px-2">{row.treatment_type}{row.count > 1 ? ` x${row.count}` : ''}</td>
                 <td className="py-2 px-2">
-                  {treatment.description?.trim() || treatment.treatment_type}
-                  {treatment.notes?.trim() && (
-                    <div className="text-xs text-gray-500 mt-0.5">Note: {treatment.notes.trim()}</div>
+                  {row.description?.trim() || row.treatment_type}
+                  {row.notes?.trim() && (
+                    <div className="text-xs text-gray-500 mt-0.5">Note: {row.notes.trim()}</div>
                   )}
                 </td>
                 <td className="py-2 px-2 text-center">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${treatmentStatusBadgeClass(treatment.status)}`}>
-                    {treatment.status}
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${treatmentStatusBadgeClass(row.status)}`}>
+                    {row.status}
                   </span>
                 </td>
-                <td className="py-2 pl-2 text-right">{formatBDT(treatment.cost ?? 0)}</td>
+                <td className="py-2 pl-2 text-right">{formatBDT(row.cost)}</td>
               </tr>
             ))}
           </tbody>

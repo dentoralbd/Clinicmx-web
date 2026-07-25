@@ -10,6 +10,7 @@ export interface TreatmentPlanTreatment {
   status: string
   notes?: string | null
   invoice_id?: string | null
+  created_at?: string | null
 }
 
 export interface TreatmentPlanInvoiceLike {
@@ -86,4 +87,76 @@ export function computeTreatmentPlanTotals(
 
   const round = (value: number) => Math.round(value * 100) / 100
   return { subtotal: round(subtotal), discount: round(discount), total: round(total) }
+}
+
+export interface TreatmentPlanDisplayRow {
+  id: string
+  treatment_type: string
+  description?: string | null
+  toothLabel: string
+  status: string
+  notes?: string | null
+  cost: number
+  count: number
+  created_at?: string | null
+}
+
+/**
+ * Row-level display grouping — same idea as `billing.ts`'s `groupSimilarInvoiceItems`
+ * (invoice/estimate "Group similar"): merges treatments identical apart from tooth
+ * number into one row like "T23, T45" with summed cost. Only rows matching on type,
+ * description, cost, AND status merge — differing status/price/description means a
+ * clinically different item, so they stay separate. Purely a display transform; plan
+ * totals (`computeTreatmentPlanTotals`) always use the raw, ungrouped treatment list.
+ */
+export function buildTreatmentPlanRows(
+  treatments: TreatmentPlanTreatment[],
+  groupSimilar: boolean
+): TreatmentPlanDisplayRow[] {
+  if (!groupSimilar) {
+    return treatments.map((t) => ({
+      id: t.id,
+      treatment_type: t.treatment_type,
+      description: t.description,
+      toothLabel: t.tooth_number ? `T${t.tooth_number}` : '—',
+      status: t.status,
+      notes: t.notes,
+      cost: t.cost ?? 0,
+      count: 1,
+      created_at: t.created_at,
+    }))
+  }
+
+  const groups = new Map<string, TreatmentPlanTreatment[]>()
+  for (const t of treatments) {
+    const key = `${t.treatment_type}::${(t.description || '').trim()}::${t.cost ?? 0}::${t.status}`
+    const existing = groups.get(key)
+    if (existing) existing.push(t)
+    else groups.set(key, [t])
+  }
+
+  return Array.from(groups.values()).map((members) => {
+    const first = members[0]
+    const teeth = members
+      .map((m) => m.tooth_number)
+      .filter((n): n is number => n != null)
+      .sort((a, b) => a - b)
+    const toothLabel = teeth.length > 0 ? teeth.map((n) => `T${n}`).join(', ') : '—'
+    const sameNotes = members.every((m) => (m.notes || '').trim() === (first.notes || '').trim())
+    return {
+      id: first.id,
+      treatment_type: first.treatment_type,
+      description: first.description,
+      toothLabel,
+      status: first.status,
+      notes: sameNotes ? first.notes : null,
+      cost: members.reduce((sum, m) => sum + (m.cost ?? 0), 0),
+      count: members.length,
+      created_at: members.reduce<string | null>((latest, m) => {
+        if (!m.created_at) return latest
+        if (!latest || m.created_at > latest) return m.created_at
+        return latest
+      }, null),
+    }
+  })
 }

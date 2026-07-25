@@ -4,6 +4,7 @@ import { drawFooter, drawLetterhead, drawTotalsBlock, type PdfPatient } from '@/
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import {
+  buildTreatmentPlanRows,
   computeTreatmentPlanTotals,
   type TreatmentPlanInvoiceLike,
   type TreatmentPlanTreatment,
@@ -19,7 +20,7 @@ export function buildTreatmentPlanPdf(
   treatments: TreatmentPlanTreatment[],
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
-  options: { logoSrc?: string; invoices?: TreatmentPlanInvoiceLike[]; showDiscount?: boolean } = {}
+  options: { logoSrc?: string; invoices?: TreatmentPlanInvoiceLike[]; showDiscount?: boolean; groupSimilar?: boolean } = {}
 ): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
@@ -45,15 +46,16 @@ export function buildTreatmentPlanPdf(
   doc.text(`Date: ${safeFormat(new Date().toISOString(), 'dd MMM yyyy')}`, pageWidth - marginX, y, { align: 'right' })
   y += 20
 
-  const rows = treatments.map((treatment) => {
-    const descriptionLines = [treatment.description?.trim() || treatment.treatment_type]
-    if (treatment.notes?.trim()) descriptionLines.push(`Note: ${treatment.notes.trim()}`)
+  const displayRows = buildTreatmentPlanRows(treatments, options.groupSimilar ?? false)
+  const rows = displayRows.map((row) => {
+    const descriptionLines = [row.description?.trim() || row.treatment_type]
+    if (row.notes?.trim()) descriptionLines.push(`Note: ${row.notes.trim()}`)
     return [
-      treatment.tooth_number ? `T${treatment.tooth_number}` : '—',
-      treatment.treatment_type,
+      row.toothLabel,
+      row.count > 1 ? `${row.treatment_type} x${row.count}` : row.treatment_type,
       descriptionLines.join('\n'),
-      treatment.status,
-      formatBDT(treatment.cost ?? 0),
+      row.status,
+      formatBDT(row.cost),
     ]
   })
 

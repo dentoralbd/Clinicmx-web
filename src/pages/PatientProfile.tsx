@@ -15,7 +15,7 @@ import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { TreatmentPlanPrint } from '@/components/TreatmentPlanPrint'
-import { computeTreatmentPlanTotals } from '@/lib/treatmentPlanTotals'
+import { buildTreatmentPlanRows, computeTreatmentPlanTotals } from '@/lib/treatmentPlanTotals'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
@@ -406,6 +406,7 @@ export function PatientProfile() {
   const [estimateJob, setEstimateJob] = useState<{ treatments: any[] } | null>(null)
   const [treatmentPlanPrintJob, setTreatmentPlanPrintJob] = useState<{ treatments: any[]; invoices: any[] } | null>(null)
   const [showTreatmentPlanDiscount, setShowTreatmentPlanDiscount] = useState(true)
+  const [groupSimilarPlanTreatments, setGroupSimilarPlanTreatments] = useState(false)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
   const [showPayPicker, setShowPayPicker] = useState(false)
   const [mergeMode, setMergeMode] = useState(false)
@@ -2357,6 +2358,7 @@ export function PatientProfile() {
       discount: treatmentPlanDiscount,
       total: treatmentPlanTotal,
     } = computeTreatmentPlanTotals(treatments, invoices)
+    const treatmentPlanRows = buildTreatmentPlanRows(treatments, groupSimilarPlanTreatments)
 
     return (
       <div className="space-y-6">
@@ -2433,50 +2435,60 @@ export function PatientProfile() {
             </div>
           </div>
           {treatments.length > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer mb-3">
-              <input
-                type="checkbox"
-                checked={showTreatmentPlanDiscount}
-                onChange={(e) => setShowTreatmentPlanDiscount(e.target.checked)}
-              />
-              Show discount breakdown
-            </label>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3">
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={groupSimilarPlanTreatments}
+                  onChange={(e) => setGroupSimilarPlanTreatments(e.target.checked)}
+                />
+                Group similar
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showTreatmentPlanDiscount}
+                  onChange={(e) => setShowTreatmentPlanDiscount(e.target.checked)}
+                />
+                Show discount breakdown
+              </label>
+            </div>
           )}
           {treatments.length === 0 ? (
             <EmptyState message="No treatments recorded yet. Add a treatment plan from the Operations tab." />
           ) : (
             <>
               <div className="space-y-3">
-                {treatments.slice(0, 5).map((treatment: any) => (
-                  <div key={treatment.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                {treatmentPlanRows.slice(0, 5).map((row) => (
+                  <div key={row.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="text-sm font-semibold text-gray-800">
-                          {treatment.treatment_type}
-                          {treatment.tooth_number ? ` (T${treatment.tooth_number})` : ''}
+                          {row.treatment_type}{row.count > 1 ? ` x${row.count}` : ''}
+                          {row.toothLabel !== '—' ? ` (${row.toothLabel})` : ''}
                         </div>
-                        {treatment.description && (
-                          <div className="text-sm text-gray-600 mt-0.5">{treatment.description}</div>
+                        {row.description && (
+                          <div className="text-sm text-gray-600 mt-0.5">{row.description}</div>
                         )}
-                        {treatment.notes && (
-                          <div className="text-xs text-gray-500 mt-0.5">Note: {treatment.notes}</div>
+                        {row.notes && (
+                          <div className="text-xs text-gray-500 mt-0.5">Note: {row.notes}</div>
                         )}
                         <div className="text-xs text-text-secondary mt-1">
-                          {formatDateValue(treatment.created_at, 'MMM d, yyyy')}
+                          {formatDateValue(row.created_at, 'MMM d, yyyy')}
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${treatmentStatusBadgeClass(treatment.status)}`}>
-                          {treatment.status}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${treatmentStatusBadgeClass(row.status)}`}>
+                          {row.status}
                         </span>
-                        <span className="text-sm font-semibold text-gray-800">{formatBDT(Number(treatment.cost) || 0)}</span>
+                        <span className="text-sm font-semibold text-gray-800">{formatBDT(row.cost)}</span>
                       </div>
                     </div>
                   </div>
                 ))}
-                {treatments.length > 5 && (
+                {treatmentPlanRows.length > 5 && (
                   <p className="text-xs text-text-secondary text-center">
-                    +{treatments.length - 5} more — view full history for the complete list
+                    +{treatmentPlanRows.length - 5} more — view full history for the complete list
                   </p>
                 )}
               </div>
