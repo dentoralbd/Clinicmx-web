@@ -18,6 +18,7 @@ import {
 } from '@/lib/billing'
 import { supabase } from '@/lib/supabase'
 import { recordInvoicePayment } from '@/lib/payments'
+import { advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 import { logEdit } from '@/lib/editHistory'
@@ -454,6 +455,7 @@ export function InvoiceModal({
     }
     if (idsToLink.length > 0) {
       await supabase.from('treatments').update({ is_invoiced: true, invoice_id: editingInvoice.id }).in('id', idsToLink).then(() => {}, () => {})
+      advanceTreatmentStatusOnBilling(idsToLink)
     }
 
     await supabase.from('invoice_history').insert({
@@ -617,11 +619,13 @@ export function InvoiceModal({
 
         // treatments.is_invoiced / invoice_id are added by a later migration — ignore if missing
         if (selectedTreatmentIds.size > 0) {
+          const linkedIds = Array.from(selectedTreatmentIds)
           await supabase
             .from('treatments')
             .update({ is_invoiced: true, invoice_id: data.id })
-            .in('id', Array.from(selectedTreatmentIds))
+            .in('id', linkedIds)
             .then(() => {}, () => {})
+          advanceTreatmentStatusOnBilling(linkedIds)
         }
 
         // payment_plans table is added by a later migration — ignore if missing

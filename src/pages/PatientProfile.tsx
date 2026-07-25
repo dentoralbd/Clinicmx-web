@@ -14,9 +14,10 @@ import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
+import { TreatmentPlanPrint } from '@/components/TreatmentPlanPrint'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
-import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
+import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
@@ -402,6 +403,7 @@ export function PatientProfile() {
   const [invoicePlanGroupId, setInvoicePlanGroupId] = useState<string | null>(null)
   const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<any | null>(null)
   const [estimateJob, setEstimateJob] = useState<{ treatments: any[] } | null>(null)
+  const [treatmentPlanPrintJob, setTreatmentPlanPrintJob] = useState<{ treatments: any[] } | null>(null)
   const [payingInvoice, setPayingInvoice] = useState<any | null>(null)
   const [showPayPicker, setShowPayPicker] = useState(false)
   const [mergeMode, setMergeMode] = useState(false)
@@ -1135,11 +1137,13 @@ export function PatientProfile() {
       event_data: { source: 'visit_form' },
     }).then(() => {}, () => {})
 
+    const billedTreatmentIds = insertedTreatments.map((treatment) => treatment.id)
     await supabase
       .from('treatments')
       .update({ is_invoiced: true, invoice_id: invoice.id })
-      .in('id', insertedTreatments.map((treatment) => treatment.id))
+      .in('id', billedTreatmentIds)
       .then(() => {}, () => {})
+    advanceTreatmentStatusOnBilling(billedTreatmentIds)
 
     // Same fallback chain as InvoiceModal.recordImmediatePayment for older payments schemas
     const paymentDateIso = new Date().toISOString()
@@ -2340,6 +2344,16 @@ export function PatientProfile() {
       Implant: 'bg-green-500',
     }
 
+    const treatmentStatusBadgeClass = (status: string) =>
+      status === 'Completed' ? 'pill-success' :
+      status === 'In Progress' ? 'pill-warning' :
+      status === 'Cancelled' ? 'pill-error' :
+      'bg-gray-100 text-gray-800'
+
+    const treatmentPlanSubtotal = treatments.reduce((sum: number, t: any) => sum + Number(t.original_cost ?? t.cost ?? 0), 0)
+    const treatmentPlanDiscount = getTreatmentPlanDiscountTotal(treatments)
+    const treatmentPlanTotal = treatments.reduce((sum: number, t: any) => sum + Number(t.cost ?? 0), 0)
+
     return (
       <div className="space-y-6">
         <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6">
@@ -2392,6 +2406,85 @@ export function PatientProfile() {
             <MetricTile label="In Progress" value={treatments.filter((treatment) => treatment.status === 'In Progress').length.toString()} />
           </div>
         </InfoCard>
+
+        {/* Treatment Plan — detailed list + print/share */}
+        <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <div>
+              <h3 className="font-semibold">Treatment Plan</h3>
+              <p className="text-xs text-text-secondary mt-0.5">Detailed treatments recorded for this patient</p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => updateSection('operations')}>
+                View full history
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setTreatmentPlanPrintJob({ treatments })}
+                disabled={treatments.length === 0}
+              >
+                <Printer className="w-4 h-4 mr-1" />
+                Print / Share
+              </Button>
+            </div>
+          </div>
+          {treatments.length === 0 ? (
+            <EmptyState message="No treatments recorded yet. Add a treatment plan from the Operations tab." />
+          ) : (
+            <>
+              <div className="space-y-3">
+                {treatments.slice(0, 5).map((treatment: any) => (
+                  <div key={treatment.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-800">
+                          {treatment.treatment_type}
+                          {treatment.tooth_number ? ` (T${treatment.tooth_number})` : ''}
+                        </div>
+                        {treatment.description && (
+                          <div className="text-sm text-gray-600 mt-0.5">{treatment.description}</div>
+                        )}
+                        {treatment.notes && (
+                          <div className="text-xs text-gray-500 mt-0.5">Note: {treatment.notes}</div>
+                        )}
+                        <div className="text-xs text-text-secondary mt-1">
+                          {formatDateValue(treatment.created_at, 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${treatmentStatusBadgeClass(treatment.status)}`}>
+                          {treatment.status}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-800">{formatBDT(Number(treatment.cost) || 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {treatments.length > 5 && (
+                  <p className="text-xs text-text-secondary text-center">
+                    +{treatments.length - 5} more — view full history for the complete list
+                  </p>
+                )}
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col items-end gap-1 text-sm">
+                <div className="flex justify-between w-full max-w-xs">
+                  <span className="text-text-secondary">Subtotal</span>
+                  <span>{formatBDT(treatmentPlanSubtotal)}</span>
+                </div>
+                {treatmentPlanDiscount > 0 && (
+                  <div className="flex justify-between w-full max-w-xs text-text-secondary">
+                    <span>Discount</span>
+                    <span>-{formatBDT(treatmentPlanDiscount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between w-full max-w-xs font-semibold">
+                  <span>Total</span>
+                  <span>{formatBDT(treatmentPlanTotal)}</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Clinical Consultation History — CC and O/E from prescriptions */}
         {(visits.length > 0 || prescriptions.some(p => p.chief_complaint || p.on_examination)) && (
@@ -4176,6 +4269,15 @@ export function PatientProfile() {
           patient={patient}
           doctor={doctorProfile}
           onClose={() => setEstimateJob(null)}
+        />
+      )}
+
+      {treatmentPlanPrintJob && patient && (
+        <TreatmentPlanPrint
+          treatments={treatmentPlanPrintJob.treatments}
+          patient={patient}
+          doctor={doctorProfile}
+          onClose={() => setTreatmentPlanPrintJob(null)}
         />
       )}
 

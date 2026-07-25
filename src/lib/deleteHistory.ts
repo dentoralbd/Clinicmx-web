@@ -4,6 +4,7 @@ import { getAuditActor } from './appSession'
 import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
 import { extractTreatmentIdsFromInvoiceItems } from './billing'
+import { advanceTreatmentStatusOnBilling } from './invoiceSync'
 
 export type DeletedEntityType = TrackedEntityType | 'patient_file'
 
@@ -101,11 +102,13 @@ export async function restoreDeletion(entry: RestorableEntry): Promise<{ ok: tru
   if (entry.entity_type === 'invoice' && Array.isArray(row.items)) {
     const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(row.items as unknown[])
     if (linkedTreatmentIds.size > 0) {
+      const linkedIds = Array.from(linkedTreatmentIds)
       await supabase
         .from('treatments')
         .update({ invoice_id: row.id as string, is_invoiced: true })
-        .in('id', Array.from(linkedTreatmentIds))
+        .in('id', linkedIds)
         .then(() => {}, () => {})
+      advanceTreatmentStatusOnBilling(linkedIds)
     }
   }
 

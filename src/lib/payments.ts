@@ -75,6 +75,19 @@ export async function recordInvoicePayment({
 
   if (invoiceError) throw invoiceError
 
+  // Auto-advance: an invoice reaching Paid completes every treatment still linked to
+  // it (unless already Completed/Cancelled). Fire-and-forget, never reverted if a
+  // later payment edit/delete drops the invoice back below fully paid — a human can
+  // always correct status manually, same as any other status change today.
+  if (newStatus === 'Paid') {
+    supabase
+      .from('treatments')
+      .update({ status: 'Completed' })
+      .eq('invoice_id', invoiceId)
+      .not('status', 'in', '(Completed,Cancelled)')
+      .then(() => {}, () => {})
+  }
+
   await supabase.from('invoice_history').insert({
     invoice_id: invoiceId,
     event_type: 'payment_recorded',

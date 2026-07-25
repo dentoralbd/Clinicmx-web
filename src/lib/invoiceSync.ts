@@ -72,6 +72,24 @@ async function findLinkedInvoice(
 }
 
 /**
+ * Bumps Planned treatments to In Progress the moment they get attached to an
+ * invoice (billed). Never touches In Progress/Completed/Cancelled rows — this
+ * only advances the one transition, it never regresses or overrides a status
+ * set manually elsewhere. Fire-and-forget, matching every other treatment/invoice
+ * sync write in this module — a failure here never blocks the billing write it
+ * follows.
+ */
+export async function advanceTreatmentStatusOnBilling(treatmentIds: string[]) {
+  if (treatmentIds.length === 0) return
+  await supabase
+    .from('treatments')
+    .update({ status: 'In Progress' })
+    .in('id', treatmentIds)
+    .eq('status', 'Planned')
+    .then(() => {}, () => {})
+}
+
+/**
  * Rebuilds the linked live invoice after a treatment was edited or deleted:
  * regenerates its treatment-sourced items (manual items preserved), recomputes
  * totals/status, and records an invoice_history event. The treatment change is
