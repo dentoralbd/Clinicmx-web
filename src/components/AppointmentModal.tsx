@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { logActivity } from '@/lib/activityLog'
@@ -509,7 +511,9 @@ export function AppointmentModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.APPOINTMENT_NOTES}
+              sectionLabel="Appointment Notes"
               rows={2}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

@@ -22,13 +22,14 @@ import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '
 import { ToothSelector } from '@/components/ToothSelector'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
-import { MEMORY_KEYS, rememberItem, getMemory } from '@/lib/prescriptionMemory'
+import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
+import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
 import {
   getComplaintTemplates,
@@ -4068,37 +4069,45 @@ export function PatientProfile() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Chief Complaint</label>
-                <input
-                  type="text"
+                <SuggestTextInput
+                  memoryKey={MEMORY_KEYS.COMPLAINTS}
+                  sectionLabel="Chief Complaint"
                   value={visitEditForm.chief_complaint}
                   onChange={(e) => setVisitEditForm({ ...visitEditForm, chief_complaint: e.target.value })}
+                  bootstrap={bootstrapVisitMemory}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Examination Findings</label>
-                <input
-                  type="text"
+                <SuggestTextInput
+                  memoryKey={MEMORY_KEYS.EXAMINATIONS}
+                  sectionLabel="Examination Findings"
                   value={visitEditForm.examination_findings}
                   onChange={(e) => setVisitEditForm({ ...visitEditForm, examination_findings: e.target.value })}
+                  bootstrap={bootstrapVisitMemory}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Diagnosis</label>
-                <input
-                  type="text"
+                <SuggestTextInput
+                  memoryKey={MEMORY_KEYS.DIAGNOSIS}
+                  sectionLabel="Diagnosis"
                   value={visitEditForm.diagnosis}
                   onChange={(e) => setVisitEditForm({ ...visitEditForm, diagnosis: e.target.value })}
+                  bootstrap={bootstrapVisitMemory}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Treatment Plan</label>
-                <input
-                  type="text"
+                <SuggestTextInput
+                  memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
+                  sectionLabel="Treatment Plan"
                   value={visitEditForm.treatment_plan}
                   onChange={(e) => setVisitEditForm({ ...visitEditForm, treatment_plan: e.target.value })}
+                  bootstrap={bootstrapVisitMemory}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
@@ -4133,10 +4142,13 @@ export function PatientProfile() {
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">Notes (your own notes)</label>
-                <textarea
+                <SuggestTextarea
+                  memoryKey={MEMORY_KEYS.VISIT_NOTES}
+                  sectionLabel="Visit Notes"
                   rows={2}
                   value={visitEditForm.notes}
                   onChange={(e) => setVisitEditForm({ ...visitEditForm, notes: e.target.value })}
+                  bootstrap={bootstrapVisitMemory}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
@@ -4470,7 +4482,9 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
+              sectionLabel="Tooth Notes"
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -4489,54 +4503,33 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
   )
 }
 
-// Suggests previously-written visit notes so the doctor can pick a repeated
-// line instead of retyping it. Bootstraps from recent DB visits once if the
-// local memory is empty (fresh device / first use), stripping the auto-appended
-// Treatment Done / Payment summary lines via splitVisitNotes() so only the
-// doctor's own text is offered back.
-function VisitNoteChips({ onSelect }: { onSelect: (text: string) => void }) {
-  const [items, setItems] = useState<string[]>(() => getMemory(MEMORY_KEYS.VISIT_NOTES).slice(0, 8))
-
-  useEffect(() => {
-    if (items.length > 0) return
-    let cancelled = false
-    ;(async () => {
-      const { data } = await supabase
-        .from('patient_visits')
-        .select('notes')
-        .not('notes', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (cancelled || !data) return
-      // Reversed so the most recent visit ends up first in memory (rememberItem prepends).
-      for (const row of [...data].reverse()) {
-        const doctorText = splitVisitNotes(row.notes).rest
-        if (doctorText) rememberItem(MEMORY_KEYS.VISIT_NOTES, doctorText)
-      }
-      if (!cancelled) setItems(getMemory(MEMORY_KEYS.VISIT_NOTES).slice(0, 8))
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  if (items.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map((item, idx) => (
-        <button
-          key={idx}
-          type="button"
-          title={item}
-          onClick={() => onSelect(item)}
-          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
-        >
-          {item.length > 40 ? item.slice(0, 40) + '…' : item}
-        </button>
-      ))}
-    </div>
-  )
+// Seeds the visit-form suggestion pickers (Chief Complaint, Examination
+// Findings, Diagnosis, Treatment Plan, Notes) from the last 50 DB visits,
+// once per field whose local memory is currently empty (fresh device / first
+// use). Notes go through splitVisitNotes() so only the doctor's own text —
+// not the auto-appended Treatment Done / Payment summary lines — is offered
+// back. Passed as the `bootstrap` prop to each SuggestTextInput/SuggestTextarea
+// in VisitFormModal; ClinicalSuggestInput only calls it when that field's
+// memory is empty, so this can run from multiple fields without duplicating work.
+let visitMemoryBootstrapped = false
+async function bootstrapVisitMemory(): Promise<void> {
+  if (visitMemoryBootstrapped) return
+  visitMemoryBootstrapped = true
+  const { data } = await supabase
+    .from('patient_visits')
+    .select('chief_complaint, examination_findings, diagnosis, treatment_plan, notes')
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (!data) return
+  // Reversed so the most recent visit ends up first in memory (rememberItem prepends).
+  for (const row of [...data].reverse()) {
+    if (row.chief_complaint?.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, row.chief_complaint)
+    if (row.examination_findings?.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, row.examination_findings)
+    if (row.diagnosis?.trim()) rememberItem(MEMORY_KEYS.DIAGNOSIS, row.diagnosis)
+    if (row.treatment_plan?.trim()) rememberItem(MEMORY_KEYS.TREATMENT_PLAN, row.treatment_plan)
+    const doctorNotes = splitVisitNotes(row.notes).rest
+    if (doctorNotes) rememberItem(MEMORY_KEYS.VISIT_NOTES, doctorNotes)
+  }
 }
 
 function VisitFormModal({
@@ -4624,30 +4617,37 @@ function VisitFormModal({
         <form onSubmit={onSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Chief Complaint</label>
-            <input
-              type="text"
+            <SuggestTextInput
+              memoryKey={MEMORY_KEYS.COMPLAINTS}
+              sectionLabel="Chief Complaint"
               value={formData.chief_complaint}
               onChange={(e) => setFormData({ ...formData, chief_complaint: e.target.value })}
+              bootstrap={bootstrapVisitMemory}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Examination Findings</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.EXAMINATIONS}
+              sectionLabel="Examination Findings"
               rows={3}
               value={formData.examination_findings}
               onChange={(e) => setFormData({ ...formData, examination_findings: e.target.value })}
+              bootstrap={bootstrapVisitMemory}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Diagnosis</label>
-            <input
-              type="text"
+            <SuggestTextInput
+              memoryKey={MEMORY_KEYS.DIAGNOSIS}
+              sectionLabel="Diagnosis"
               value={formData.diagnosis}
               onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
+              bootstrap={bootstrapVisitMemory}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
@@ -4666,10 +4666,13 @@ function VisitFormModal({
                 ))}
               </div>
             )}
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
+              sectionLabel="Treatment Plan"
               rows={3}
               value={formData.treatment_plan}
               onChange={(e) => setFormData({ ...formData, treatment_plan: e.target.value })}
+              bootstrap={bootstrapVisitMemory}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
@@ -4878,19 +4881,14 @@ function VisitFormModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.VISIT_NOTES}
+              sectionLabel="Visit Notes"
               rows={2}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              bootstrap={bootstrapVisitMemory}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <VisitNoteChips
-              onSelect={(text) =>
-                setFormData({
-                  ...formData,
-                  notes: formData.notes?.trim() ? `${formData.notes.trim()}\n${text}` : text,
-                })
-              }
             />
           </div>
 
@@ -5202,6 +5200,7 @@ function PrescriptionFormModal({
             helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
             suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries])}
             dentitionType={dentitionType}
+            memoryKey={MEMORY_KEYS.DIAGNOSIS}
           />
 
           {/* ── Treatment Plan ── */}
@@ -5213,6 +5212,7 @@ function PrescriptionFormModal({
             helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
             suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
             dentitionType={dentitionType}
+            memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
           />
 
           {/* ── Medications ── */}
@@ -5516,8 +5516,9 @@ function PrescriptionFormModal({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Special Instructions</label>
-                      <input
-                        type="text"
+                      <SuggestTextInput
+                        memoryKey={MEMORY_KEYS.MED_INSTRUCTIONS}
+                        sectionLabel="Special Instructions"
                         placeholder="e.g., after meals"
                         value={med.instructions}
                         onChange={(e) => {
@@ -5698,7 +5699,9 @@ function PrescriptionFormModal({
                   {/* Row 2: Clinical Notes */}
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Clinical Notes / Instructions</label>
-                    <textarea
+                    <SuggestTextarea
+                      memoryKey={MEMORY_KEYS.INVESTIGATION_NOTES}
+                      sectionLabel="Investigation Notes"
                       rows={1}
                       placeholder="Additional notes (optional)"
                       value={inv.description}
@@ -5747,7 +5750,9 @@ function PrescriptionFormModal({
           {/* ── Notes ── */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">📝 Clinician's Notes & Follow-up Instructions</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.CLINICIAN_NOTES}
+              sectionLabel="Clinician's Notes"
               rows={4}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -5856,7 +5861,9 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_DESCRIPTION}
+              sectionLabel="Treatment Description"
               rows={2}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -5893,7 +5900,9 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
+              sectionLabel="Treatment Notes"
               rows={2}
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -6015,7 +6024,9 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Description</label>
-                  <textarea
+                  <SuggestTextarea
+                    memoryKey={MEMORY_KEYS.TREATMENT_DESCRIPTION}
+                    sectionLabel="Treatment Description"
                     rows={2}
                     value={item.description}
                     onChange={(e) => updateItem(index, { description: e.target.value })}
@@ -6039,7 +6050,9 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Notes</label>
-                  <textarea
+                  <SuggestTextarea
+                    memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
+                    sectionLabel="Treatment Notes"
                     rows={2}
                     value={item.notes}
                     onChange={(e) => updateItem(index, { notes: e.target.value })}

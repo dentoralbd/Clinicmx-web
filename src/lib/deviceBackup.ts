@@ -266,12 +266,12 @@ export async function buildSerializedBackup(options?: {
       type: 'serialize-finish',
       localSettings: {
         doctor_profile: doctorProfile ?? null,
-        prescription_memory: {
-          [MEMORY_KEYS.COMPLAINTS]: getMemory(MEMORY_KEYS.COMPLAINTS),
-          [MEMORY_KEYS.EXAMINATIONS]: getMemory(MEMORY_KEYS.EXAMINATIONS),
-          [MEMORY_KEYS.MEDICATIONS]: getMemory(MEMORY_KEYS.MEDICATIONS),
-          [MEMORY_KEYS.INVESTIGATIONS]: getMemory(MEMORY_KEYS.INVESTIGATIONS),
-        },
+        // Iterate every MEMORY_KEYS value (not a hand-picked subset) so newly
+        // added suggestion fields are automatically included without another
+        // edit here — restore already validates against Object.values(MEMORY_KEYS).
+        prescription_memory: Object.fromEntries(
+          Object.values(MEMORY_KEYS).map((key) => [key, getMemory(key)])
+        ),
         prescription_templates: {
           chief_complaint: complaints,
           on_examination: examinations,

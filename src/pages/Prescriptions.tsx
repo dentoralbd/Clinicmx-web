@@ -32,6 +32,7 @@ import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medica
 import { mapEntryToOperation } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
+import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
 import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
@@ -1279,6 +1280,7 @@ export function Prescriptions() {
                 helperText="e.g., Dental caries (K02.1), Periapical abscess (K04.7)"
                 suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries])}
                 dentitionType={selectedPatientDentition}
+                memoryKey={MEMORY_KEYS.DIAGNOSIS}
               />
 
               {/* ── Treatment Plan ── */}
@@ -1290,6 +1292,7 @@ export function Prescriptions() {
                 helperText="Each entry is added to this patient's Operations tab as its own treatment record, individually selectable for invoicing."
                 suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
                 dentitionType={selectedPatientDentition}
+                memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
               />
 
               {/* ── Medications ── */}
@@ -1603,8 +1606,9 @@ export function Prescriptions() {
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Special Instructions</label>
-                          <input
-                            type="text"
+                          <SuggestTextInput
+                            memoryKey={MEMORY_KEYS.MED_INSTRUCTIONS}
+                            sectionLabel="Special Instructions"
                             placeholder="e.g., after meals"
                             value={med.instructions}
                             onChange={(e) => {
@@ -1785,7 +1789,9 @@ export function Prescriptions() {
                       {/* Row 2: Clinical Notes */}
                       <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">Clinical Notes / Instructions</label>
-                        <textarea
+                        <SuggestTextarea
+                          memoryKey={MEMORY_KEYS.INVESTIGATION_NOTES}
+                          sectionLabel="Investigation Notes"
                           rows={1}
                           placeholder="Additional notes (optional)"
                           value={inv.description}
@@ -1834,7 +1840,9 @@ export function Prescriptions() {
               {/* ── Notes ── */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">📝 Clinician's Notes &amp; Follow-up Instructions</label>
-                <textarea
+                <SuggestTextarea
+                  memoryKey={MEMORY_KEYS.CLINICIAN_NOTES}
+                  sectionLabel="Clinician's Notes"
                   rows={4}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

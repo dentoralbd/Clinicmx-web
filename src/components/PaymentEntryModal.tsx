@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
 import { recordInvoicePayment } from '@/lib/payments'
 import { logActivity } from '@/lib/activityLog'
@@ -185,7 +187,9 @@ export function PaymentEntryModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.PAYMENT_NOTES}
+              sectionLabel="Payment Notes"
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}

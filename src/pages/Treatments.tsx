@@ -15,6 +15,8 @@ import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { InvoicePrint } from '@/components/InvoicePrint'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 
 interface Treatment {
   id: string
@@ -737,7 +739,9 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_DESCRIPTION}
+              sectionLabel="Treatment Description"
               rows={2}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -774,7 +778,9 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
+              sectionLabel="Treatment Notes"
               rows={2}
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -976,7 +982,9 @@ function TreatmentModal({ onClose, onSave }: {
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Description</label>
-                  <textarea
+                  <SuggestTextarea
+                    memoryKey={MEMORY_KEYS.TREATMENT_DESCRIPTION}
+                    sectionLabel="Treatment Description"
                     rows={2}
                     value={item.description}
                     onChange={(e) => updateItem(index, { description: e.target.value })}
@@ -1013,7 +1021,9 @@ function TreatmentModal({ onClose, onSave }: {
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Notes</label>
-                  <textarea
+                  <SuggestTextarea
+                    memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
+                    sectionLabel="Treatment Notes"
                     rows={2}
                     value={item.notes}
                     onChange={(e) => updateItem(index, { notes: e.target.value })}

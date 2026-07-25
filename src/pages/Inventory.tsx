@@ -5,6 +5,8 @@ import {
   Clock, CheckCircle, BarChart2, ArrowUpCircle, ArrowDownCircle, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { supabase } from '@/lib/supabase'
 import { safeFormat } from '@/lib/utils'
 import { canDelete } from '@/lib/appSession'
@@ -976,8 +978,9 @@ function ItemFormModal({
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Description</label>
-              <input
-                type="text"
+              <SuggestTextInput
+                memoryKey={MEMORY_KEYS.INVENTORY_DESCRIPTION}
+                sectionLabel="Item Description"
                 value={formData.description}
                 onChange={(e) => onChange({ ...formData, description: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -1058,7 +1061,9 @@ function ItemFormModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.INVENTORY_NOTES}
+              sectionLabel="Inventory Notes"
               rows={2}
               value={formData.notes}
               onChange={(e) => onChange({ ...formData, notes: e.target.value })}
@@ -1147,8 +1152,9 @@ function AdjustStockModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <input
-              type="text"
+            <SuggestTextInput
+              memoryKey={MEMORY_KEYS.INVENTORY_NOTES}
+              sectionLabel="Inventory Notes"
               value={data.notes}
               onChange={(e) => onChange({ ...data, notes: e.target.value })}
               placeholder="Reason for adjustment (optional)"

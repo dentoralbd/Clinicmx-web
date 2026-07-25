@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Plus, Search, Edit, Trash2, Eye, Users, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
@@ -462,7 +464,9 @@ export function Patients() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Notes</label>
-                <textarea
+                <SuggestTextarea
+                  memoryKey={MEMORY_KEYS.PATIENT_NOTES}
+                  sectionLabel="Patient Notes"
                   rows={2}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
 import { Lightbulb, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ToothSelector } from '@/components/ToothSelector'
 import { QuadrantSelector } from '@/components/QuadrantSelector'
 import { type ClinicalEntry, createEmptyEntry } from '@/lib/clinicalEntries'
-import { getMemory } from '@/lib/prescriptionMemory'
+import { ClinicalSuggestInput } from '@/components/SuggestField'
 import type { SectionTemplate } from '@/lib/prescriptionSectionTemplates'
 import type { DentitionType } from '@/lib/ageTier'
 
@@ -181,29 +180,16 @@ export function MultiEntryClinicalField({
 
       {helperText && <p className="text-xs text-gray-400 mt-1">{helperText}</p>}
 
-      {memoryKey && <MemoryChips memoryKey={memoryKey} onSelect={addEntryWithText} />}
-    </div>
-  )
-}
-
-function MemoryChips({ memoryKey, onSelect }: { memoryKey: string; onSelect: (val: string) => void }) {
-  const [items, setItems] = useState<string[]>([])
-  useEffect(() => {
-    setItems(getMemory(memoryKey).slice(0, 8))
-  }, [memoryKey])
-  if (items.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map((item, idx) => (
-        <button
-          key={idx}
-          type="button"
-          onClick={() => onSelect(item)}
-          className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full border border-gray-200 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
-        >
-          {item.length > 40 ? item.slice(0, 40) + '…' : item}
-        </button>
-      ))}
+      {memoryKey && (
+        <div className="mt-2">
+          <ClinicalSuggestInput
+            memoryKey={memoryKey}
+            sectionLabel={label}
+            placeholder={`Search or type: ${label}`}
+            onAdd={addEntryWithText}
+          />
+        </div>
+      )}
     </div>
   )
 }

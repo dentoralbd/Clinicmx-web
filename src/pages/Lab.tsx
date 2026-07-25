@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, FlaskConical, ChevronDown, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 import { supabase } from '@/lib/supabase'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
@@ -747,7 +749,9 @@ function LabWorkModal({ record, onClose, onSave }: {
 
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
+            <SuggestTextarea
+              memoryKey={MEMORY_KEYS.LAB_NOTES}
+              sectionLabel="Lab Notes"
               rows={2}
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}

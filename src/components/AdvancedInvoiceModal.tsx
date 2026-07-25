@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
+import { SuggestTextarea } from '@/components/SuggestField'
 import {
   buildLegacySafeInvoicePayload,
   createInvoiceItem,
@@ -318,7 +320,9 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Notes</label>
-              <textarea
+              <SuggestTextarea
+                memoryKey={MEMORY_KEYS.INVOICE_NOTES}
+                sectionLabel="Invoice Notes"
                 rows={3}
                 value={formData.notes}
                 onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
