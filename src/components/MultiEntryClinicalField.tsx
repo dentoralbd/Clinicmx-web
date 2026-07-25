@@ -115,6 +115,17 @@ export function MultiEntryClinicalField({
         </div>
       )}
 
+      {memoryKey && (
+        <div className="mb-2">
+          <ClinicalSuggestInput
+            memoryKey={memoryKey}
+            sectionLabel={label}
+            placeholder={`Search or type: ${label}`}
+            onAdd={addEntryWithText}
+          />
+        </div>
+      )}
+
       <div className="space-y-3">
         {entries.map((entry, idx) => (
           <div key={entry.id} className="rounded-lg border border-gray-200 p-2.5">
@@ -179,17 +190,6 @@ export function MultiEntryClinicalField({
       </button>
 
       {helperText && <p className="text-xs text-gray-400 mt-1">{helperText}</p>}
-
-      {memoryKey && (
-        <div className="mt-2">
-          <ClinicalSuggestInput
-            memoryKey={memoryKey}
-            sectionLabel={label}
-            placeholder={`Search or type: ${label}`}
-            onAdd={addEntryWithText}
-          />
-        </div>
-      )}
     </div>
   )
 }
