@@ -1,9 +1,11 @@
-import { Lightbulb, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Lightbulb, X, History } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ToothSelector } from '@/components/ToothSelector'
 import { QuadrantSelector } from '@/components/QuadrantSelector'
 import { type ClinicalEntry, createEmptyEntry } from '@/lib/clinicalEntries'
-import { ClinicalSuggestInput } from '@/components/SuggestField'
+import { useSuggestions, filterSuggestions, SuggestionDropdown, useOpenUpward } from '@/components/SuggestField'
+import { rememberItem } from '@/lib/prescriptionMemory'
 import type { SectionTemplate } from '@/lib/prescriptionSectionTemplates'
 import type { DentitionType } from '@/lib/ageTier'
 
@@ -115,27 +117,26 @@ export function MultiEntryClinicalField({
         </div>
       )}
 
-      {memoryKey && (
-        <div className="mb-2">
-          <ClinicalSuggestInput
-            memoryKey={memoryKey}
-            sectionLabel={label}
-            placeholder={`Search or type: ${label}`}
-            onAdd={addEntryWithText}
-          />
-        </div>
-      )}
-
       <div className="space-y-3">
         {entries.map((entry, idx) => (
           <div key={entry.id} className="rounded-lg border border-gray-200 p-2.5">
-            <textarea
-              rows={2}
-              value={entry.text}
-              onChange={(e) => updateEntry(entry.id, { text: e.target.value })}
-              placeholder={idx === 0 ? placeholder : 'Add another...'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
-            />
+            {memoryKey ? (
+              <EntrySuggestTextarea
+                memoryKey={memoryKey}
+                sectionLabel={label}
+                value={entry.text}
+                onChange={(text) => updateEntry(entry.id, { text })}
+                placeholder={idx === 0 ? placeholder : 'Add another...'}
+              />
+            ) : (
+              <textarea
+                rows={2}
+                value={entry.text}
+                onChange={(e) => updateEntry(entry.id, { text: e.target.value })}
+                placeholder={idx === 0 ? placeholder : 'Add another...'}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+              />
+            )}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               {pickerMode === 'quadrant' ? (
                 <QuadrantSelector
@@ -190,6 +191,128 @@ export function MultiEntryClinicalField({
       </button>
 
       {helperText && <p className="text-xs text-gray-400 mt-1">{helperText}</p>}
+    </div>
+  )
+}
+
+// Attaches the shared suggestion dropdown directly to one entry's textarea.
+// Unlike SuggestTextarea (used for free-form notes fields, where each line
+// is its own suggestion), a clinical entry is one concept — picking a
+// suggestion replaces the entry's whole text, and blur remembers it whole.
+function EntrySuggestTextarea({
+  memoryKey,
+  sectionLabel,
+  value,
+  onChange,
+  placeholder,
+}: {
+  memoryKey: string
+  sectionLabel: string
+  value: string
+  onChange: (text: string) => void
+  placeholder?: string
+}) {
+  const { sourceList, remove } = useSuggestions(memoryKey, undefined)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const openUpward = useOpenUpward(anchorRef, isOpen)
+
+  const filtered = useMemo(() => filterSuggestions(sourceList, value ?? ''), [sourceList, value])
+
+  useEffect(() => {
+    setHighlightedIndex(-1)
+  }, [value, isOpen])
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (anchorRef.current && !anchorRef.current.contains(event.target as Node)) setIsOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  function applySuggestion(text: string) {
+    onChange(text)
+    rememberItem(memoryKey, text)
+    setIsOpen(false)
+    setHighlightedIndex(-1)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  function handleFocus() {
+    if (!value?.trim() && sourceList.length > 0) setIsOpen(true)
+  }
+
+  function handleBlur() {
+    if (value?.trim()) rememberItem(memoryKey, value.trim())
+    setIsOpen(false)
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (isOpen && filtered.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setHighlightedIndex((prev) => (prev + 1) % filtered.length)
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setHighlightedIndex((prev) => (prev - 1 + filtered.length) % filtered.length)
+        return
+      }
+      if (event.key === 'Enter' && highlightedIndex >= 0) {
+        event.preventDefault()
+        applySuggestion(filtered[highlightedIndex].text)
+        return
+      }
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+  }
+
+  return (
+    <div className="relative" ref={anchorRef}>
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          rows={2}
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value)
+            setIsOpen(true)
+          }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="w-full px-3 py-2 pr-7 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+        />
+        {sourceList.length > 0 && (
+          <button
+            type="button"
+            title="Show suggestions"
+            tabIndex={-1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="absolute right-2 top-2 text-gray-300 hover:text-primary"
+          >
+            <History className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {isOpen && (
+        <SuggestionDropdown
+          items={filtered}
+          highlightedIndex={highlightedIndex}
+          openUpward={openUpward}
+          onPick={applySuggestion}
+          onRemove={remove}
+          sectionLabel={sectionLabel}
+        />
+      )}
     </div>
   )
 }
