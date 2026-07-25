@@ -5,6 +5,16 @@
 // via Telegram and returns a signed trusted-device token (7 days) after a
 // successful verification. While the endpoint reports `unconfigured` (or is
 // unreachable in local dev), the caller falls back to PIN-only behavior.
+//
+// Phase 2 (SECURITY-HARDENING.md): both success shapes also carry
+// `sbTokenHash`, a one-time Supabase token minted server-side
+// (mintAdminSupabaseTokenHash in _authLib.ts) that this module redeems via
+// `supabase.auth.verifyOtp` to give the admin's browser a real Supabase
+// session — invisibly, with no change to the PIN/OTP screens. A null/
+// missing hash (Supabase not configured yet, or unreachable) is not
+// treated as an error here; see the comment on redeemSupabaseSession.
+
+import { supabase } from './supabase'
 
 const DEVICE_TOKEN_KEY = 'clinicmx_admin_device'
 
@@ -44,11 +54,37 @@ async function post(body: Record<string, unknown>): Promise<Response | null> {
   }
 }
 
+/**
+ * Redeems a one-time Supabase token hash into a real, persisted Supabase
+ * session. Never throws: before migration 039 locks RLS down, the app
+ * works fine without a Supabase session at all (the anon key still
+ * satisfies today's allow-all policies), so a failed/missing redeem here
+ * must not block the admin login the PIN+OTP flow already approved.
+ */
+async function redeemSupabaseSession(tokenHash: string | null | undefined): Promise<void> {
+  if (!tokenHash) return
+  try {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' })
+    if (error) console.error('Admin Supabase session redeem failed:', error.message)
+  } catch (err) {
+    console.error('Admin Supabase session redeem threw:', err instanceof Error ? err.message : err)
+  }
+}
+
 export async function requestAdminOtp(pin: string): Promise<OtpRequestResult> {
   const res = await post({ action: 'request', pin, deviceToken: getAdminDeviceToken() })
   if (!res || res.status === 404 || res.status === 405) return { kind: 'unreachable' }
 
-  let data: { unconfigured?: boolean; trusted?: boolean; otpRequired?: boolean; nonce?: string | null; sendError?: boolean; error?: string }
+  let data: {
+    unconfigured?: boolean
+    trusted?: boolean
+    deviceToken?: string
+    sbTokenHash?: string | null
+    otpRequired?: boolean
+    nonce?: string | null
+    sendError?: boolean
+    error?: string
+  }
   try {
     data = await res.json()
   } catch {
@@ -61,7 +97,14 @@ export async function requestAdminOtp(pin: string): Promise<OtpRequestResult> {
   }
   if (!res.ok) return { kind: 'unreachable' }
   if (data.unconfigured) return { kind: 'unconfigured' }
-  if (data.trusted) return { kind: 'trusted' }
+  if (data.trusted) {
+    // Server slides the 7-day trust window forward on every login; persist
+    // the refreshed token so device trust (and backup access, which is
+    // gated on this same token) never lapses between admin logins.
+    if (typeof data.deviceToken === 'string') saveAdminDeviceToken(data.deviceToken)
+    await redeemSupabaseSession(data.sbTokenHash)
+    return { kind: 'trusted' }
+  }
   if (data.otpRequired && data.sendError) return { kind: 'send-failed' }
   if (data.otpRequired && typeof data.nonce === 'string') return { kind: 'otp', nonce: data.nonce }
   return { kind: 'unreachable' }
@@ -79,7 +122,7 @@ export async function verifyAdminOtp(
   const res = await post({ action: 'verify', pin, ...payload })
   if (!res || res.status === 404 || res.status === 405) return { kind: 'unreachable' }
 
-  let data: { ok?: boolean; deviceToken?: string; error?: string }
+  let data: { ok?: boolean; deviceToken?: string; sbTokenHash?: string | null; error?: string }
   try {
     data = await res.json()
   } catch {
@@ -91,6 +134,7 @@ export async function verifyAdminOtp(
   }
   if (data.ok && typeof data.deviceToken === 'string') {
     saveAdminDeviceToken(data.deviceToken)
+    await redeemSupabaseSession(data.sbTokenHash)
     return { kind: 'ok' }
   }
   return { kind: 'unreachable' }

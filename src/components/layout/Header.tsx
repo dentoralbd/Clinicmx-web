@@ -3,6 +3,7 @@ import { User, Menu, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 import { canDelete, canEditClinicProfile, canRevert, clearAppRole, clearAppUser, getAppRole, getAppUser } from '@/lib/appSession'
+import { supabase } from '@/lib/supabase'
 import { NotificationBell } from './NotificationBell'
 
 interface HeaderProps {
@@ -31,7 +32,8 @@ export function Header({ onMenuClick }: HeaderProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [profileOpen])
 
-  function handleLogout() {
+  async function handleLogout() {
+    await supabase.auth.signOut()
     clearSecureStorageSession()
     localStorage.removeItem('clinicmx_auth')
     clearAppRole()

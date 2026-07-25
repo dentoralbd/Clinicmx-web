@@ -13,11 +13,19 @@
 //
 // POST /api/admin-otp
 //   { action: 'request', pin, deviceToken? }
-//     → { unconfigured: true } | { trusted: true } | { otpRequired: true, nonce }
+//     → { unconfigured: true } | { trusted: true, deviceToken, sbTokenHash }
+//       | { otpRequired: true, nonce }
 //       | { otpRequired: true, nonce: null, sendError: true }  (delivery failed →
 //         client offers the recovery-code path immediately)
 //   { action: 'verify', pin, nonce, code } or { action: 'verify', pin, recoveryCode }
-//     → { ok: true, deviceToken }
+//     → { ok: true, deviceToken, sbTokenHash }
+//
+// sbTokenHash (Phase 2, SECURITY-HARDENING.md): a one-time Supabase token
+// the client redeems via supabase.auth.verifyOtp({token_hash, type:
+// 'magiclink'}) to establish a real Supabase session for RLS. Always
+// present on the two success shapes above but may be null if Supabase
+// isn't configured or reachable — see mintAdminSupabaseTokenHash in
+// _authLib.ts for why that's non-fatal here.
 
 import {
   type AuthEnv,
@@ -27,6 +35,7 @@ import {
   mintDeviceToken,
   verifyDeviceToken,
   isRateLimited,
+  mintAdminSupabaseTokenHash,
 } from './_authLib'
 import { channelConfigured, sendOtp } from './_otpChannels'
 
@@ -98,7 +107,16 @@ export const onRequestPost: PagesFunction<AuthEnv> = async (context) => {
       body.deviceToken &&
       (await verifyDeviceToken(body.deviceToken, env.ADMIN_AUTH_SECRET!))
     ) {
-      return json(200, { trusted: true })
+      // Slide the 7-day trust window forward on every login instead of just
+      // leaving the original token to expire. Backups/downloads now require
+      // this same token (see _authLib.ts requireAdminToken); without a
+      // refresh here, a device that logs in more often than every 7 days
+      // would still see its backup access quietly lapse mid-week.
+      return json(200, {
+        trusted: true,
+        deviceToken: await mintDeviceToken(env.ADMIN_AUTH_SECRET!, DEVICE_TOKEN_TTL_MS),
+        sbTokenHash: await mintAdminSupabaseTokenHash(env),
+      })
     }
 
     if (await isRateLimited(kv, `otp_send:${ip}`, SENDS_PER_HOUR, 3600)) {
@@ -133,6 +151,7 @@ export const onRequestPost: PagesFunction<AuthEnv> = async (context) => {
       return json(200, {
         ok: true,
         deviceToken: await mintDeviceToken(env.ADMIN_AUTH_SECRET!, DEVICE_TOKEN_TTL_MS),
+        sbTokenHash: await mintAdminSupabaseTokenHash(env),
       })
     }
 
@@ -160,6 +179,7 @@ export const onRequestPost: PagesFunction<AuthEnv> = async (context) => {
     return json(200, {
       ok: true,
       deviceToken: await mintDeviceToken(env.ADMIN_AUTH_SECRET!, DEVICE_TOKEN_TTL_MS),
+      sbTokenHash: await mintAdminSupabaseTokenHash(env),
     })
   }
 

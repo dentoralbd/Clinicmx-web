@@ -12,5 +12,15 @@ if (!isSupabaseConfigured) {
 
 export const supabase = createClient<Database>(
   isSupabaseConfigured ? supabaseUrl : 'https://placeholder.supabase.co',
-  isSupabaseConfigured ? supabaseAnonKey : 'placeholder-anon-key'
+  isSupabaseConfigured ? supabaseAnonKey : 'placeholder-anon-key',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      // No OAuth/magic-link callback route exists in this SPA — don't scan
+      // the URL for a session on every load.
+      detectSessionInUrl: false,
+      storageKey: 'clinicmx_sb_auth',
+    },
+  }
 )

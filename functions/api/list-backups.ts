@@ -3,9 +3,15 @@
 // Read-only counterpart to upload-backup.ts — same credentials, same folder.
 
 import { type Env, json, hasCredentials, getAccessToken, ensureSubfolder, driveList } from './_lib'
+import { requireAdminToken } from './_authLib'
 
-export const onRequestGet = async (context: { env: Env }): Promise<Response> => {
-  const { env } = context
+type AuthedEnv = Env & { ADMIN_AUTH_SECRET?: string }
+
+export const onRequestGet = async (context: { request: Request; env: AuthedEnv }): Promise<Response> => {
+  const { request, env } = context
+
+  const authError = await requireAdminToken(request, env)
+  if (authError) return authError
 
   if (!hasCredentials(env)) {
     return json(503, { ok: false, error: 'Backup listing is not configured on the server yet.' })

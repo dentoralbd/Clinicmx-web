@@ -9,6 +9,8 @@
 //   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — OTP delivery (see _otpChannels.ts)
 // KV binding: ADMIN_AUTH — OTP hashes + per-IP rate-limit counters.
 
+import { createClient } from '@supabase/supabase-js'
+
 // Minimal KV surface we use — avoids a dependency on @cloudflare/workers-types
 // (functions/ isn't covered by tsconfig; wrangler bundles these on deploy).
 export interface KVNamespace {
@@ -25,6 +27,12 @@ export interface AuthEnv {
   TELEGRAM_CHAT_ID?: string
   OTP_CHANNEL?: string
   ADMIN_AUTH?: KVNamespace
+  // Phase 2 (SECURITY-HARDENING.md) — mints a real Supabase Auth session for
+  // the admin so RLS (migration 039) has something to check. See
+  // mintAdminSupabaseTokenHash below and admin-otp.ts.
+  SUPABASE_URL?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
+  ADMIN_SUPABASE_EMAIL?: string
 }
 
 export function json(status: number, body: Record<string, unknown>): Response {
@@ -94,4 +102,79 @@ export async function isRateLimited(
   if (current >= limit) return true
   await kv.put(key, String(current + 1), { expirationTtl: ttlSeconds })
   return false
+}
+
+/** Header the client sends its trusted-device token on for endpoints gated
+ * by requireAdminToken — kept distinct from Authorization so nothing (proxy,
+ * browser extension, framework) ever attaches or strips it unexpectedly. */
+export const ADMIN_TOKEN_HEADER = 'X-ClinicMx-Auth'
+
+/**
+ * Gate for the backup endpoints (list/download/upload-backup.ts): requires a
+ * valid, unexpired trusted-device token — the same one minted by
+ * admin-otp.ts's `verify`/`trusted` responses — on the ADMIN_TOKEN_HEADER
+ * header. Returns null when the token is valid (caller proceeds); otherwise
+ * a ready-to-return 401 Response.
+ *
+ * Fails CLOSED: a missing ADMIN_AUTH_SECRET (misconfiguration) rejects the
+ * request rather than letting it through, unlike admin-otp.ts's deploy-safe
+ * `unconfigured` bootstrap — that fallback exists so the *first* deploy of
+ * 2FA can never lock the admin out of login, but these are pre-existing
+ * data endpoints, not the login path, so there's no equivalent bootstrap
+ * need and failing open would defeat the point of gating them.
+ */
+export async function requireAdminToken(
+  request: Request,
+  env: { ADMIN_AUTH_SECRET?: string }
+): Promise<Response | null> {
+  if (!env.ADMIN_AUTH_SECRET) {
+    return json(500, { ok: false, error: 'Admin auth is not configured on the server.' })
+  }
+  const token = request.headers.get(ADMIN_TOKEN_HEADER)
+  if (!token || !(await verifyDeviceToken(token, env.ADMIN_AUTH_SECRET))) {
+    return json(401, { ok: false, error: 'Admin sign-in required.' })
+  }
+  return null
+}
+
+/**
+ * Mints a real Supabase Auth session for the admin's dedicated Auth user
+ * (service_role, invisible to the client) so the admin's browser can
+ * satisfy RLS policies once migration 039 lands. The PIN/OTP screens the
+ * admin sees are completely unchanged — this runs after they succeed.
+ *
+ * Mechanism: generateLink({type:'magiclink'}) returns a hashed_token the
+ * client redeems via supabase.auth.verifyOtp({token_hash, type:'magiclink'}),
+ * which yields a normal persisted session — no email is sent, no password
+ * exists for the admin to manage.
+ *
+ * NEVER THROWS and never fails the caller's response — a misconfigured or
+ * unreachable Supabase project must not block admin login. Before
+ * migration 039 is applied, the app works fine with no Supabase session at
+ * all (the anon key still satisfies the allow-all policies), so a null
+ * return here just means "no session minted this time, proceed with the
+ * legacy flow" rather than an error. (Once 039 is live, a null return
+ * effectively means an empty app for the admin — that's a signal to check
+ * these three secrets are set correctly, not a code path to add error
+ * handling for here.)
+ */
+export async function mintAdminSupabaseTokenHash(env: AuthEnv): Promise<string | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY || !env.ADMIN_SUPABASE_EMAIL) return null
+  try {
+    const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: env.ADMIN_SUPABASE_EMAIL,
+    })
+    if (error || !data?.properties?.hashed_token) {
+      console.error('mintAdminSupabaseTokenHash failed:', JSON.stringify(error))
+      return null
+    }
+    return data.properties.hashed_token
+  } catch (err) {
+    console.error('mintAdminSupabaseTokenHash threw:', err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : String(err))
+    return null
+  }
 }

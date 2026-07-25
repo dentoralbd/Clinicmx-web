@@ -4,12 +4,19 @@ import { ShieldCheck, Stethoscope, UserCog } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { initializeSecureStorage } from '@/lib/secureLocalStorage'
 import { clearAppUser, setAppRole, setAppUser, type AppRole } from '@/lib/appSession'
-import { findAppUserByIdentifier, touchLastLogin, verifyPassword, type AppUserRecord } from '@/lib/appUsers'
+import { authEmailFor, loadOwnAppUser, touchLastLogin, type AppUserRecord } from '@/lib/appUsers'
 import { logLogin } from '@/lib/activityLog'
 import { checkIpAccess, fetchClientIp, requestIpApproval } from '@/lib/ipAccess'
 import { requestAdminOtp, verifyAdminOtp } from '@/lib/adminOtp'
+import { supabase } from '@/lib/supabase'
 
-const ADMIN_PASSWORD = '6040'
+// Not the authentication decision — the server (functions/api/admin-otp.ts,
+// via ADMIN_PIN) is authoritative for whether the admin PIN is correct. This
+// constant only (a) gives a fast client-side "Incorrect password" hint
+// before the server round-trip, and (b) derives the secure-storage
+// encryption key for every role (see completeLogin below), so it must stay
+// in sync with ADMIN_PIN in the Cloudflare dashboard / .dev.vars.
+const SECURE_STORAGE_PASSPHRASE = '6040'
 
 export function Login() {
   const [role, setRole] = useState<AppRole | null>(null)
@@ -45,7 +52,7 @@ export function Login() {
     // Always derive the secure-storage encryption key from the admin
     // password, regardless of role, so previously-encrypted data (doctor
     // profile, prescription memory) stays readable for every role.
-    await initializeSecureStorage(ADMIN_PASSWORD)
+    await initializeSecureStorage(SECURE_STORAGE_PASSPHRASE)
     setAppRole(loginRole)
     localStorage.setItem('clinicmx_auth', 'true')
     // Fire-and-forget: records the login (with best-effort client IP) after the
@@ -63,25 +70,32 @@ export function Login() {
     await new Promise((r) => setTimeout(r, 400))
 
     if (role === 'admin') {
-      if (password !== ADMIN_PASSWORD) {
+      if (password !== SECURE_STORAGE_PASSPHRASE) {
         failLogin('Incorrect password')
         return
       }
       // Second factor: the server sends a Telegram code unless this device
-      // holds a valid trusted-device token (7 days) or 2FA isn't configured.
+      // holds a valid trusted-device token (7 days). In local dev (no
+      // Functions layer, `import.meta.env.DEV`) the endpoint is unreachable
+      // by design and login stays PIN-only. In production, both
+      // `unreachable` and `unconfigured` now hard-fail: 2FA is deployed and
+      // configured today (ADMIN_PIN/ADMIN_AUTH_SECRET/KV set in Cloudflare),
+      // so either response means something broke server-side — silently
+      // falling back to a PIN alone (which is compiled into the public JS
+      // bundle) would quietly downgrade production security. See
+      // SECURITY-HARDENING.md Phase 1.
       const result = await requestAdminOtp(password)
       if (result.kind === 'rejected') {
         failLogin(result.message)
         return
       }
-      if (result.kind === 'unreachable' && !import.meta.env.DEV) {
-        failLogin('Could not reach the login verification service. Check your connection and try again.')
+      if ((result.kind === 'unreachable' || result.kind === 'unconfigured') && !import.meta.env.DEV) {
+        failLogin('Login verification is unavailable. Contact support before continuing.')
         return
       }
       if (result.kind === 'unreachable' || result.kind === 'unconfigured') {
-        // Local dev has no functions; production without secrets set keeps
-        // today's PIN-only behavior until 2FA is configured.
-        console.warn('Admin 2FA inactive (endpoint unreachable or unconfigured) — PIN-only login.')
+        // Local dev only (see above): no Functions layer, so PIN-only login.
+        console.warn('Admin 2FA inactive (dev environment) — PIN-only login.')
       } else if (result.kind === 'otp' || result.kind === 'send-failed') {
         setLoading(false)
         setOtp({ pin: password, nonce: result.kind === 'otp' ? result.nonce : null })
@@ -99,22 +113,43 @@ export function Login() {
       return
     }
 
-    // Doctor / operator: account created by the admin in the Admin zone
+    // Doctor / operator: account created by the admin in the Admin zone.
+    // Phase 2 (SECURITY-HARDENING.md): real Supabase Auth. The identifier
+    // is turned into an email deterministically (authEmailFor) — no
+    // pre-auth table lookup happens, so there is nothing here for RLS to
+    // block. Password verification itself is now Supabase's, not ours.
     try {
-      const account = await findAppUserByIdentifier(identifier, role)
-      if (!account || !(await verifyPassword(password, account.password_salt, account.password_hash))) {
+      const email = authEmailFor(identifier)
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError || !signInData.user) {
+        failLogin('Incorrect email/phone or password')
+        return
+      }
+
+      const account = await loadOwnAppUser(signInData.user.id)
+      // No linked profile row, or it belongs to the other role tab — both
+      // treated as "wrong credentials" rather than leaking which case it is.
+      if (!account || account.role !== role) {
+        await supabase.auth.signOut()
         failLogin('Incorrect email/phone or password')
         return
       }
       if (!account.is_active) {
+        await supabase.auth.signOut()
         failLogin('This account is disabled. Contact the admin.')
         return
       }
       // Network gate: unless the admin granted "Entry from any IP", the
-      // device's public IP must be on this user's approved list.
+      // device's public IP must be on this user's approved list. Runs
+      // post-sign-in now — checkIpAccess/requestIpApproval read/write
+      // authorized_ips, which (once migration 039 lands) needs a real
+      // session to satisfy RLS. Not a weakening versus the old pre-auth
+      // gate: that ran with the anon key, which granted full DB access
+      // regardless of this check passing.
       if (account.permissions?.can_any_ip !== true) {
         const ip = await fetchClientIp()
         if (!ip) {
+          await supabase.auth.signOut()
           failLogin(
             'Could not verify your network. Check your connection, or ask the admin to allow entry from any IP for your account.'
           )
@@ -122,12 +157,17 @@ export function Login() {
         }
         const status = await checkIpAccess(account.id, ip)
         if (status === 'denied') {
+          await supabase.auth.signOut()
           failLogin('Access from this network was denied by the admin.')
           return
         }
         if (status !== 'approved') {
           await requestIpApproval(account.id, ip, `${role}:${account.full_name}`)
           setLoading(false)
+          // Deliberately stays signed in while this waiting screen is
+          // mounted (needed for the 10s poll to keep reading
+          // authorized_ips under RLS) — signed out on denial, on Back, or
+          // after the 15-minute timeout below, never left open-ended.
           setWaiting({ account, ip, role })
           return
         }
@@ -136,6 +176,7 @@ export function Login() {
       touchLastLogin(account.id)
       await completeLogin(role)
     } catch (err) {
+      await supabase.auth.signOut()
       failLogin(err instanceof Error ? err.message : 'Login failed. Please try again.')
     }
   }
@@ -158,6 +199,7 @@ export function Login() {
       }
       if (status === 'denied') {
         setWaiting(null)
+        await supabase.auth.signOut()
         failLogin('Access from this network was denied by the admin.')
       }
     } catch {
@@ -172,7 +214,17 @@ export function Login() {
     const timer = setInterval(() => {
       void checkWaitingStatus(waiting)
     }, 10000)
-    return () => clearInterval(timer)
+    // Don't hold a signed-in-but-unapproved session open indefinitely if
+    // the admin never decides and the user walks away from this screen.
+    const timeout = setTimeout(() => {
+      setWaiting(null)
+      void supabase.auth.signOut()
+      failLogin('Approval request timed out. Please try logging in again.')
+    }, 15 * 60 * 1000)
+    return () => {
+      clearInterval(timer)
+      clearTimeout(timeout)
+    }
   }, [waiting])
 
   async function handleOtpSubmit(e: React.FormEvent) {
@@ -240,6 +292,9 @@ export function Login() {
   }
 
   function handleBack() {
+    // A pending network-approval session is signed in but never completed
+    // login — don't leave it dangling if the user backs out.
+    if (waiting) void supabase.auth.signOut()
     setRole(null)
     setIdentifier('')
     setPassword('')

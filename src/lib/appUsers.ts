@@ -2,8 +2,15 @@ import { supabase } from './supabase'
 import type { Json } from './database.types'
 import { DEFAULT_PERMISSIONS, type AppPermissions, type AppRole } from './appSession'
 import { logActivity } from './activityLog'
+import { getAdminDeviceToken } from './adminOtp'
 
-const PBKDF2_ITERATIONS = 100000
+// Phase 2 (SECURITY-HARDENING.md): staff accounts are now real Supabase
+// Auth users. Creation/password-reset/disable/delete go through
+// functions/api/admin-users.ts (service_role — the anon/authenticated
+// roles have no write privilege on app_users at all once migration 039
+// lands, see that migration's app_users policy comment). This file keeps
+// the exact same exported function signatures as before so
+// components/admin/UsersTab.tsx needs no changes.
 
 export interface AppUserRecord {
   id: string
@@ -12,21 +19,24 @@ export interface AppUserRecord {
   role: 'doctor' | 'operator'
   full_name: string
   identifier: string
-  password_hash: string
-  password_salt: string
   is_active: boolean
   permissions: AppPermissions
   last_login_at: string | null
+  auth_user_id: string | null
+  auth_email: string | null
 }
 
-const encoder = new TextEncoder()
+const ADMIN_TOKEN_HEADER = 'X-ClinicMx-Auth'
 
-function bufferToBase64(buffer: ArrayBuffer) {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
-}
-
-function base64ToBuffer(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0)).buffer
+/** Staff identifiers can be emails or phone numbers; Supabase Auth needs an
+ * email. Derived deterministically (no lookup) so the browser can resolve
+ * it before it has any session. Must stay byte-identical to the same
+ * function in functions/api/admin-users.ts — that's what actually creates
+ * the Auth user this has to match. */
+const STAFF_EMAIL_DOMAIN = 'staff.clinicmx.local'
+export function authEmailFor(identifier: string): string {
+  const n = normalizeIdentifier(identifier)
+  return n.includes('@') ? n : `${n.replace(/^\+/, '')}@${STAFF_EMAIL_DOMAIN}`
 }
 
 /**
@@ -40,35 +50,6 @@ export function normalizeIdentifier(raw: string) {
   const hasPlus = trimmed.startsWith('+')
   const digits = trimmed.replace(/\D/g, '')
   return hasPlus ? `+${digits}` : digits
-}
-
-async function deriveHash(password: string, saltBuffer: ArrayBuffer) {
-  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
-  return crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltBuffer,
-      iterations: PBKDF2_ITERATIONS,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  )
-}
-
-export async function hashPassword(password: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const hash = await deriveHash(password, salt.buffer)
-  return { salt: bufferToBase64(salt.buffer), hash: bufferToBase64(hash) }
-}
-
-export async function verifyPassword(password: string, saltB64: string, hashB64: string) {
-  try {
-    const hash = await deriveHash(password, base64ToBuffer(saltB64))
-    return bufferToBase64(hash) === hashB64
-  } catch {
-    return false
-  }
 }
 
 function mergePermissions(role: AppRole, raw: unknown): AppPermissions {
@@ -88,11 +69,11 @@ function mapRow(row: {
   role: string
   full_name: string
   identifier: string
-  password_hash: string
-  password_salt: string
   is_active: boolean
   permissions: Json
   last_login_at: string | null
+  auth_user_id: string | null
+  auth_email: string | null
 }): AppUserRecord {
   const role = row.role === 'operator' ? 'operator' : 'doctor'
   return {
@@ -107,10 +88,41 @@ function friendlyError(error: { code?: string; message: string }) {
   return new Error(error.message)
 }
 
+// Explicit column list, no password fields — app_users' column-level
+// grants (migration 039) deny `select('*')` outright once applied
+// (`permission denied for column password_hash`), and even before that
+// there's no reason to ever fetch a hash to the browser again.
+const APP_USER_COLUMNS =
+  'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email'
+
 export async function listAppUsers(): Promise<AppUserRecord[]> {
-  const { data, error } = await supabase.from('app_users').select('*').order('created_at', { ascending: true })
+  const { data, error } = await supabase
+    .from('app_users')
+    .select(APP_USER_COLUMNS)
+    // Admin has a real app_users row too (role='admin', migration 038) so
+    // every RLS helper is a single uniform lookup — but it must not show
+    // up here as a deletable "Doctor" account.
+    .in('role', ['doctor', 'operator'])
+    .order('created_at', { ascending: true })
   if (error) throw friendlyError(error)
-  return (data ?? []).map(mapRow)
+  return (data ?? []).map(mapRow as (row: unknown) => AppUserRecord)
+}
+
+async function callAdminUsersFunction(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch('/api/admin-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', [ADMIN_TOKEN_HEADER]: getAdminDeviceToken() ?? '' },
+    body: JSON.stringify(body),
+  })
+  let data: Record<string, unknown>
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error(`Request failed (HTTP ${res.status}).`)
+  }
+  if (res.status === 401) throw new Error('Your device trust expired — log out and log in as admin again to refresh it.')
+  if (!res.ok || data.ok !== true) throw new Error((data.error as string) || `Request failed (HTTP ${res.status}).`)
+  return data
 }
 
 export interface CreateAppUserInput {
@@ -122,16 +134,14 @@ export interface CreateAppUserInput {
 }
 
 export async function createAppUser(input: CreateAppUserInput) {
-  const { salt, hash } = await hashPassword(input.password)
-  const { error } = await supabase.from('app_users').insert({
+  await callAdminUsersFunction({
+    action: 'create',
     role: input.role,
     full_name: input.full_name.trim(),
-    identifier: normalizeIdentifier(input.identifier),
-    password_hash: hash,
-    password_salt: salt,
-    permissions: input.permissions as unknown as Json,
+    identifier: input.identifier,
+    password: input.password,
+    permissions: input.permissions,
   })
-  if (error) throw friendlyError(error)
   logActivity({
     action: 'create',
     entityType: 'app_user',
@@ -148,17 +158,14 @@ export interface UpdateAppUserInput {
 }
 
 export async function updateAppUser(id: string, input: UpdateAppUserInput) {
-  const { error } = await supabase
-    .from('app_users')
-    .update({
-      role: input.role,
-      full_name: input.full_name.trim(),
-      identifier: normalizeIdentifier(input.identifier),
-      permissions: input.permissions as unknown as Json,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-  if (error) throw friendlyError(error)
+  await callAdminUsersFunction({
+    action: 'update',
+    id,
+    role: input.role,
+    full_name: input.full_name.trim(),
+    identifier: input.identifier,
+    permissions: input.permissions,
+  })
   logActivity({
     action: 'edit',
     entityType: 'app_user',
@@ -169,12 +176,7 @@ export async function updateAppUser(id: string, input: UpdateAppUserInput) {
 }
 
 export async function setAppUserPassword(id: string, password: string, fullName?: string) {
-  const { salt, hash } = await hashPassword(password)
-  const { error } = await supabase
-    .from('app_users')
-    .update({ password_hash: hash, password_salt: salt, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw friendlyError(error)
+  await callAdminUsersFunction({ action: 'set-password', id, password })
   logActivity({
     action: 'edit',
     entityType: 'app_user',
@@ -185,11 +187,7 @@ export async function setAppUserPassword(id: string, password: string, fullName?
 }
 
 export async function setAppUserActive(id: string, isActive: boolean, fullName?: string) {
-  const { error } = await supabase
-    .from('app_users')
-    .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw friendlyError(error)
+  await callAdminUsersFunction({ action: 'set-active', id, is_active: isActive })
   logActivity({
     action: 'edit',
     entityType: 'app_user',
@@ -200,8 +198,7 @@ export async function setAppUserActive(id: string, isActive: boolean, fullName?:
 }
 
 export async function deleteAppUser(id: string, fullName?: string) {
-  const { error } = await supabase.from('app_users').delete().eq('id', id)
-  if (error) throw friendlyError(error)
+  await callAdminUsersFunction({ action: 'delete', id })
   logActivity({
     action: 'delete',
     entityType: 'app_user',
@@ -211,15 +208,26 @@ export async function deleteAppUser(id: string, fullName?: string) {
   })
 }
 
-export async function findAppUserByIdentifier(identifier: string, role: 'doctor' | 'operator') {
+/** Migration/disaster-recovery tool: creates a Supabase Auth login for
+ * every app_users row that doesn't have one yet (temp passwords returned
+ * for the admin to distribute). Safe to re-run. See Phase 2 plan §E2. */
+export async function syncAppUserLogins() {
+  const data = await callAdminUsersFunction({ action: 'sync' })
+  return data.created as Array<{ id: string; full_name: string; identifier: string; tempPassword?: string; error?: string }>
+}
+
+/** Post-sign-in lookup: resolves the caller's own profile/permissions row
+ * by their Supabase Auth session. Replaces the old pre-auth
+ * findAppUserByIdentifier() — there is no pre-auth app_users read anymore
+ * (see src/pages/Login.tsx), so this only ever runs with a real session. */
+export async function loadOwnAppUser(authUserId: string): Promise<AppUserRecord | null> {
   const { data, error } = await supabase
     .from('app_users')
-    .select('*')
-    .eq('identifier', normalizeIdentifier(identifier))
-    .eq('role', role)
+    .select(APP_USER_COLUMNS)
+    .eq('auth_user_id', authUserId)
     .maybeSingle()
   if (error) throw friendlyError(error)
-  return data ? mapRow(data) : null
+  return data ? mapRow(data as Parameters<typeof mapRow>[0]) : null
 }
 
 /** Best-effort login timestamp — never blocks or fails a login. */

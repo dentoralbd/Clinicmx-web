@@ -4,6 +4,34 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-07-25 — Security hardening Phase 1: authenticate the backup endpoints
+Following `SECURITY-HARDENING.md`. While researching, found that `GET /api/list-backups` was
+reachable with no credentials and returned real backup filenames/Drive file IDs from production —
+not previously documented as a gap, and the most serious live finding of the review (also meant
+`POST /api/upload-backup`, unauthenticated, could let a stranger push files that evict real
+backups via retention pruning). Also confirmed admin 2FA was already correctly configured in
+production.
+- **`functions/api/list-backups.ts` · `download-backup.ts` · `upload-backup.ts`** now require the
+  header `X-ClinicMx-Auth: <trusted-device token>`, checked by a new `requireAdminToken()` in
+  `_authLib.ts` against the existing `ADMIN_AUTH_SECRET`. Fails closed if that secret is unset.
+- **`functions/api/admin-otp.ts`** — the `trusted: true` response (device already holds a valid
+  token) now also mints and returns a *fresh* 7-day token, so normal admin logins keep sliding the
+  device's backup access forward instead of it silently lapsing between logins.
+- **`src/lib/adminOtp.ts` / `deviceBackup.ts`** — client sends the stored device token on all
+  backup requests; a 401 now surfaces "Your device trust expired — log out and log in as admin
+  again to refresh it" instead of a generic failure.
+- **`src/pages/Login.tsx`** — admin login in production now hard-fails if the 2FA endpoint reports
+  `unconfigured` or `unreachable`, instead of silently falling back to the PIN alone (which is
+  compiled into the public JS bundle). Local dev (`npm run dev`, no Functions layer) is unaffected
+  — that path still logs in PIN-only, as before. `ADMIN_PASSWORD` renamed to
+  `SECURE_STORAGE_PASSPHRASE` to make clear it no longer authenticates anyone — the server does —
+  it only derives the secure-storage encryption key. Value unchanged (`6040`, user's choice).
+- **`.env.example` / `API.md`** — removed the trap instructing a Google service-account private
+  key into a `VITE_`-bundled variable (that integration has zero importers and isn't deployed);
+  fixed `API.md` documenting the wrong Google OAuth env var names.
+- No SQL migration, no schema change, no change to daily login/backup behavior for real users.
+  RLS/anon-key access (the bigger remaining gap) is deliberately out of scope — tracked as Phase 2.
+
 ## 2026-07-25 — Treatment Plan card + print/share, auto-advancing treatment status
 - **Patient Profile → Clinical tab:** new "Treatment Plan" card between Treatment Summary and Clinical Consultation History — full per-treatment detail (type, tooth, description, status, cost, notes) plus a Subtotal/Discount/Total summary, capped to the 5 most recent with a "View full history" link to Operations. **Print / Share** opens a new `TreatmentPlanPrint` component (`src/components/TreatmentPlanPrint.tsx`, PDF via `src/lib/treatmentPlanPdf.ts`) — a sibling of the existing treatment-estimate print, reusing the same letterhead/`sharePdf` plumbing but framed as a clinical plan document (not a quotation) and always covering the full list, not just the on-page preview.
 - **Treatment status now auto-advances on billing/payment**, alongside the existing manual controls (Operations dropdown, Add Visit picker), which are unchanged: billing a treatment (any of the app's 4 places that attach a treatment to an invoice) bumps Planned → In Progress (`advanceTreatmentStatusOnBilling`, `src/lib/invoiceSync.ts`); an invoice reaching fully paid (inside the single shared `recordInvoicePayment`, `src/lib/payments.ts` — covers every payment flow including Billing's bulk "Mark Paid") completes every treatment still linked to that invoice. Both are per-treatment-row (via each row's own `invoice_id`), so multi-visit/multi-plan billing reflects honest, mixed progress rather than an all-or-nothing state. Neither transition ever downgrades a status a human already set (In Progress/Completed/Cancelled are never overwritten), and payment edits/deletes that drop an invoice back below fully paid do **not** auto-revert a completed treatment — that's a deliberate one-way design, correctable only via the manual dropdown.

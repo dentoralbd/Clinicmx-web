@@ -12,6 +12,24 @@ import {
 } from './prescriptionSectionTemplates'
 import { markBackupDone, markRestoreDrillDone, type BackupCategory } from './backupReminders'
 import { sha256Hex } from './backupCrypto'
+import { getAdminDeviceToken } from './adminOtp'
+
+// Header name mirrors functions/api/_authLib.ts's ADMIN_TOKEN_HEADER — kept
+// as a literal here (rather than importing across the app/functions
+// boundary) since functions/ isn't part of the app's TS project.
+const ADMIN_TOKEN_HEADER = 'X-ClinicMx-Auth'
+
+/** Auth header for the three backup endpoints (list/download/upload-backup.ts),
+ * all gated on the admin trusted-device token since Phase 1 hardening
+ * (2026-07-25). Empty object when no token is held — the server then
+ * answers 401, which callers below turn into a specific re-login message. */
+function adminAuthHeaders(): Record<string, string> {
+  const token = getAdminDeviceToken()
+  return token ? { [ADMIN_TOKEN_HEADER]: token } : {}
+}
+
+const DEVICE_TRUST_MESSAGE =
+  'Your device trust expired — log out and log in as admin again to refresh it.'
 
 /**
  * All backed-up tables in foreign-key dependency order (parents first), same
@@ -375,7 +393,7 @@ export async function uploadSerializedBackup(
   try {
     response = await fetch(`/api/upload-backup?${params.toString()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
+      headers: { 'Content-Type': 'application/octet-stream', ...adminAuthHeaders() },
       body: serialized.bytes as unknown as BodyInit,
     })
   } catch {
@@ -389,6 +407,7 @@ export async function uploadSerializedBackup(
     // Non-JSON response (e.g. 404 HTML when the function isn't deployed)
   }
   if (!response.ok || !body?.ok) {
+    if (response.status === 401) throw new Error(DEVICE_TRUST_MESSAGE)
     if (response.status === 404) {
       throw new Error('Upload service not available on this deployment.')
     }
@@ -409,7 +428,9 @@ export async function uploadSerializedBackup(
     for (let attempt = 0; attempt < 3 && !verified; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 2000))
       try {
-        const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`)
+        const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`, {
+          headers: adminAuthHeaders(),
+        })
         if (check.ok) {
           const echoed = new Uint8Array(await check.arrayBuffer())
           verified = (await sha256Hex(echoed)) === serialized.sha256
@@ -437,7 +458,7 @@ export interface DriveBackupFile {
 export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
   let response: Response
   try {
-    response = await fetch('/api/list-backups')
+    response = await fetch('/api/list-backups', { headers: adminAuthHeaders() })
   } catch {
     throw new Error('Could not reach Google Drive. Check your internet connection.')
   }
@@ -448,6 +469,7 @@ export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
     // Non-JSON response (e.g. 404 HTML when the function isn't deployed)
   }
   if (!response.ok || !body?.ok) {
+    if (response.status === 401) throw new Error(DEVICE_TRUST_MESSAGE)
     if (response.status === 404) {
       throw new Error('Backup listing is not available on this deployment.')
     }
@@ -495,11 +517,14 @@ export async function getDriveBackupStatus(): Promise<DriveBackupStatus> {
 export async function fetchBackupFromDrive(id: string, name: string): Promise<File> {
   let response: Response
   try {
-    response = await fetch(`/api/download-backup?id=${encodeURIComponent(id)}`)
+    response = await fetch(`/api/download-backup?id=${encodeURIComponent(id)}`, {
+      headers: adminAuthHeaders(),
+    })
   } catch {
     throw new Error('Could not reach Google Drive. Check your internet connection.')
   }
   if (!response.ok) {
+    if (response.status === 401) throw new Error(DEVICE_TRUST_MESSAGE)
     let error: string | undefined
     try {
       error = (await response.json())?.error

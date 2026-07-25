@@ -28,18 +28,28 @@ ClinicMx has **no REST API of its own**. The client talks to Supabase directly w
 
 ## 2. Cloudflare Pages Functions (`functions/api/`)
 
-Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev dist`. Shared Google Drive OAuth helpers in `_lib.ts`. Env (Cloudflare dashboard, encrypted): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` (same four as the nightly backup — OAuth, not a service account, because personal Gmail can't grant service accounts Drive quota).
+Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev dist`. Shared Google Drive OAuth helpers in `_lib.ts`. Env (Cloudflare dashboard, encrypted): `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` (same four as the nightly backup — OAuth, not a service account, because personal Gmail can't grant service accounts Drive quota).
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/upload-backup` | POST | Receives a device-backup JSON from the `/backup` page, uploads into Drive `ClinicMx Backups/device-backups` |
-| `/api/list-backups` | GET | Lists backups in Drive for the restore-from-Drive picker |
-| `/api/download-backup` | GET | Streams a chosen Drive backup back for restore |
+| `/api/upload-backup` | POST | Receives a device-backup JSON from the `/backup` page, uploads into Drive `ClinicMx Backups/device-backups`. **Requires admin auth (see below).** |
+| `/api/list-backups` | GET | Lists backups in Drive for the restore-from-Drive picker. **Requires admin auth (see below).** |
+| `/api/download-backup` | GET | Streams a chosen Drive backup back for restore. **Requires admin auth (see below).** |
 | `/api/admin-otp` | POST | Admin login second factor: `action:'request'` (PIN + optional trusted-device token → Telegram OTP or `trusted`/`unconfigured`), `action:'verify'` (code or recovery code → 7-day signed device token) |
 
-The backup endpoints are unauthenticated at the HTTP layer (the page gating is app-side) — treat them as trusted-clinic-only, same posture as the anon key until M3.
+**Admin auth on the backup endpoints (added 2026-07-25, Phase 1 of `SECURITY-HARDENING.md`):**
+until this change, all three were unauthenticated at the HTTP layer and reachable by anyone who
+could reach the deployed site — confirmed live (`GET /api/list-backups` returned real backup
+filenames/Drive IDs with no credentials). They now require the header
+`X-ClinicMx-Auth: <trusted-device token>` — the same 7-day HMAC token `admin-otp.ts` mints on a
+successful admin login, verified by `requireAdminToken()` in `_authLib.ts`. A missing/invalid/
+expired token gets a 401. Client sends it automatically (`src/lib/deviceBackup.ts`,
+`adminAuthHeaders()`) using the token `adminOtp.ts` already stores in
+`localStorage.clinicmx_admin_device`. To avoid the token silently expiring mid-week and breaking
+backups, `admin-otp.ts`'s `trusted: true` response now also mints and returns a **fresh** token,
+which the client re-saves — so every admin login slides the 7-day window forward.
 
-**Admin 2FA endpoint** (`admin-otp.ts`, helpers in `_authLib.ts`, delivery channels in `_otpChannels.ts` — Telegram now, Gmail slot reserved): needs its own env family (encrypted, Cloudflare dashboard): `ADMIN_PIN`, `ADMIN_AUTH_SECRET` (HMAC key for device tokens), `ADMIN_RECOVERY_CODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, optional `OTP_CHANNEL` (default `telegram`) — plus a **KV namespace bound as `ADMIN_AUTH`** (OTP hashes, TTL 300s; per-IP failure/send counters, TTL 1h). Missing config → `{unconfigured:true}` and the client stays PIN-only, so deploys can never lock the admin out. Local testing: same vars in `.dev.vars` + `npx wrangler pages dev dist --kv ADMIN_AUTH`. Client counterpart: `src/lib/adminOtp.ts` (device token in `localStorage.clinicmx_admin_device`).
+**Admin 2FA endpoint** (`admin-otp.ts`, helpers in `_authLib.ts`, delivery channels in `_otpChannels.ts` — Telegram now, Gmail slot reserved): needs its own env family (encrypted, Cloudflare dashboard): `ADMIN_PIN`, `ADMIN_AUTH_SECRET` (HMAC key for device tokens — also what gates the backup endpoints above), `ADMIN_RECOVERY_CODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, optional `OTP_CHANNEL` (default `telegram`) — plus a **KV namespace bound as `ADMIN_AUTH`** (OTP hashes, TTL 300s; per-IP failure/send counters, TTL 1h). Missing config → `{unconfigured:true}`; in production this now **hard-fails** the login (see `CLINICMX-GPT.md` §3) rather than silently falling back to PIN-only — confirmed live that all of these vars are actually set, so a future `unconfigured` response in production means something broke and should be loud. Local dev (plain `npm run dev`, no Functions layer) still gets PIN-only, gated on `import.meta.env.DEV`. Local Functions testing: same vars in `.dev.vars` + `npx wrangler pages dev dist --kv ADMIN_AUTH`. Client counterpart: `src/lib/adminOtp.ts` (device token in `localStorage.clinicmx_admin_device`).
 
 ## 3. Backup scripts (`scripts/backup/`)
 

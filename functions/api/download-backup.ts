@@ -1,19 +1,28 @@
 // Cloudflare Pages Function: fetches one device backup's content by Drive
 // file id, for the "Restore from Google Drive" flow.
 //
-// SECURITY-CRITICAL: this endpoint is same-origin and unauthenticated, and
-// the OAuth token it uses (drive.file scope) also has access to files this
-// app's token has created OUTSIDE device-backups/ — specifically the nightly
-// GitHub Actions backup's db-backups/ (full database dumps) and
-// patient-files/ (patient photos/X-rays) under the same root Drive folder.
-// A client-supplied ?id= must NEVER be trusted directly: we re-list
-// device-backups/ and only serve content for an id that is actually a
-// member of that listing. Do not remove this check.
+// Gated by requireAdminToken (a valid trusted-device token, same one minted
+// by admin-otp.ts) — added 2026-07-25, see SECURITY-HARDENING.md Phase 1.
+//
+// SECURITY-CRITICAL (defense in depth, kept even though the endpoint is now
+// authenticated): the OAuth token it uses (drive.file scope) also has access
+// to files this app's token has created OUTSIDE device-backups/ —
+// specifically the nightly GitHub Actions backup's db-backups/ (full
+// database dumps) and patient-files/ (patient photos/X-rays) under the same
+// root Drive folder. A client-supplied ?id= must NEVER be trusted directly:
+// we re-list device-backups/ and only serve content for an id that is
+// actually a member of that listing. Do not remove this check.
 
 import { type Env, json, hasCredentials, getAccessToken, ensureSubfolder, driveList, driveGetContent } from './_lib'
+import { requireAdminToken } from './_authLib'
 
-export const onRequestGet = async (context: { request: Request; env: Env }): Promise<Response> => {
+type AuthedEnv = Env & { ADMIN_AUTH_SECRET?: string }
+
+export const onRequestGet = async (context: { request: Request; env: AuthedEnv }): Promise<Response> => {
   const { request, env } = context
+
+  const authError = await requireAdminToken(request, env)
+  if (authError) return authError
 
   if (!hasCredentials(env)) {
     return json(503, { ok: false, error: 'Backup download is not configured on the server yet.' })

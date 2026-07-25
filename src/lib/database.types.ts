@@ -17,11 +17,16 @@ export interface Database {
           role: string
           full_name: string
           identifier: string
-          password_hash: string
-          password_salt: string
+          // Nullable since migration 038 (Phase 2, SECURITY-HARDENING.md) —
+          // kept as the rollback lever, no longer written by new code.
+          password_hash: string | null
+          password_salt: string | null
           is_active: boolean
           permissions: Json
           last_login_at: string | null
+          // Added by migration 038 — links to a real Supabase Auth user.
+          auth_user_id: string | null
+          auth_email: string | null
         }
         Insert: {
           id?: string
@@ -30,11 +35,13 @@ export interface Database {
           role: string
           full_name: string
           identifier: string
-          password_hash: string
-          password_salt: string
+          password_hash?: string | null
+          password_salt?: string | null
           is_active?: boolean
           permissions?: Json
           last_login_at?: string | null
+          auth_user_id?: string | null
+          auth_email?: string | null
         }
         Update: {
           id?: string
@@ -43,11 +50,13 @@ export interface Database {
           role?: string
           full_name?: string
           identifier?: string
-          password_hash?: string
-          password_salt?: string
+          password_hash?: string | null
+          password_salt?: string | null
           is_active?: boolean
           permissions?: Json
           last_login_at?: string | null
+          auth_user_id?: string | null
+          auth_email?: string | null
         }
         Relationships: []
       }

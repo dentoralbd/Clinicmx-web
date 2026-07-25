@@ -13,9 +13,11 @@
 // Encrypted uploads are validated by their CMXENC1 magic bytes (the server
 // cannot decrypt them by design).
 //
-// Security posture: same-origin, unauthenticated (P1 auth planned).
-// Mitigations: strict filename/prefix validation, a size cap, and writes
-// confined to the device-backups subfolder.
+// Security posture: gated by requireAdminToken (a valid trusted-device
+// token, same one minted by admin-otp.ts) — added 2026-07-25, see
+// SECURITY-HARDENING.md Phase 1. Kept as defense in depth even so: strict
+// filename/prefix validation, a size cap, and writes confined to the
+// device-backups subfolder.
 
 import {
   type Env,
@@ -29,6 +31,9 @@ import {
   getWebViewLink,
   driveDelete,
 } from './_lib'
+import { requireAdminToken } from './_authLib'
+
+type AuthedEnv = Env & { ADMIN_AUTH_SECRET?: string }
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024
 const FILENAME_PATTERN =
@@ -184,8 +189,11 @@ async function readAndValidate(request: Request): Promise<ValidatedUpload> {
   return { filename, prune: url.searchParams.get('prune') === '1', content: bytes }
 }
 
-export const onRequestPost = async (context: { request: Request; env: Env }): Promise<Response> => {
+export const onRequestPost = async (context: { request: Request; env: AuthedEnv }): Promise<Response> => {
   const { request, env } = context
+
+  const authError = await requireAdminToken(request, env)
+  if (authError) return authError
 
   if (!hasCredentials(env)) {
     return json(503, { ok: false, error: 'Upload service is not configured on the server yet.' })
