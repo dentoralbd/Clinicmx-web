@@ -93,13 +93,34 @@ export interface DeviceBackup {
 
 export type BackupProgress = { table: string; index: number; total: number }
 
+/**
+ * Per-table column lists, used instead of `*` where the database denies a
+ * wildcard select.
+ *
+ * `app_users`: migration 039 revokes table-level SELECT from `authenticated`
+ * and re-grants it column-by-column, deliberately excluding password_hash /
+ * password_salt so credentials can never reach the browser. PostgREST expands
+ * `*` server-side and would fail the whole query with "permission denied for
+ * column password_hash", so this table must name its columns. Losing the two
+ * password columns from the backup is intended — after Phase 2 the real
+ * credentials live in Supabase Auth (auth.users), not here.
+ */
+const TABLE_SELECT_COLUMNS: Record<string, string> = {
+  app_users:
+    'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email',
+}
+
+function selectColumnsFor(table: string): string {
+  return TABLE_SELECT_COLUMNS[table] ?? '*'
+}
+
 export async function fetchAllRows(table: string, onPage?: (fetched: number) => void): Promise<Row[]> {
   const pageSize = 1000
   const rows: Row[] = []
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await (supabase as any)
       .from(table)
-      .select('*')
+      .select(selectColumnsFor(table))
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1)
     if (error) throw new Error(`Failed to fetch ${table}: ${error.message}`)
@@ -696,6 +717,10 @@ export interface TableRestoreResult {
   skippedExisting: number
   droppedColumns: string[]
   error?: string
+  /** Set when the table was deliberately not restored (see RESTORE_SKIP_TABLES).
+   * Distinct from `error`: nothing went wrong, so the UI must not show it as a
+   * failure. */
+  skippedReason?: string
 }
 
 export interface RestoreOutcome {
@@ -782,6 +807,24 @@ async function restoreLocalSettingsFrom(backup: DeviceBackup): Promise<{ restore
   }
 }
 
+/**
+ * Tables the restore deliberately never writes, with the reason shown to the
+ * user. Skipped up front rather than attempted-and-failed, so the summary
+ * reads as an intentional exclusion instead of a permission error.
+ *
+ * `app_users`: migration 039 gives the browser no INSERT/UPDATE/DELETE on
+ * this table at all — staff accounts are managed exclusively through
+ * functions/api/admin-users.ts (service_role, admin-gated). That's also the
+ * right behavior for a restore: recovering yesterday's patient data should
+ * not silently resurrect deleted staff accounts or roll back a permission
+ * change. Account recovery has its own tool — the `sync` action, which
+ * recreates Supabase Auth logins from surviving app_users rows.
+ */
+const RESTORE_SKIP_TABLES: Record<string, string> = {
+  app_users:
+    'Not restored — staff accounts are managed in Admin → Users, not from a backup.',
+}
+
 export async function executeRestore(
   analysis: RestoreAnalysis,
   mode: RestoreMode,
@@ -801,6 +844,12 @@ export async function executeRestore(
       written: 0,
       skippedExisting: mode === 'overwrite' ? 0 : t.existing,
       droppedColumns: [],
+    }
+    const skipReason = RESTORE_SKIP_TABLES[t.table]
+    if (skipReason) {
+      result.skippedReason = skipReason
+      results.push(result)
+      continue
     }
     if (rows.length > 0) {
       try {

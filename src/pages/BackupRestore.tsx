@@ -851,6 +851,8 @@ export function BackupRestore() {
                       <td className="py-1.5 text-xs">
                         {t.error ? (
                           <span className="text-red-600">{t.error}</span>
+                        ) : t.skippedReason ? (
+                          <span className="text-text-secondary">{t.skippedReason}</span>
                         ) : t.droppedColumns.length > 0 ? (
                           <span className="text-amber-700">
                             Skipped unknown column(s): {t.droppedColumns.join(', ')}
