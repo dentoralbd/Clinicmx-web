@@ -92,7 +92,13 @@ export function PaymentEntryModal({
     setSaving(true)
 
     try {
-      const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
+      // A date-only picker can't capture time of day — stamping it at midnight lost the
+      // actual moment for same-day payments (the overwhelmingly common case). Keep the
+      // chosen date but carry over the current time of day instead.
+      const paymentDateTime = new Date(`${paymentDate}T00:00:00`)
+      const now = new Date()
+      paymentDateTime.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
+      const paymentDateIso = paymentDateTime.toISOString()
       const result = await recordInvoicePayment({
         invoiceId,
         amount: parsedAmount,

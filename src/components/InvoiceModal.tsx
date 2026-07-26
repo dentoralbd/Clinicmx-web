@@ -678,7 +678,13 @@ export function InvoiceModal({
 
   /** Same fallback chain as PaymentEntryModal so older payments schemas keep working */
   async function recordImmediatePayment(invoiceId: string, amount: number) {
-    const paymentDateIso = new Date(`${paymentDate}T00:00:00`).toISOString()
+    // Same fix as PaymentEntryModal: a date-only picker can't capture time of day —
+    // stamping it at midnight lost the actual moment for same-day payments. Keep the
+    // chosen date but carry over the current time of day instead.
+    const paymentDateTime = new Date(`${paymentDate}T00:00:00`)
+    const now = new Date()
+    paymentDateTime.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
+    const paymentDateIso = paymentDateTime.toISOString()
     const result = await recordInvoicePayment({
       invoiceId,
       amount,
