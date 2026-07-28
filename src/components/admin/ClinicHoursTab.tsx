@@ -164,7 +164,11 @@ export function ClinicHoursTab() {
       <p className="text-sm text-gray-500">Appointment slots are 30 minutes each.</p>
 
       {formError && <p className="text-sm text-error">{formError}</p>}
-      {saveMutation.isError && <p className="text-sm text-error">Failed to save clinic hours. Please try again.</p>}
+      {saveMutation.isError && (
+        <p className="text-sm text-error">
+          Failed to save clinic hours: {(saveMutation.error as { message?: string })?.message || 'Unknown error'}
+        </p>
+      )}
 
       <div className="flex items-center gap-3">
         <Button type="button" onClick={handleSave} disabled={saveMutation.isPending}>
