@@ -94,19 +94,19 @@ function SuggestionDropdown({ items, highlightedIndex, openUpward, onPick, onRem
         openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
       }`}
     >
-      <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+      <div className="max-h-80 overflow-y-auto p-1.5 space-y-0.5">
         {items.map((item, index) => (
           <div
             key={`${item.text}-${index}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(item.text)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm cursor-pointer transition-colors ${
               index === highlightedIndex
                 ? 'border-primary bg-primary/5'
                 : 'border-transparent hover:bg-gray-50'
             }`}
           >
-            <span className="flex-1 truncate text-gray-800" title={item.text}>
+            <span className="flex-1 line-clamp-2 break-words leading-snug text-gray-800" title={item.text}>
               {item.text}
             </span>
             {item.fromMemory && (
@@ -141,7 +141,7 @@ function useOpenUpward(anchorRef: React.RefObject<HTMLElement>, isOpen: boolean)
   useLayoutEffect(() => {
     if (!isOpen || !anchorRef.current) return
     const rect = anchorRef.current.getBoundingClientRect()
-    setOpenUpward(window.innerHeight - rect.bottom < 240)
+    setOpenUpward(window.innerHeight - rect.bottom < 320)
   }, [isOpen, anchorRef])
   return openUpward
 }
