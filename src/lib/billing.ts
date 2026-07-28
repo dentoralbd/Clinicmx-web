@@ -162,6 +162,27 @@ export function getInvoiceItemDiscountShares(items: Array<Partial<BillingLineIte
   return shares
 }
 
+/**
+ * True when getInvoiceItemDiscountShares() can attribute the whole discount to items'
+ * own stored discount_amount (a real per-plan/per-treatment split) rather than falling
+ * back to a price-weighted guess for some or all items. Lets the UI flag an estimated
+ * split — e.g. a discount typed directly on the invoice rather than entered per plan —
+ * so it isn't mistaken for the patient's actual per-treatment discount.
+ */
+export function hasExactItemDiscountBreakdown(items: Array<Partial<BillingLineItem>>, discountAmount: number): boolean {
+  if (discountAmount <= 0 || items.length === 0) return true // nothing to split, nothing to guess
+
+  const storedTotal = roundCurrency(
+    items.reduce((sum, item) => sum + Math.max(parseCurrency(item.discount_amount), 0), 0)
+  )
+  if (storedTotal <= 0) return false
+  if (storedTotal >= discountAmount) return true
+
+  // Some discount remains after using every stored value — exact only if there's no
+  // item left over to prorate that remainder onto.
+  return items.every((item) => parseCurrency(item.discount_amount) > 0)
+}
+
 function proportionalDiscountShares(items: Array<Partial<BillingLineItem>>, discountAmount: number) {
   const subtotal = getInvoiceItemSubtotal(items)
   if (subtotal <= 0) return items.map(() => 0)

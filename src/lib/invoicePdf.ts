@@ -8,6 +8,7 @@ import {
   getInvoiceItemUnitPrice,
   getInvoiceItemSubtotal,
   groupSimilarInvoiceItems,
+  hasExactItemDiscountBreakdown,
   type BillingLineItem,
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
@@ -351,6 +352,7 @@ function buildReceiptInvoicePdf(
   const rawItems = Array.isArray(invoice.items) ? invoice.items : []
   const items = groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
   const itemDiscountShares = getInvoiceItemDiscountShares(items, invoice.discount_amount || 0)
+  const discountIsExact = hasExactItemDiscountBreakdown(items, invoice.discount_amount || 0)
   const rows =
     items.length > 0
       ? items.map((item, idx) => [
@@ -392,7 +394,15 @@ function buildReceiptInvoicePdf(
   if ((invoice.paid_amount || 0) > 0) lines.push(['Paid', formatBDT(invoice.paid_amount || 0), false])
   lines.push(['Amount Payable', formatBDT(due), true])
 
-  y = drawTotalsBlock(doc, y, lines) + 16
+  y = drawTotalsBlock(doc, y, lines) + (discountAmount > 0 && !discountIsExact ? 2 : 16)
+  if (discountAmount > 0 && !discountIsExact) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(7)
+    doc.setTextColor(150)
+    doc.text('Per-item split is estimated', doc.internal.pageSize.getWidth() - 40, y, { align: 'right' })
+    doc.setTextColor(0)
+    y += 14
+  }
   drawFooter(doc, y)
 
   return doc
@@ -441,8 +451,13 @@ function buildCombinedInvoicePdf(
   for (const invoice of invoices) {
     const rawItems = Array.isArray(invoice.items) ? invoice.items : []
     const items = receipt && options.groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
+    const discountIsExact = receipt ? hasExactItemDiscountBreakdown(items, invoice.discount_amount || 0) : true
     const adjustments: string[] = []
-    if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount -${formatBDT(invoice.discount_amount || 0)}`)
+    if ((invoice.discount_amount || 0) > 0) {
+      adjustments.push(
+        `Discount -${formatBDT(invoice.discount_amount || 0)}${discountIsExact ? '' : ' (split estimated)'}`
+      )
+    }
     if ((invoice.tax_amount || 0) > 0) {
       adjustments.push(`Tax${invoice.tax_rate ? ` (${invoice.tax_rate}%)` : ''} +${formatBDT(invoice.tax_amount || 0)}`)
     }

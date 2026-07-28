@@ -8,6 +8,7 @@ import {
   getInvoiceItemUnitPrice,
   getInvoiceItemSubtotal,
   groupSimilarInvoiceItems,
+  hasExactItemDiscountBreakdown,
   isSchemaCompatibilityError,
   logBillingError,
   type BillingLineItem,
@@ -165,6 +166,7 @@ function ReceiptStyleInvoice({
   const subtotal = items.length > 0 ? getInvoiceItemSubtotal(items) : invoice.total_amount || 0
   const discountAmount = invoice.discount_amount || 0
   const discountShares = getInvoiceItemDiscountShares(items, discountAmount)
+  const discountIsExact = hasExactItemDiscountBreakdown(items, discountAmount)
   const roundingOff = roundCurrency((invoice.total_amount || 0) - (subtotal - discountAmount))
   const due = getInvoiceDue(invoice)
 
@@ -238,6 +240,9 @@ function ReceiptStyleInvoice({
               <span>-{formatBDT(discountAmount)}</span>
             </div>
           )}
+          {discountAmount > 0 && !discountIsExact && (
+            <div className="text-[10px] text-gray-400 text-right">Per-item split is estimated</div>
+          )}
           {roundingOff !== 0 && (
             <div className="flex justify-between">
               <span className="text-gray-600">Rounding Off</span>
@@ -309,9 +314,14 @@ function StatementTable({
           const rawItems = Array.isArray(invoice.items) ? invoice.items : []
           const items = receipt && groupSimilar ? groupSimilarInvoiceItems(rawItems) : rawItems
           const discountShares = receipt ? getInvoiceItemDiscountShares(items, invoice.discount_amount || 0) : []
+          const discountIsExact = receipt ? hasExactItemDiscountBreakdown(items, invoice.discount_amount || 0) : true
           const due = getInvoiceDue(invoice)
           const adjustments: string[] = []
-          if ((invoice.discount_amount || 0) > 0) adjustments.push(`Discount −${formatBDT(invoice.discount_amount || 0)}`)
+          if ((invoice.discount_amount || 0) > 0) {
+            adjustments.push(
+              `Discount −${formatBDT(invoice.discount_amount || 0)}${discountIsExact ? '' : ' (split estimated)'}`
+            )
+          }
           if ((invoice.tax_amount || 0) > 0) {
             adjustments.push(`Tax${invoice.tax_rate ? ` (${invoice.tax_rate}%)` : ''} +${formatBDT(invoice.tax_amount || 0)}`)
           }
