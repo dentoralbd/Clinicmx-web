@@ -6,6 +6,10 @@ export interface BillingLineItem {
   quantity?: string | number | null
   unit_price?: string | number | null
   line_total?: string | number | null
+  /** The discount planned for this specific line, so per-item discount columns show
+   *  what was actually planned instead of a price-proportional re-split of the
+   *  invoice-level total. Absent on manual lines and on pre-existing invoices. */
+  discount_amount?: string | number | null
   source_treatment_id?: string | null
   source_treatment_ids?: string[] | null
 }
@@ -79,6 +83,7 @@ export function normalizeInvoiceItem(item: BillingLineItem) {
   const quantity = getInvoiceItemQuantity(item)
   const unitPrice = getInvoiceItemUnitPrice(item)
   const lineTotal = getInvoiceItemLineTotal(item)
+  const itemDiscount = parseCurrency(item.discount_amount)
 
   return {
     description,
@@ -90,6 +95,7 @@ export function normalizeInvoiceItem(item: BillingLineItem) {
     ...(Array.isArray(item.source_treatment_ids) && item.source_treatment_ids.length > 0
       ? { source_treatment_ids: item.source_treatment_ids }
       : {}),
+    ...(itemDiscount > 0 ? { discount_amount: itemDiscount } : {}),
   }
 }
 
@@ -104,14 +110,59 @@ export function getInvoiceItemSubtotal(items: Array<Partial<BillingLineItem>>) {
 }
 
 /**
- * Splits an invoice-level discount across its line items proportionally to each item's
- * share of the subtotal, so a per-item "Discount" column (receipt-style printouts) can
- * show a real breakdown instead of a hardcoded 0 that silently disagrees with the
- * invoice's actual discount total shown elsewhere on the same page.
+ * Splits an invoice-level discount across its line items so a per-item "Discount"
+ * column (receipt-style printouts) can show a real breakdown instead of a hardcoded 0
+ * that silently disagrees with the invoice's actual discount total shown elsewhere on
+ * the same page.
+ *
+ * Items carrying their own planned `discount_amount` (see buildTreatmentInvoiceItems)
+ * use it verbatim — this is what actually keeps a merged invoice's per-plan discount
+ * split intact instead of re-deriving it from price. Any remainder (manual lines with
+ * no stored value, or an extra discount typed on top of the plan discount) is prorated
+ * across just those items by their share of the subtotal, same as before this existed.
  */
 export function getInvoiceItemDiscountShares(items: Array<Partial<BillingLineItem>>, discountAmount: number) {
   if (discountAmount <= 0 || items.length === 0) return items.map(() => 0)
 
+  const storedShares = items.map((item) => Math.max(parseCurrency(item.discount_amount), 0))
+  const storedTotal = roundCurrency(storedShares.reduce((sum, share) => sum + share, 0))
+
+  if (storedTotal <= 0) {
+    return proportionalDiscountShares(items, discountAmount)
+  }
+
+  // Stored values can't be trusted past the invoice's own discount total (e.g. the
+  // discount was lowered by hand after the items were built) — scale them down to fit.
+  const shares = storedTotal > discountAmount
+    ? storedShares.map((share) => roundCurrency((share / storedTotal) * discountAmount))
+    : [...storedShares]
+
+  const unstoredIndexes = items.reduce<number[]>((acc, item, idx) => {
+    if (!(parseCurrency(item.discount_amount) > 0)) acc.push(idx)
+    return acc
+  }, [])
+  const remaining = roundCurrency(discountAmount - shares.reduce((sum, share) => sum + share, 0))
+
+  if (remaining > 0 && unstoredIndexes.length > 0) {
+    const unstoredItems = unstoredIndexes.map((idx) => items[idx])
+    const unstoredShares = proportionalDiscountShares(unstoredItems, remaining)
+    unstoredIndexes.forEach((idx, i) => {
+      shares[idx] = unstoredShares[i]
+    })
+  } else {
+    // Nothing to prorate onto (every item already has a stored value, or there's
+    // nothing left) — put any rounding residue on the last item so the column always
+    // sums to exactly discountAmount.
+    const finalRemainder = roundCurrency(discountAmount - shares.reduce((sum, share) => sum + share, 0))
+    if (finalRemainder !== 0) {
+      shares[shares.length - 1] = roundCurrency(shares[shares.length - 1] + finalRemainder)
+    }
+  }
+
+  return shares
+}
+
+function proportionalDiscountShares(items: Array<Partial<BillingLineItem>>, discountAmount: number) {
   const subtotal = getInvoiceItemSubtotal(items)
   if (subtotal <= 0) return items.map(() => 0)
 
@@ -177,6 +228,7 @@ export function groupSimilarInvoiceItems(items: BillingLineItem[]): BillingLineI
         quantity: String(getInvoiceItemQuantity(prev) + getInvoiceItemQuantity(item)),
         line_total: roundCurrency(getInvoiceItemLineTotal(prev) + getInvoiceItemLineTotal(item)),
         amount: roundCurrency(getInvoiceItemLineTotal(prev) + getInvoiceItemLineTotal(item)),
+        discount_amount: roundCurrency(parseCurrency(prev.discount_amount) + parseCurrency(item.discount_amount)),
         source_treatment_ids: [
           ...(prev.source_treatment_ids || []),
           ...(item.source_treatment_ids || (item.source_treatment_id ? [item.source_treatment_id] : [])),
@@ -219,6 +271,10 @@ export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[], o
   for (const treatment of treatments) {
     const description = buildTreatmentLabel(treatment)
     const unitPrice = useOriginalCost ? getTreatmentOriginalCost(treatment) : parseCurrency(treatment.cost)
+    // The discount planned for this specific treatment at plan-creation time. Only
+    // meaningful when pricing the line at its pre-discount original_cost — otherwise
+    // the line's price already carries the discount and there's nothing left to show.
+    const treatmentDiscount = useOriginalCost ? roundCurrency(Math.max(unitPrice - parseCurrency(treatment.cost), 0)) : 0
     const key = `${description}::${unitPrice}`
     const existing = groupedItems.get(key)
 
@@ -227,6 +283,7 @@ export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[], o
       groupedItems.set(key, {
         ...existing,
         quantity: String(nextQuantity),
+        discount_amount: roundCurrency(parseCurrency(existing.discount_amount) + treatmentDiscount),
         source_treatment_ids: [...(existing.source_treatment_ids || []), treatment.id],
       })
       continue
@@ -237,6 +294,7 @@ export function buildTreatmentInvoiceItems(treatments: PendingTreatmentLike[], o
       quantity: '1',
       unit_price: String(unitPrice),
       amount: String(unitPrice),
+      ...(treatmentDiscount > 0 ? { discount_amount: treatmentDiscount } : {}),
       source_treatment_id: treatment.id,
       source_treatment_ids: [treatment.id],
     })
