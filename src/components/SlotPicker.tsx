@@ -98,7 +98,7 @@ export function SlotPicker({
       {/* Day chips */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {chipDays.map((day) => {
-          const free = countFreeSlots(day, settings, appointmentsOnDay(day, appointments))
+          const free = countFreeSlots(day, settings, appointmentsOnDay(day, appointments), excludeAppointmentId)
           const closed = generateDaySlots(day, settings).length === 0
           const active = isSameDay(day, date)
           return (

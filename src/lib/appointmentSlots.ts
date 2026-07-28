@@ -107,10 +107,11 @@ export function isRangeFree(
 export function countFreeSlots(
   day: Date,
   settings: AppointmentSettingsRow,
-  dayAppointments: ExistingAppointmentLite[]
+  dayAppointments: ExistingAppointmentLite[],
+  excludeId?: string
 ): number {
   const slots = generateDaySlots(day, settings)
-  const taken = computeTakenSlots(slots, dayAppointments)
+  const taken = computeTakenSlots(slots, dayAppointments, excludeId)
   return taken.filter((t) => !t).length
 }
 
