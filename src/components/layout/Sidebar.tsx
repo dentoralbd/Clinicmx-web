@@ -76,9 +76,11 @@ function SectionLabel({ children }: { children: ReactNode }) {
 
 export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDesignPreview }: SidebarProps) {
   const location = useLocation()
-  const isAdmin = getAppRole() === 'admin'
-  // Non-admins see a Doctor Zone entry only if some zone tab is available to them
+  const appRole = getAppRole()
+  const isAdmin = appRole === 'admin'
+  // Non-admins see a Doctor/Operator Zone entry only if some zone tab is available to them
   const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete()
+  const zoneLabel = appRole === 'operator' ? 'Operator Zone' : 'Doctor Zone'
   const visibleGroups = menuGroups
     .map((group) => ({
       ...group,
@@ -278,7 +280,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                       <span className={iconChipClass(isActive)}>
                         <UserCircle className="w-5 h-5" />
                       </span>
-                      <span>Doctor Zone</span>
+                      <span>{zoneLabel}</span>
                     </>
                   )}
                 </NavLink>
