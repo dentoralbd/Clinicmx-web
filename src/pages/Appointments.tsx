@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock, List, LayoutGrid } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
@@ -9,6 +9,8 @@ import { RescheduleModal } from '@/components/RescheduleModal'
 import { ReminderQueue } from '@/components/ReminderQueue'
 import { getPatientDobOrAge } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
+import { loadAppointmentSettings } from '@/lib/appointmentSettings'
+import { DEFAULT_APPOINTMENT_SETTINGS, generateDaySlots, type AppointmentSettingsRow } from '@/lib/appointmentSlots'
 
 interface Appointment {
   id: string
@@ -38,6 +40,8 @@ export function Appointments() {
   const [addVisitPrompt, setAddVisitPrompt] = useState<Appointment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reminderRefresh, setReminderRefresh] = useState(0)
+  const [viewMode, setViewMode] = useState<'list' | 'slots'>('list')
+  const [slotSettings, setSlotSettings] = useState<AppointmentSettingsRow>(DEFAULT_APPOINTMENT_SETTINGS)
   const navigate = useNavigate()
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
@@ -47,6 +51,12 @@ export function Appointments() {
     loadAppointments()
     loadWeekAppointments()
   }, [selectedDate])
+
+  useEffect(() => {
+    loadAppointmentSettings()
+      .then(setSlotSettings)
+      .catch(() => setSlotSettings(DEFAULT_APPOINTMENT_SETTINGS))
+  }, [])
 
   async function loadWeekAppointments() {
     try {
@@ -208,14 +218,44 @@ export function Appointments() {
       </div>
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="font-semibold">Appointments for {format(selectedDate, 'MMMM d, yyyy')}</h3>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                viewMode === 'list' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('slots')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                viewMode === 'slots' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Slots
+            </button>
+          </div>
         </div>
 
         {loading ? (
           <div className="p-8 flex justify-center">
             <span className="spinner" />
           </div>
+        ) : viewMode === 'slots' ? (
+          <DaySlotGrid
+            date={selectedDate}
+            settings={slotSettings}
+            appointments={appointments}
+            onFreeSlotClick={() => setShowModal(true)}
+            onAppointmentClick={(appointment) => setRescheduleAppointment(appointment)}
+          />
         ) : appointments.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
             <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
@@ -373,6 +413,78 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const SLOT_STATUS_STYLES: Record<string, string> = {
+  Scheduled: 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100',
+  Confirmed: 'bg-green-50 border-green-300 text-green-800 hover:bg-green-100',
+  Completed: 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200',
+}
+
+function DaySlotGrid({
+  date,
+  settings,
+  appointments,
+  onFreeSlotClick,
+  onAppointmentClick,
+}: {
+  date: Date
+  settings: AppointmentSettingsRow
+  appointments: Appointment[]
+  onFreeSlotClick: () => void
+  onAppointmentClick: (appointment: Appointment) => void
+}) {
+  const slots = generateDaySlots(date, settings)
+
+  if (slots.length === 0) {
+    return (
+      <div className="p-8 text-center text-text-secondary">
+        <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+        Clinic closed this day
+      </div>
+    )
+  }
+
+  return (
+    <div className="divide-y divide-gray-100">
+      {slots.map((slot) => {
+        const occupying = appointments.find((a) => {
+          if (a.status === 'Cancelled') return false
+          const apptStart = new Date(a.date_time)
+          const apptEnd = new Date(apptStart.getTime() + a.duration * 60000)
+          return slot.start < apptEnd && slot.end > apptStart
+        })
+
+        return (
+          <div key={slot.start.toISOString()} className="flex items-stretch">
+            <div className="w-20 flex-shrink-0 py-3 px-3 text-xs text-text-secondary">{slot.label}</div>
+            {occupying ? (
+              <button
+                type="button"
+                onClick={() => onAppointmentClick(occupying)}
+                className={`flex-1 text-left py-3 px-3 border-l-4 transition ${
+                  SLOT_STATUS_STYLES[occupying.status] || 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <span className="font-medium text-sm">
+                  {occupying.patients?.first_name} {occupying.patients?.last_name}
+                </span>
+                <span className="text-xs ml-2 opacity-80">{occupying.type}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onFreeSlotClick}
+                className="flex-1 text-left py-3 px-3 border-l-4 border-transparent text-gray-300 hover:bg-gray-50 hover:text-gray-400 transition"
+              >
+                Free
+              </button>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
