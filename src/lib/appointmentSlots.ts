@@ -1,21 +1,13 @@
-import { addMinutes, format, getDay, isSameDay, setHours, setMinutes, startOfDay } from 'date-fns'
+import { addMinutes, format, isSameDay, setHours, setMinutes, startOfDay } from 'date-fns'
 
-export interface AppointmentSettingsRow {
+/** Fixed slot length. Not exposed in the UI (matches the original decision to keep this constant). */
+export const SLOT_MINUTES = 30
+
+export interface ScheduleWindow {
   start_hour: number
   start_minute: number
   end_hour: number
   end_minute: number
-  slot_minutes: number
-  open_days: number[]
-}
-
-export const DEFAULT_APPOINTMENT_SETTINGS: AppointmentSettingsRow = {
-  start_hour: 17,
-  start_minute: 0,
-  end_hour: 22,
-  end_minute: 0,
-  slot_minutes: 30,
-  open_days: [0, 1, 2, 3, 4, 5, 6],
 }
 
 export interface Slot {
@@ -32,24 +24,32 @@ export interface ExistingAppointmentLite {
 }
 
 /** durationMinutes -> number of slots it consumes (ceil, so a 45min appt on 30min slots needs 2). */
-export function durationToSlotCount(durationMinutes: number, slotMinutes: number = 30): number {
+export function durationToSlotCount(durationMinutes: number, slotMinutes: number = SLOT_MINUTES): number {
   return Math.max(1, Math.ceil(durationMinutes / slotMinutes))
 }
 
-/** Generate the day's slot grid from settings. Returns [] if the day isn't in open_days. */
-export function generateDaySlots(day: Date, settings: AppointmentSettingsRow): Slot[] {
-  if (!settings.open_days.includes(getDay(day))) return []
-
+/**
+ * Generate a day's slot grid from its list of open windows (recurring or
+ * date-override — the caller resolves which applies, see
+ * appointmentSchedule.ts's getWindowsForDay). Multiple windows are allowed
+ * (e.g. 10am-2pm and 5pm-10pm same day); slots never span across windows.
+ * Zero windows -> day is closed -> [].
+ */
+export function generateSlotsForDay(day: Date, windows: ScheduleWindow[]): Slot[] {
   const slots: Slot[] = []
-  let cursor = setMinutes(setHours(startOfDay(day), settings.start_hour), settings.start_minute)
-  const end = setMinutes(setHours(startOfDay(day), settings.end_hour), settings.end_minute)
 
-  while (addMinutes(cursor, settings.slot_minutes) <= end) {
-    const slotEnd = addMinutes(cursor, settings.slot_minutes)
-    slots.push({ start: cursor, end: slotEnd, label: format(cursor, 'h:mm a') })
-    cursor = slotEnd
+  for (const w of windows) {
+    let cursor = setMinutes(setHours(startOfDay(day), w.start_hour), w.start_minute)
+    const end = setMinutes(setHours(startOfDay(day), w.end_hour), w.end_minute)
+
+    while (addMinutes(cursor, SLOT_MINUTES) <= end) {
+      const slotEnd = addMinutes(cursor, SLOT_MINUTES)
+      slots.push({ start: cursor, end: slotEnd, label: format(cursor, 'h:mm a') })
+      cursor = slotEnd
+    }
   }
 
+  slots.sort((a, b) => a.start.getTime() - b.start.getTime())
   return slots
 }
 
@@ -106,11 +106,11 @@ export function isRangeFree(
 /** Free-slot count for a single day, for the day-chip "X free" label. */
 export function countFreeSlots(
   day: Date,
-  settings: AppointmentSettingsRow,
+  windows: ScheduleWindow[],
   dayAppointments: ExistingAppointmentLite[],
   excludeId?: string
 ): number {
-  const slots = generateDaySlots(day, settings)
+  const slots = generateSlotsForDay(day, windows)
   const taken = computeTakenSlots(slots, dayAppointments, excludeId)
   return taken.filter((t) => !t).length
 }

@@ -158,36 +158,57 @@ export interface Database {
           }
         ]
       }
-      appointment_settings: {
+      appointment_schedule_windows: {
         Row: {
-          id: number
+          id: string
+          day_of_week: number | null
+          override_date: string | null
           start_hour: number
           start_minute: number
           end_hour: number
           end_minute: number
-          slot_minutes: number
-          open_days: number[]
-          updated_at: string
+          created_at: string
         }
         Insert: {
-          id?: number
-          start_hour?: number
-          start_minute?: number
-          end_hour?: number
-          end_minute?: number
-          slot_minutes?: number
-          open_days?: number[]
-          updated_at?: string
+          id?: string
+          day_of_week?: number | null
+          override_date?: string | null
+          start_hour: number
+          start_minute: number
+          end_hour: number
+          end_minute: number
+          created_at?: string
         }
         Update: {
-          id?: number
+          id?: string
+          day_of_week?: number | null
+          override_date?: string | null
           start_hour?: number
           start_minute?: number
           end_hour?: number
           end_minute?: number
-          slot_minutes?: number
-          open_days?: number[]
-          updated_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      appointment_schedule_date_overrides: {
+        Row: {
+          id: string
+          override_date: string
+          is_closed: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          override_date: string
+          is_closed?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          override_date?: string
+          is_closed?: boolean
+          created_at?: string
         }
         Relationships: []
       }

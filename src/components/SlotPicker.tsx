@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react'
 import { addDays, format, isSameDay, isToday, startOfDay } from 'date-fns'
 import { supabase } from '@/lib/supabase'
-import { loadAppointmentSettings } from '@/lib/appointmentSettings'
+import { loadScheduleContext, getWindowsForDay, type ScheduleContext } from '@/lib/appointmentSchedule'
 import {
-  DEFAULT_APPOINTMENT_SETTINGS,
   appointmentsOnDay,
   computeTakenSlots,
   countFreeSlots,
   durationToSlotCount,
-  generateDaySlots,
+  generateSlotsForDay,
   isRunFree,
-  type AppointmentSettingsRow,
   type ExistingAppointmentLite,
 } from '@/lib/appointmentSlots'
 
@@ -24,6 +22,8 @@ interface SlotPickerProps {
   daysAheadForChips?: number
 }
 
+const EMPTY_SCHEDULE: ScheduleContext = { recurringByDay: {}, overrides: {} }
+
 export function SlotPicker({
   date,
   onDateChange,
@@ -33,16 +33,10 @@ export function SlotPicker({
   onSelectStart,
   daysAheadForChips = 7,
 }: SlotPickerProps) {
-  const [settings, setSettings] = useState<AppointmentSettingsRow>(DEFAULT_APPOINTMENT_SETTINGS)
+  const [schedule, setSchedule] = useState<ScheduleContext>(EMPTY_SCHEDULE)
   const [appointments, setAppointments] = useState<ExistingAppointmentLite[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadAppointmentSettings()
-      .then(setSettings)
-      .catch(() => setSettings(DEFAULT_APPOINTMENT_SETTINGS))
-  }, [])
 
   useEffect(() => {
     const today = startOfDay(new Date())
@@ -58,19 +52,28 @@ export function SlotPicker({
     setLoading(true)
     setError(null)
 
-    supabase
-      .from('appointments')
-      .select('id, date_time, duration, status')
-      .gte('date_time', rangeStart.toISOString())
-      .lt('date_time', addDays(rangeEnd, 1).toISOString())
-      .then(({ data, error: fetchError }) => {
+    Promise.all([
+      loadScheduleContext(rangeStart, rangeEnd),
+      supabase
+        .from('appointments')
+        .select('id, date_time, duration, status')
+        .gte('date_time', rangeStart.toISOString())
+        .lt('date_time', addDays(rangeEnd, 1).toISOString()),
+    ])
+      .then(([scheduleCtx, apptRes]) => {
         if (cancelled) return
-        if (fetchError) {
+        setSchedule(scheduleCtx)
+        if (apptRes.error) {
           setError('Unable to load booked slots right now.')
           setAppointments([])
         } else {
-          setAppointments((data || []) as ExistingAppointmentLite[])
+          setAppointments((apptRes.data || []) as ExistingAppointmentLite[])
         }
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Unable to load available times right now.')
         setLoading(false)
       })
 
@@ -86,10 +89,11 @@ export function SlotPicker({
 
   const today = startOfDay(new Date())
   const chipDays = Array.from({ length: daysAheadForChips }, (_, i) => addDays(today, i))
-  const slots = generateDaySlots(date, settings)
+  const windows = getWindowsForDay(date, schedule)
+  const slots = generateSlotsForDay(date, windows)
   const dayAppointments = appointmentsOnDay(date, appointments)
   const taken = computeTakenSlots(slots, dayAppointments, excludeAppointmentId)
-  const slotCount = durationToSlotCount(durationMinutes, settings.slot_minutes)
+  const slotCount = durationToSlotCount(durationMinutes)
 
   return (
     <div className="space-y-3">
@@ -98,8 +102,9 @@ export function SlotPicker({
       {/* Day chips */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {chipDays.map((day) => {
-          const free = countFreeSlots(day, settings, appointmentsOnDay(day, appointments), excludeAppointmentId)
-          const closed = generateDaySlots(day, settings).length === 0
+          const dayWindows = getWindowsForDay(day, schedule)
+          const free = countFreeSlots(day, dayWindows, appointmentsOnDay(day, appointments))
+          const closed = dayWindows.length === 0
           const active = isSameDay(day, date)
           return (
             <button

@@ -9,8 +9,8 @@ import { RescheduleModal } from '@/components/RescheduleModal'
 import { ReminderQueue } from '@/components/ReminderQueue'
 import { getPatientDobOrAge } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
-import { loadAppointmentSettings } from '@/lib/appointmentSettings'
-import { DEFAULT_APPOINTMENT_SETTINGS, generateDaySlots, type AppointmentSettingsRow } from '@/lib/appointmentSlots'
+import { loadScheduleContext, getWindowsForDay, type ScheduleContext } from '@/lib/appointmentSchedule'
+import { generateSlotsForDay } from '@/lib/appointmentSlots'
 
 interface Appointment {
   id: string
@@ -41,7 +41,7 @@ export function Appointments() {
   const [error, setError] = useState<string | null>(null)
   const [reminderRefresh, setReminderRefresh] = useState(0)
   const [viewMode, setViewMode] = useState<'list' | 'slots'>('list')
-  const [slotSettings, setSlotSettings] = useState<AppointmentSettingsRow>(DEFAULT_APPOINTMENT_SETTINGS)
+  const [schedule, setSchedule] = useState<ScheduleContext>({ recurringByDay: {}, overrides: {} })
   const navigate = useNavigate()
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
@@ -53,10 +53,10 @@ export function Appointments() {
   }, [selectedDate])
 
   useEffect(() => {
-    loadAppointmentSettings()
-      .then(setSlotSettings)
-      .catch(() => setSlotSettings(DEFAULT_APPOINTMENT_SETTINGS))
-  }, [])
+    loadScheduleContext(selectedDate, selectedDate)
+      .then(setSchedule)
+      .catch(() => setSchedule({ recurringByDay: {}, overrides: {} }))
+  }, [selectedDate])
 
   async function loadWeekAppointments() {
     try {
@@ -251,7 +251,7 @@ export function Appointments() {
         ) : viewMode === 'slots' ? (
           <DaySlotGrid
             date={selectedDate}
-            settings={slotSettings}
+            windows={getWindowsForDay(selectedDate, schedule)}
             appointments={appointments}
             onFreeSlotClick={() => setShowModal(true)}
             onAppointmentClick={(appointment) => setRescheduleAppointment(appointment)}
@@ -425,18 +425,18 @@ const SLOT_STATUS_STYLES: Record<string, string> = {
 
 function DaySlotGrid({
   date,
-  settings,
+  windows,
   appointments,
   onFreeSlotClick,
   onAppointmentClick,
 }: {
   date: Date
-  settings: AppointmentSettingsRow
+  windows: { start_hour: number; start_minute: number; end_hour: number; end_minute: number }[]
   appointments: Appointment[]
   onFreeSlotClick: () => void
   onAppointmentClick: (appointment: Appointment) => void
 }) {
-  const slots = generateDaySlots(date, settings)
+  const slots = generateSlotsForDay(date, windows)
 
   if (slots.length === 0) {
     return (
