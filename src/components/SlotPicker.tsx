@@ -22,6 +22,7 @@ import {
   computeTakenSlots,
   durationToSlotCount,
   generateSlotsForDay,
+  isPastSlot,
   isRunFree,
   type ExistingAppointmentLite,
 } from '@/lib/appointmentSlots'
@@ -106,7 +107,8 @@ export function SlotPicker({
     onDateChange(day)
   }
 
-  const today = startOfDay(new Date())
+  const now = new Date()
+  const today = startOfDay(now)
   const monthStart = startOfMonth(viewedMonth)
   const monthEnd = endOfMonth(viewedMonth)
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd })
@@ -116,7 +118,15 @@ export function SlotPicker({
   const slots = generateSlotsForDay(date, windows)
   const dayAppointments = appointmentsOnDay(date, appointments)
   const taken = computeTakenSlots(slots, dayAppointments, excludeAppointmentId)
+  const past = slots.map((s) => isPastSlot(s, now))
+  const unavailable = taken.map((t, i) => t || past[i])
   const slotCount = durationToSlotCount(durationMinutes)
+
+  // Today's cell is only worth disabling for the "everything's already past" case
+  // once we know today's actual windows have all elapsed (e.g. it's 11pm and the
+  // clinic closes at 10pm) — a day with genuinely no windows is already "closed".
+  const todaySlots = generateSlotsForDay(today, getWindowsForDay(today, schedule))
+  const todayFullyPast = todaySlots.length > 0 && todaySlots.every((s) => isPastSlot(s, now))
 
   return (
     <div className="space-y-3">
@@ -166,10 +176,10 @@ export function SlotPicker({
           ))}
           {daysInMonth.map((day) => {
             const selected = isSameDay(day, date)
-            const isPast = isBefore(day, today)
+            const isTodayCell = isToday(day)
+            const isPast = isBefore(day, today) || (isTodayCell && todayFullyPast)
             const closed = getWindowsForDay(day, schedule).length === 0
             const disabled = (isPast || closed) && !selected
-            const isTodayCell = isToday(day)
 
             let cls = 'min-h-[44px] flex items-center justify-center rounded-lg text-sm font-medium border transition '
             if (selected) {
@@ -207,7 +217,8 @@ export function SlotPicker({
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {slots.map((slot, i) => {
             const isTaken = taken[i]
-            const runFree = !isTaken && isRunFree(taken, i, slotCount)
+            const isPastTime = past[i]
+            const runFree = !unavailable[i] && isRunFree(unavailable, i, slotCount)
             // Highlight the whole selected run, not just the clicked slot.
             const selectedIndex = selectedStart
               ? slots.findIndex((s) => s.start.getTime() === selectedStart.getTime())
@@ -221,6 +232,8 @@ export function SlotPicker({
               className += 'bg-primary text-white border-primary'
             } else if (isTaken) {
               className += 'bg-gray-100 text-gray-400 border-gray-200 line-through cursor-not-allowed'
+            } else if (isPastTime) {
+              className += 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
             } else if (!runFree) {
               className += 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
             } else {

@@ -92,6 +92,11 @@ export function isRunFree(taken: boolean[], startIndex: number, slotCount: numbe
   return true
 }
 
+/** True if a slot's start time has already passed (e.g. today's 6pm slot when it's already 11pm). */
+export function isPastSlot(slot: Slot, now: Date = new Date()): boolean {
+  return slot.start < now
+}
+
 /** Given a desired start + duration, is it bookable against a day's appointments? Submit-time guard. */
 export function isRangeFree(
   start: Date,
@@ -99,6 +104,7 @@ export function isRangeFree(
   dayAppointments: ExistingAppointmentLite[],
   excludeId?: string
 ): boolean {
+  if (start < new Date()) return false
   const end = addMinutes(start, durationMinutes)
   return !hasConflict(start, end, dayAppointments, excludeId)
 }

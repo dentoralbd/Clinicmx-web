@@ -10,7 +10,7 @@ import { ReminderQueue } from '@/components/ReminderQueue'
 import { getPatientDobOrAge } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 import { loadScheduleContext, getWindowsForDay, type ScheduleContext } from '@/lib/appointmentSchedule'
-import { generateSlotsForDay } from '@/lib/appointmentSlots'
+import { generateSlotsForDay, isPastSlot } from '@/lib/appointmentSlots'
 
 interface Appointment {
   id: string
@@ -473,6 +473,10 @@ function DaySlotGrid({
                 </span>
                 <span className="text-xs ml-2 opacity-80">{occupying.type}</span>
               </button>
+            ) : isPastSlot(slot) ? (
+              <div className="flex-1 py-3 px-3 border-l-4 border-transparent text-gray-300">
+                Past
+              </div>
             ) : (
               <button
                 type="button"
