@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { Clock, Plus, X } from 'lucide-react'
@@ -11,7 +11,6 @@ import {
   removeScheduleWindow,
   setDateOverride,
   type OverrideWindowRow,
-  type RecurringWindowRow,
 } from '@/lib/appointmentSchedule'
 import type { ScheduleWindow } from '@/lib/appointmentSlots'
 
@@ -123,20 +122,25 @@ function WindowChip({ window, onRemove }: { window: ScheduleWindow; onRemove: ()
   )
 }
 
+/** A window row staged for editing: `id` is null for a not-yet-saved addition, set for an existing DB row. */
+interface StagedWindow {
+  key: string
+  id: string | null
+  window: ScheduleWindow
+}
+
 function WeeklyDayEditor({
   dayValue,
   dayLabel,
   windows,
   onAdd,
   onRemove,
-  isBusy,
 }: {
   dayValue: number
   dayLabel: string
-  windows: RecurringWindowRow[]
+  windows: StagedWindow[]
   onAdd: (dayValue: number, window: ScheduleWindow) => void
-  onRemove: (id: string) => void
-  isBusy: boolean
+  onRemove: (dayValue: number, key: string) => void
 }) {
   return (
     <div className="border border-gray-200 rounded-lg p-3">
@@ -146,11 +150,11 @@ function WeeklyDayEditor({
       ) : (
         <div className="space-y-1.5 mb-2">
           {windows.map((w) => (
-            <WindowChip key={w.id} window={w} onRemove={() => onRemove(w.id)} />
+            <WindowChip key={w.key} window={w.window} onRemove={() => onRemove(dayValue, w.key)} />
           ))}
         </div>
       )}
-      <AddWindowRow disabled={isBusy} onAdd={(w) => onAdd(dayValue, w)} />
+      <AddWindowRow onAdd={(w) => onAdd(dayValue, w)} />
     </div>
   )
 }
@@ -233,14 +237,59 @@ export function ClinicHoursTab() {
     queryClient.invalidateQueries({ queryKey: ['schedule_overrides'] })
   }
 
-  const addWindowMutation = useMutation({
-    mutationFn: ({ day, window }: { day: number; window: ScheduleWindow }) => addRecurringWindow(day, window),
-    onSuccess: refreshRecurring,
+  // Weekly Hours is edited locally (staged) and only written to the DB when
+  // "Save Weekly Hours" is pressed, rather than each add/remove hitting the
+  // DB immediately — lets an admin review a batch of changes before committing.
+  const [staged, setStaged] = useState<Record<number, StagedWindow[]>>({})
+  const [pendingRemovals, setPendingRemovals] = useState<string[]>([])
+  const [weeklyDirty, setWeeklyDirty] = useState(false)
+  const [weeklySaved, setWeeklySaved] = useState(false)
+
+  useEffect(() => {
+    const byDay: Record<number, StagedWindow[]> = {}
+    for (const w of recurring) {
+      if (!byDay[w.day_of_week]) byDay[w.day_of_week] = []
+      byDay[w.day_of_week].push({ key: w.id, id: w.id, window: w })
+    }
+    setStaged(byDay)
+    setPendingRemovals([])
+    setWeeklyDirty(false)
+  }, [recurring])
+
+  function handleAddLocalWindow(day: number, window: ScheduleWindow) {
+    setStaged((prev) => ({
+      ...prev,
+      [day]: [...(prev[day] || []), { key: crypto.randomUUID(), id: null, window }],
+    }))
+    setWeeklyDirty(true)
+  }
+
+  function handleRemoveLocalWindow(day: number, key: string) {
+    const target = (staged[day] || []).find((w) => w.key === key)
+    if (target?.id) setPendingRemovals((prev) => [...prev, target.id as string])
+    setStaged((prev) => ({ ...prev, [day]: (prev[day] || []).filter((w) => w.key !== key) }))
+    setWeeklyDirty(true)
+  }
+
+  const saveWeeklyMutation = useMutation({
+    mutationFn: async () => {
+      for (const [dayStr, windows] of Object.entries(staged)) {
+        const day = Number(dayStr)
+        for (const w of windows) {
+          if (w.id === null) await addRecurringWindow(day, w.window)
+        }
+      }
+      for (const id of pendingRemovals) {
+        await removeScheduleWindow(id)
+      }
+    },
+    onSuccess: () => {
+      refreshRecurring()
+      setWeeklySaved(true)
+      setTimeout(() => setWeeklySaved(false), 2500)
+    },
   })
-  const removeWindowMutation = useMutation({
-    mutationFn: (id: string) => removeScheduleWindow(id),
-    onSuccess: refreshRecurring,
-  })
+
   const saveOverrideMutation = useMutation({
     mutationFn: ({ date, isClosed, windows }: { date: string; isClosed: boolean; windows: ScheduleWindow[] }) =>
       setDateOverride(date, isClosed, windows),
@@ -250,12 +299,6 @@ export function ClinicHoursTab() {
     mutationFn: ({ id, date }: { id: string; date: string }) => removeDateOverride(id, date),
     onSuccess: refreshOverrides,
   })
-
-  const windowsByDay: Record<number, RecurringWindowRow[]> = {}
-  for (const w of recurring) {
-    if (!windowsByDay[w.day_of_week]) windowsByDay[w.day_of_week] = []
-    windowsByDay[w.day_of_week].push(w)
-  }
 
   return (
     <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-8">
@@ -287,24 +330,33 @@ export function ClinicHoursTab() {
                 key={day.value}
                 dayValue={day.value}
                 dayLabel={day.label}
-                windows={windowsByDay[day.value] || []}
-                onAdd={(dayValue, window) => addWindowMutation.mutate({ day: dayValue, window })}
-                onRemove={(id) => removeWindowMutation.mutate(id)}
-                isBusy={addWindowMutation.isPending}
+                windows={staged[day.value] || []}
+                onAdd={handleAddLocalWindow}
+                onRemove={handleRemoveLocalWindow}
               />
             ))}
           </div>
         )}
-        {addWindowMutation.isError && (
+
+        {saveWeeklyMutation.isError && (
           <p className="text-sm text-error mt-2">
-            Failed to add window: {(addWindowMutation.error as { message?: string })?.message || 'Unknown error'}
+            Failed to save weekly hours: {(saveWeeklyMutation.error as { message?: string })?.message || 'Unknown error'}
           </p>
         )}
-        {removeWindowMutation.isError && (
-          <p className="text-sm text-error mt-2">
-            Failed to remove window: {(removeWindowMutation.error as { message?: string })?.message || 'Unknown error'}
-          </p>
-        )}
+
+        <div className="flex items-center gap-3 mt-3">
+          <Button
+            type="button"
+            onClick={() => saveWeeklyMutation.mutate()}
+            disabled={!weeklyDirty || saveWeeklyMutation.isPending}
+          >
+            {saveWeeklyMutation.isPending ? 'Saving…' : 'Save Weekly Hours'}
+          </Button>
+          {weeklySaved && <span className="text-sm text-primary">Saved.</span>}
+          {weeklyDirty && !saveWeeklyMutation.isPending && !weeklySaved && (
+            <span className="text-sm text-gray-500">You have unsaved changes.</span>
+          )}
+        </div>
       </div>
 
       <div>
