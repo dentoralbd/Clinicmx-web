@@ -242,11 +242,22 @@ function paymentChipClass(chip: string): string {
 // the invoice so a discount applied after the visit (which updates
 // invoices.total_amount) is reflected here too. "Due" is the running balance
 // right after this visit's payment — invoice total minus every payment on that
-// invoice up to and including this visit's timestamp — not the invoice's current
+// invoice up to (but not including) the NEXT visit linked to the same invoice, or
+// every payment if this is the most recent one — not the invoice's current
 // (final) due, so each visit in a multi-visit installment plan shows its own
-// balance rather than all showing the same end-state number. "Paid" stays as the
-// frozen text since it's a historical fact about what was paid at that visit.
-function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices: any[], payments: any[]): string[] {
+// balance rather than all showing the same end-state number. Using the next
+// sibling visit as the boundary (rather than a fixed time tolerance after this
+// visit's own timestamp) avoids misattributing a visit's own payment when its
+// write lands more than a couple seconds after the visit row itself — routine
+// over a real network given the several awaited calls in between. "Paid" stays
+// as the frozen text since it's a historical fact about what was paid at that visit.
+function buildVisitPaymentChips(
+  visit: any,
+  paymentText: string | null,
+  invoices: any[],
+  payments: any[],
+  visits: any[]
+): string[] {
   const chips = (paymentText ? parsePaymentChips(paymentText) : []).filter(
     (chip) => !chip.endsWith('toward previous due')
   )
@@ -254,9 +265,14 @@ function buildVisitPaymentChips(visit: any, paymentText: string | null, invoices
   const invoice = invoices.find((inv) => inv.id === visit.invoice_id)
   if (!invoice) return chips
   const billed = invoice.total_amount || 0
-  const visitTime = new Date(visit.created_at).getTime() + 2000 // tolerate clock skew with same-transaction payment rows
+  const siblingVisits = visits
+    .filter((v) => v.invoice_id === visit.invoice_id)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const visitIndex = siblingVisits.findIndex((v) => v.id === visit.id)
+  const nextVisit = visitIndex >= 0 ? siblingVisits[visitIndex + 1] : undefined
+  const cutoff = nextVisit ? new Date(nextVisit.created_at).getTime() : Infinity
   const paidThroughVisit = payments
-    .filter((p) => p.invoice_id === visit.invoice_id && new Date(p.payment_date).getTime() <= visitTime)
+    .filter((p) => p.invoice_id === visit.invoice_id && new Date(p.payment_date).getTime() < cutoff)
     .reduce((sum, p) => sum + (p.amount || 0), 0)
   const due = Math.max(billed - paidThroughVisit, 0)
   const hadBilledChip = chips.some((chip) => chip.startsWith('Billed'))
@@ -2733,7 +2749,7 @@ export function PatientProfile() {
                         <DollarSign className="w-3.5 h-3.5" /> Payment
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {buildVisitPaymentChips(visit, parsedNotes.payment, invoices, payments).map((chip, i) => (
+                        {buildVisitPaymentChips(visit, parsedNotes.payment, invoices, payments, visits).map((chip, i) => (
                           <span
                             key={i}
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
@@ -4129,7 +4145,7 @@ export function PatientProfile() {
                   )}
                   {editingVisitFixedSummary.payment && (
                     <div className="flex flex-wrap gap-1.5">
-                      {buildVisitPaymentChips(editingVisit, editingVisitFixedSummary.payment, invoices, payments).map((chip, i) => (
+                      {buildVisitPaymentChips(editingVisit, editingVisitFixedSummary.payment, invoices, payments, visits).map((chip, i) => (
                         <span
                           key={i}
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentChipClass(chip)}`}
