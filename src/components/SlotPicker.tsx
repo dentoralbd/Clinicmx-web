@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react'
-import { addDays, format, isSameDay, isToday, startOfDay } from 'date-fns'
+import {
+  addDays,
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  format,
+  getDay,
+  isBefore,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  startOfDay,
+  startOfMonth,
+  subMonths,
+} from 'date-fns'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { loadScheduleContext, getWindowsForDay, type ScheduleContext } from '@/lib/appointmentSchedule'
 import {
   appointmentsOnDay,
   computeTakenSlots,
-  countFreeSlots,
   durationToSlotCount,
   generateSlotsForDay,
   isRunFree,
@@ -19,10 +33,10 @@ interface SlotPickerProps {
   excludeAppointmentId?: string
   selectedStart: Date | null
   onSelectStart: (start: Date | null) => void
-  daysAheadForChips?: number
 }
 
 const EMPTY_SCHEDULE: ScheduleContext = { recurringByDay: {}, overrides: {} }
+const WEEKDAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 export function SlotPicker({
   date,
@@ -31,64 +45,73 @@ export function SlotPicker({
   excludeAppointmentId,
   selectedStart,
   onSelectStart,
-  daysAheadForChips = 7,
 }: SlotPickerProps) {
+  const [viewedMonth, setViewedMonth] = useState<Date>(() => startOfMonth(date))
   const [schedule, setSchedule] = useState<ScheduleContext>(EMPTY_SCHEDULE)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [appointments, setAppointments] = useState<ExistingAppointmentLite[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Closed-day info for the visible month's calendar grid — refetches on month navigation only.
   useEffect(() => {
-    const today = startOfDay(new Date())
-    const chipsEnd = addDays(today, daysAheadForChips - 1)
-    // Always include `date` itself in the fetched range, in case it falls
-    // outside the default chip window (e.g. rescheduling a far-future
-    // appointment, or the main calendar was navigated ahead before opening
-    // the modal).
-    const rangeStart = date < today ? startOfDay(date) : today
-    const rangeEnd = date > chipsEnd ? startOfDay(date) : chipsEnd
+    let cancelled = false
+    setScheduleError(null)
 
+    loadScheduleContext(startOfMonth(viewedMonth), endOfMonth(viewedMonth))
+      .then((ctx) => {
+        if (!cancelled) setSchedule(ctx)
+      })
+      .catch(() => {
+        if (!cancelled) setScheduleError('Unable to load clinic hours right now.')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewedMonth])
+
+  // Conflict data for the slot grid below — refetches whenever the selected date changes.
+  useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
 
-    Promise.all([
-      loadScheduleContext(rangeStart, rangeEnd),
-      supabase
-        .from('appointments')
-        .select('id, date_time, duration, status')
-        .gte('date_time', rangeStart.toISOString())
-        .lt('date_time', addDays(rangeEnd, 1).toISOString()),
-    ])
-      .then(([scheduleCtx, apptRes]) => {
+    const dayStart = startOfDay(date)
+    const dayEnd = addDays(dayStart, 1)
+
+    supabase
+      .from('appointments')
+      .select('id, date_time, duration, status')
+      .gte('date_time', dayStart.toISOString())
+      .lt('date_time', dayEnd.toISOString())
+      .then(({ data, error: fetchError }) => {
         if (cancelled) return
-        setSchedule(scheduleCtx)
-        if (apptRes.error) {
+        if (fetchError) {
           setError('Unable to load booked slots right now.')
           setAppointments([])
         } else {
-          setAppointments((apptRes.data || []) as ExistingAppointmentLite[])
+          setAppointments((data || []) as ExistingAppointmentLite[])
         }
-        setLoading(false)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setError('Unable to load available times right now.')
         setLoading(false)
       })
 
     return () => {
       cancelled = true
     }
-  }, [date, daysAheadForChips])
+  }, [date])
 
-  function handleDayChipClick(day: Date) {
+  function handleDaySelect(day: Date) {
     onSelectStart(null)
     onDateChange(day)
   }
 
   const today = startOfDay(new Date())
-  const chipDays = Array.from({ length: daysAheadForChips }, (_, i) => addDays(today, i))
+  const monthStart = startOfMonth(viewedMonth)
+  const monthEnd = endOfMonth(viewedMonth)
+  const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const leadingBlanks = getDay(monthStart)
+
   const windows = getWindowsForDay(date, schedule)
   const slots = generateSlotsForDay(date, windows)
   const dayAppointments = appointmentsOnDay(date, appointments)
@@ -97,39 +120,85 @@ export function SlotPicker({
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-sm text-error">{error}</p>}
+      {/* Month calendar */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <button
+            type="button"
+            onClick={() => setViewedMonth((m) => subMonths(m, 1))}
+            className="p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">{format(viewedMonth, 'MMMM yyyy')}</span>
+            {!isSameMonth(viewedMonth, today) && (
+              <button
+                type="button"
+                onClick={() => setViewedMonth(startOfMonth(today))}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Today
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewedMonth((m) => addMonths(m, 1))}
+            className="p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Next month"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
 
-      {/* Day chips */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {chipDays.map((day) => {
-          const dayWindows = getWindowsForDay(day, schedule)
-          const free = countFreeSlots(day, dayWindows, appointmentsOnDay(day, appointments))
-          const closed = dayWindows.length === 0
-          const active = isSameDay(day, date)
-          return (
-            <button
-              key={day.toISOString()}
-              type="button"
-              onClick={() => handleDayChipClick(day)}
-              className={`flex-shrink-0 min-w-[64px] min-h-[44px] px-3 py-2 rounded-lg border text-center transition ${
-                active
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <div className="text-xs font-medium">
-                {isToday(day) ? 'Today' : format(day, 'EEE')}
-              </div>
-              <div className="text-xs">{format(day, 'MMM d')}</div>
-              <div className={`text-[10px] mt-0.5 ${active ? 'text-white/80' : 'text-gray-500'}`}>
-                {closed ? 'Closed' : `${free} free`}
-              </div>
-            </button>
-          )
-        })}
+        {scheduleError && <p className="text-sm text-error mb-2">{scheduleError}</p>}
+
+        <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-400 mb-1">
+          {WEEKDAY_HEADERS.map((label, i) => (
+            <div key={i}>{label}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: leadingBlanks }, (_, i) => (
+            <div key={`blank-${i}`} />
+          ))}
+          {daysInMonth.map((day) => {
+            const selected = isSameDay(day, date)
+            const isPast = isBefore(day, today)
+            const closed = getWindowsForDay(day, schedule).length === 0
+            const disabled = (isPast || closed) && !selected
+            const isTodayCell = isToday(day)
+
+            let cls = 'min-h-[44px] flex items-center justify-center rounded-lg text-sm font-medium border transition '
+            if (selected) {
+              cls += 'bg-primary text-white border-primary'
+            } else if (isPast || closed) {
+              cls += 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed'
+            } else if (isTodayCell) {
+              cls += 'bg-white text-gray-700 border-primary hover:bg-gray-50'
+            } else {
+              cls += 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }
+
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                disabled={disabled}
+                onClick={() => handleDaySelect(day)}
+                className={cls}
+              >
+                {format(day, 'd')}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Slot grid */}
+      {error && <p className="text-sm text-error">{error}</p>}
       {loading ? (
         <div className="py-8 text-center text-sm text-gray-500">Loading available times…</div>
       ) : slots.length === 0 ? (
