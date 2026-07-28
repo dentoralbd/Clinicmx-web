@@ -3,10 +3,12 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/Button'
 import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
 import { SuggestTextarea } from '@/components/SuggestField'
+import { SlotPicker } from '@/components/SlotPicker'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { logActivity } from '@/lib/activityLog'
 import { deriveDateOfBirthFromAge } from '@/lib/ageTier'
+import { isRangeFree, type ExistingAppointmentLite } from '@/lib/appointmentSlots'
 import { UserPlus, Users, Search, X } from 'lucide-react'
 
 export function AppointmentModal({ 
@@ -24,13 +26,13 @@ export function AppointmentModal({
   const [patients, setPatients] = useState<any[]>([])
   const [formData, setFormData] = useState({
     patient_id: defaultPatientId || '',
-    date: format(selectedDate, 'yyyy-MM-dd'),
-    time: '09:00',
     duration: '30',
     type: 'Checkup',
     status: 'Scheduled',
     notes: '',
   })
+  const [slotDate, setSlotDate] = useState<Date>(selectedDate)
+  const [slotStart, setSlotStart] = useState<Date | null>(null)
   const [newPatientData, setNewPatientData] = useState({
     first_name: '',
     last_name: '',
@@ -182,33 +184,32 @@ export function AppointmentModal({
         return
       }
 
-      // Check for overlapping appointments
-      const startDateTime = new Date(`${formData.date}T${formData.time}:00`)
-      const endDateTime = new Date(startDateTime.getTime() + parseInt(formData.duration) * 60000)
+      if (!slotStart) {
+        alert('Please choose an appointment time')
+        setSaving(false)
+        return
+      }
+
+      // Final conflict guard against a possible race between grid render and submit.
+      const startDateTime = slotStart
 
       const startOfDay = new Date(startDateTime)
       startOfDay.setHours(0, 0, 0, 0)
-      
+
       const endOfDay = new Date(startDateTime)
       endOfDay.setHours(23, 59, 59, 999)
 
       const { data: dayAppts, error: fetchError } = await supabase
         .from('appointments')
-        .select('date_time, duration, status')
+        .select('id, date_time, duration, status')
         .gte('date_time', startOfDay.toISOString())
         .lte('date_time', endOfDay.toISOString())
         .neq('status', 'Cancelled')
 
       if (fetchError) throw fetchError
-      const appointmentsForDay = (dayAppts || []) as Array<{ date_time: string; duration: number }>
+      const appointmentsForDay = (dayAppts || []) as ExistingAppointmentLite[]
 
-      const hasConflict = appointmentsForDay.some(appt => {
-        const apptStart = new Date(appt.date_time)
-        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
-        return startDateTime < apptEnd && endDateTime > apptStart
-      })
-
-      if (hasConflict) {
+      if (!isRangeFree(startDateTime, parseInt(formData.duration), appointmentsForDay)) {
         alert('An appointment is already scheduled during this time slot')
         setSaving(false)
         return
@@ -453,33 +454,13 @@ export function AppointmentModal({
           {/* Appointment Details */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Date</label>
-              <input
-                type="date"
-                required
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Time</label>
-              <input
-                type="time"
-                required
-                value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
               <label className="block text-sm font-medium mb-1">Duration (min)</label>
               <select
                 value={formData.duration}
-                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, duration: e.target.value })
+                  setSlotStart(null)
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="15">15 min</option>
@@ -507,6 +488,17 @@ export function AppointmentModal({
                 <option>Follow-up</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Appointment Time</label>
+            <SlotPicker
+              date={slotDate}
+              onDateChange={setSlotDate}
+              durationMinutes={parseInt(formData.duration)}
+              selectedStart={slotStart}
+              onSelectStart={setSlotStart}
+            />
           </div>
 
           <div>

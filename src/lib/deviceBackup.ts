@@ -45,6 +45,7 @@ export const BACKUP_TABLES = [
   'invoice_templates',
   'payment_methods',
   'invoice_settings',
+  'appointment_settings',
   'app_users',
   'authorized_ips',
   'delete_history',

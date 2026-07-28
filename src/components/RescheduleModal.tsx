@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLog'
 import { RescheduleWhatsAppPrompt } from '@/components/RescheduleWhatsAppPrompt'
+import { SlotPicker } from '@/components/SlotPicker'
+import { isRangeFree, type ExistingAppointmentLite } from '@/lib/appointmentSlots'
 
 export function RescheduleModal({
   appointment,
@@ -25,10 +27,8 @@ export function RescheduleModal({
   onSave: () => void
 }) {
   const currentDate = new Date(appointment.date_time)
-  const [formData, setFormData] = useState({
-    date: format(currentDate, 'yyyy-MM-dd'),
-    time: format(currentDate, 'HH:mm'),
-  })
+  const [slotDate, setSlotDate] = useState<Date>(currentDate)
+  const [slotStart, setSlotStart] = useState<Date | null>(null)
   const [saving, setSaving] = useState(false)
   const [whatsAppPrompt, setWhatsAppPrompt] = useState<{ dateStr: string; timeStr: string } | null>(null)
 
@@ -37,9 +37,14 @@ export function RescheduleModal({
     setSaving(true)
 
     try {
-      // Check for overlapping appointments (excluding this one)
-      const startDateTime = new Date(`${formData.date}T${formData.time}:00`)
-      const endDateTime = new Date(startDateTime.getTime() + appointment.duration * 60000)
+      if (!slotStart) {
+        alert('Please choose a new appointment time')
+        setSaving(false)
+        return
+      }
+
+      // Final conflict guard against a possible race between grid render and submit.
+      const startDateTime = slotStart
 
       const startOfDay = new Date(startDateTime)
       startOfDay.setHours(0, 0, 0, 0)
@@ -56,15 +61,9 @@ export function RescheduleModal({
         .neq('id', appointment.id)
 
       if (fetchError) throw fetchError
-      const appointmentsForDay = (dayAppts || []) as Array<{ date_time: string; duration: number }>
+      const appointmentsForDay = (dayAppts || []) as ExistingAppointmentLite[]
 
-      const hasConflict = appointmentsForDay.some(appt => {
-        const apptStart = new Date(appt.date_time)
-        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
-        return startDateTime < apptEnd && endDateTime > apptStart
-      })
-
-      if (hasConflict) {
+      if (!isRangeFree(startDateTime, appointment.duration, appointmentsForDay)) {
         alert('An appointment is already scheduled during this time slot')
         setSaving(false)
         return
@@ -134,27 +133,16 @@ export function RescheduleModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">New Date</label>
-              <input
-                type="date"
-                required
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">New Time</label>
-              <input
-                type="time"
-                required
-                value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">New Appointment Time</label>
+            <SlotPicker
+              date={slotDate}
+              onDateChange={setSlotDate}
+              durationMinutes={appointment.duration}
+              excludeAppointmentId={appointment.id}
+              selectedStart={slotStart}
+              onSelectStart={setSlotStart}
+            />
           </div>
 
           <p className="text-sm text-gray-500">

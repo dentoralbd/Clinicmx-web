@@ -25,11 +25,13 @@ import {
   Users,
   ScrollText,
   Wifi,
+  Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { UsersTab } from '@/components/admin/UsersTab'
 import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
 import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
+import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
 import { countPendingIpRequests } from '@/lib/ipAccess'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
@@ -236,7 +238,7 @@ function SnapshotDetails({ payload }: { payload: unknown }) {
   )
 }
 
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -253,6 +255,7 @@ function getAvailableTabs(): ZoneTabDef[] {
   if (getAppRole() === 'admin') tabs.push({ id: 'users', label: 'Users', icon: Users })
   if (getAppRole() === 'admin') tabs.push({ id: 'network', label: 'Network Access', icon: Wifi })
   if (getAppRole() === 'admin') tabs.push({ id: 'logs', label: 'Activity Log', icon: ScrollText })
+  if (getAppRole() === 'admin') tabs.push({ id: 'hours', label: 'Clinic Hours', icon: Clock })
   return tabs
 }
 
@@ -263,6 +266,7 @@ const TAB_GRID_COLS: Record<number, string> = {
   4: 'grid-cols-2 sm:grid-cols-4',
   5: 'grid-cols-2 sm:grid-cols-5',
   6: 'grid-cols-2 sm:grid-cols-3',
+  7: 'grid-cols-2 sm:grid-cols-4',
 }
 
 export function DoctorProfile() {
@@ -624,6 +628,8 @@ export function DoctorProfile() {
       {activeTab === 'network' && <AccessRequestsTab onPendingCountChange={setPendingIpCount} />}
 
       {activeTab === 'logs' && <ActivityLogTab />}
+
+      {activeTab === 'hours' && <ClinicHoursTab />}
 
       {activeTab === 'profile' && (
       <form onSubmit={handleSave} className="space-y-6">

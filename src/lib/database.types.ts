@@ -158,6 +158,39 @@ export interface Database {
           }
         ]
       }
+      appointment_settings: {
+        Row: {
+          id: number
+          start_hour: number
+          start_minute: number
+          end_hour: number
+          end_minute: number
+          slot_minutes: number
+          open_days: number[]
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          start_hour?: number
+          start_minute?: number
+          end_hour?: number
+          end_minute?: number
+          slot_minutes?: number
+          open_days?: number[]
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          start_hour?: number
+          start_minute?: number
+          end_hour?: number
+          end_minute?: number
+          slot_minutes?: number
+          open_days?: number[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       treatments: {
         Row: {
           id: string
