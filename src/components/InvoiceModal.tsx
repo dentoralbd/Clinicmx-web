@@ -922,19 +922,27 @@ export function InvoiceModal({
             </div>
 
             <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-                <label className="text-sm text-text-secondary whitespace-nowrap">
-                  Discount{formData.discount_type === 'percentage' ? ' (%)' : ''}:
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder={formData.discount_type === 'percentage' ? '0' : '0.00'}
-                  value={discountValue}
-                  onChange={(e) => setDiscountValue(e.target.value)}
-                  className="w-full sm:w-32 px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+              <div>
+                <label className="block text-sm font-medium mb-1">Discount</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={formData.discount_type}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, discount_type: e.target.value as 'fixed' | 'percentage' }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="fixed">Fixed (BDT)</option>
+                    <option value="percentage">Percentage (%)</option>
+                  </select>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder={formData.discount_type === 'percentage' ? '0' : '0.00'}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
               </div>
 
               {/* ── More options ── */}
@@ -1009,22 +1017,11 @@ export function InvoiceModal({
                   onClick={() => setShowAdvancedOptions((v) => !v)}
                   className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm text-text-secondary hover:bg-gray-100"
                 >
-                  <span>Advanced (discount type, credit, invoice #, installments)</span>
+                  <span>Advanced (credit, invoice #, installments)</span>
                   {showAdvancedOptions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
                 {showAdvancedOptions && (
                   <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Discount Type</label>
-                      <select
-                        value={formData.discount_type}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, discount_type: e.target.value as 'fixed' | 'percentage' }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="fixed">Fixed amount</option>
-                        <option value="percentage">Percentage (%)</option>
-                      </select>
-                    </div>
                     <div>
                       <label className="block text-xs font-medium mb-1">Credit Amount</label>
                       <input

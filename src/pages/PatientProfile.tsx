@@ -11,6 +11,7 @@ import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { InstallmentPlanPanel } from '@/components/InstallmentPlanPanel'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
@@ -6331,6 +6332,10 @@ function PatientInvoiceRow({
           <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 mt-3">
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
             <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={patient} patientId={invoice.patient_id} onChanged={onPaymentRecorded} />
+          </div>
+
+          <div className="mt-3">
+            <InstallmentPlanPanel invoiceId={invoice.id} invoice={invoice} onChanged={onPaymentRecorded} />
           </div>
 
           <div className="mt-3">

@@ -36,6 +36,7 @@ import { InvoiceListPrint } from '@/components/InvoiceListPrint'
 import { InvoiceTemplateSelector } from '@/components/InvoiceTemplateSelector'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
+import { InstallmentPlanPanel } from '@/components/InstallmentPlanPanel'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
@@ -1330,6 +1331,8 @@ function InvoiceRow({
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Payment History</p>
             <PaymentHistoryPanel invoiceId={invoice.id} invoice={invoice} patient={invoice.patients ?? undefined} patientId={invoice.patient_id} onChanged={onPaymentRecorded} />
           </div>
+
+          <InstallmentPlanPanel invoiceId={invoice.id} invoice={invoice} onChanged={onPaymentRecorded} />
 
           <InvoiceTimelinePanel invoiceId={invoice.id} />
         </div>
