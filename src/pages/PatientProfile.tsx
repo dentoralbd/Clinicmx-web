@@ -54,7 +54,7 @@ import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromD
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { translateDrugDefaults, translateDosage, retranslateMedication, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
 import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
-import { canDelete } from '@/lib/appSession'
+import { canDelete, getAppUser, getAppRole } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { logActivity } from '@/lib/activityLog'
