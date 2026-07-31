@@ -27,8 +27,6 @@ import { RevenueCalendar } from '@/components/analytics/RevenueCalendar'
 import { RevenueSection } from '@/components/analytics/RevenueSection'
 import { PatientSection } from '@/components/analytics/PatientSection'
 import { TreatmentMixSection } from '@/components/analytics/TreatmentMixSection'
-import { DoctorAnalyticsSection } from '@/components/analytics/DoctorAnalyticsSection'
-import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 
 const PAGE_SIZE = 1000
 
@@ -59,7 +57,6 @@ export function Analytics() {
   const [patients, setPatients] = useState<AnalyticsPatient[]>([])
   const [appointments, setAppointments] = useState<AnalyticsAppointment[]>([])
   const [payments, setPayments] = useState<AnalyticsPayment[]>([])
-  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
   const [range, setRange] = useState<AnalyticsRange>('12m')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -69,7 +66,6 @@ export function Analytics() {
     // Non-admins are redirected below; skip the data load entirely for them.
     if (getAppRole() === 'admin') {
       loadAnalytics()
-      loadDoctorProfile().then(setDoctorProfile, () => {})
     }
   }, [])
 
@@ -85,8 +81,8 @@ export function Analytics() {
           'id, patient_id, items, total_amount, paid_amount, status, created_at',
           (q) => q.neq('status', 'Merged')
         ),
-        fetchAllRows<any>('treatments', 'id, patient_id, tooth_number, treatment_type, description, status, cost, created_at, doctor_name, doctor_share_pct, invoice_id, is_invoiced'),
-        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, patient_code, created_at, patient_type'),
+        fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
+        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at, patient_type'),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
         fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
       ])
@@ -165,22 +161,22 @@ export function Analytics() {
   }
 
   return (
-    <div className="space-y-6 page-fade-in">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-8 page-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight">Clinic Analytics</h1>
-          <p className="text-text-secondary mt-1">Revenue, patient, and treatment trends.</p>
+          <p className="text-text-secondary text-sm mt-1">Revenue, patient, and treatment trends.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-gray-200 bg-card p-0.5" role="group" aria-label="Time range">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl">
             {RANGE_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setRange(option.value)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 ${
                   range === option.value
                     ? 'bg-primary text-white shadow-elevation-low'
-                    : 'text-text-secondary hover:text-primary hover:bg-primary/5'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 {option.label}
@@ -190,8 +186,7 @@ export function Analytics() {
           <button
             onClick={() => loadAnalytics(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-            title="Refresh"
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
@@ -234,12 +229,6 @@ export function Analytics() {
         />
       </div>
 
-      <DoctorAnalyticsSection
-        treatments={treatments}
-        invoices={invoices}
-        patients={patients}
-        doctorProfile={doctorProfile}
-      />
       <RevenueCalendar payments={payments} invoices={invoices} patients={patients} />
       <RevenueSection monthly={monthly} byType={byType} topSources={topSources} />
       <PatientSection newPerMonth={newPerMonth} returningVsNew={returningVsNew} />

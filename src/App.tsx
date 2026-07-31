@@ -20,6 +20,7 @@ const DoctorProfile = lazy(() => import('./pages/DoctorProfile').then(m => ({ de
 const QrSearch = lazy(() => import('./pages/QrSearch').then(m => ({ default: m.QrSearch })))
 const BackupRestore = lazy(() => import('./pages/BackupRestore').then(m => ({ default: m.BackupRestore })))
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const DoctorAnalytics = lazy(() => import('./pages/DoctorAnalytics').then(m => ({ default: m.DoctorAnalytics })))
 
 const queryClient = new QueryClient()
 
@@ -59,6 +60,7 @@ function App() {
               <Route path="admin" element={<DoctorProfile />} />
               <Route path="backup" element={<BackupRestore />} />
               <Route path="analytics" element={<Analytics />} />
+              <Route path="doctor-analytics" element={<DoctorAnalytics />} />
             </Route>
           </Routes>
         </Suspense>
