@@ -30,6 +30,7 @@ export function DoctorAnalytics() {
   const [treatments, setTreatments] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
+  const [labWorks, setLabWorks] = useState<any[]>([])
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -48,17 +49,19 @@ export function DoctorAnalytics() {
       else setLoading(true)
       setLoadError(null)
 
-      const [invoiceRows, treatmentRows, patientRows, paymentRows] = await Promise.all([
+      const [invoiceRows, treatmentRows, patientRows, paymentRows, labWorkRows] = await Promise.all([
         fetchAllRowsSafe<any>('invoices', (q) => q.neq('status', 'Merged')),
         fetchAllRowsSafe<any>('treatments'),
         fetchAllRowsSafe<any>('patients'),
         fetchAllRowsSafe<any>('payments'),
+        fetchAllRowsSafe<any>('lab_work'),
       ])
 
       setInvoices(invoiceRows)
       setTreatments(treatmentRows)
       setPatients(patientRows)
       setPayments(paymentRows)
+      setLabWorks(labWorkRows)
     } catch (error) {
       console.error('Error loading doctor analytics:', error)
       setLoadError('Could not load doctor financial data. Check your connection.')
@@ -95,7 +98,7 @@ export function DoctorAnalytics() {
             <UserCheck className="w-6 h-6 text-teal-600" /> Doctor Analytics & Payouts
           </h1>
           <p className="text-text-secondary text-sm mt-1">
-            Doctor work tracking, revenue share percentage calculations, and monthly salary statements.
+            Doctor work tracking, treatment costs (TxC), revenue share calculations, and monthly financial statements.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -121,6 +124,7 @@ export function DoctorAnalytics() {
         treatments={treatments}
         invoices={invoices}
         patients={patients}
+        labWorks={labWorks}
         doctorProfile={doctorProfile}
       />
     </div>
