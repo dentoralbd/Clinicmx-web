@@ -93,7 +93,12 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
         const { data: newPatient } = await supabase
           .from('patients')
-          .insert([{ first_name: firstName, last_name: lastName, phone: cleanPhone }])
+          .insert([{
+            first_name: firstName,
+            last_name: lastName,
+            phone: cleanPhone,
+            patient_type: 'consultation'
+          }])
           .select('id')
           .single()
 
@@ -112,7 +117,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         }])
       }
 
-      alert(`✅ Serial #${app.id} for ${app.name} has been CONFIRMED and imported into Clinicmx!`)
+      alert(`✅ Serial #${app.id} for ${app.name} has been CONFIRMED and added to Consultations list in Clinicmx!`)
       fetchSerials()
       if (onImportSuccess) onImportSuccess()
     } catch (err) {
