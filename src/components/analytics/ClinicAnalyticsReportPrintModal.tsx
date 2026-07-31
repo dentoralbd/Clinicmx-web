@@ -90,15 +90,10 @@ export function ClinicAnalyticsReportPrintModal({
       <div className="w-full max-w-4xl bg-white rounded-xl shadow-2xl p-8 sm:p-10 text-slate-900 analytics-report-print-overlay">
         {/* Header */}
         <div className="flex justify-between items-start border-b border-slate-200 pb-6 mb-6 gap-4">
-          <div className="flex items-start gap-4">
-            {logoSrc && (
-              <img src={logoSrc} alt="Clinic Logo" className="w-16 h-16 object-contain rounded-lg border border-slate-200 p-1" />
-            )}
-            <div>
-              <h1 className="font-bold text-xl text-slate-900">{doctor?.clinic_name || 'ClinicMx Dental Care'}</h1>
-              <p className="text-xs text-slate-500">{doctor?.full_name || 'Dental Clinic Management System'}</p>
-              <p className="text-xs text-slate-500">{doctor?.address || ''} {doctor?.phone ? `· ${doctor.phone}` : ''}</p>
-            </div>
+          <div>
+            <h1 className="font-bold text-xl text-slate-900">{doctor?.clinic_name || 'ClinicMx Dental Care'}</h1>
+            <p className="text-xs text-slate-500">{doctor?.full_name || 'Dental Clinic Management System'}</p>
+            <p className="text-xs text-slate-500">{doctor?.address || ''} {doctor?.phone ? `· ${doctor.phone}` : ''}</p>
           </div>
           <div className="text-right">
             <h2 className="font-bold text-sm text-teal-700 tracking-wider uppercase">Revenue & Invoice Statement</h2>
