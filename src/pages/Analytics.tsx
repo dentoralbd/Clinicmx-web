@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { getAppRole } from '@/lib/appSession'
 import { formatBDT } from '@/lib/utils'
-import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2 } from 'lucide-react'
+import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2, FileSpreadsheet, Printer } from 'lucide-react'
 import {
   buildMonthAxis,
   filterByRange,
@@ -16,6 +16,7 @@ import {
   revenueSummary,
   topRevenueSources,
   treatmentConversion,
+  exportClinicAnalyticsCSV,
   type AnalyticsAppointment,
   type AnalyticsInvoice,
   type AnalyticsPatient,
@@ -167,7 +168,7 @@ export function Analytics() {
           <h1 className="font-display text-2xl font-bold tracking-tight">Clinic Analytics</h1>
           <p className="text-text-secondary text-sm mt-1">Revenue, patient, and treatment trends.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center bg-gray-100 p-1 rounded-xl">
             {RANGE_OPTIONS.map((option) => (
               <button
@@ -184,9 +185,25 @@ export function Analytics() {
             ))}
           </div>
           <button
+            onClick={() => exportClinicAnalyticsCSV(rangeInvoices, patients, range)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+            title="Export Invoices & Revenue CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors"
+            title="Print Analytics Report"
+          >
+            <Printer className="w-4 h-4 text-slate-600" />
+            <span className="hidden sm:inline">Print Report</span>
+          </button>
+          <button
             onClick={() => loadAnalytics(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>

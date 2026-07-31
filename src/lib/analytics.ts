@@ -544,3 +544,46 @@ export function treatmentConversion(treatments: AnalyticsTreatment[]): Treatment
     completionRate: pipeline > 0 ? completed / pipeline : 0,
   }
 }
+
+/**
+ * Downloads a CSV export of clinic invoices and revenue ledger for Analytics.
+ */
+export function exportClinicAnalyticsCSV(
+  invoices: AnalyticsInvoice[],
+  patients: AnalyticsPatient[],
+  rangeLabel: string
+) {
+  const patientMap = new Map<string, string>()
+  patients.forEach((p) => {
+    patientMap.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient')
+  })
+
+  const headers = ['Invoice Date', 'Patient Name', 'Total Billed (BDT)', 'Paid Amount (BDT)', 'Outstanding Due (BDT)', 'Status']
+  const rows = invoices.map((inv) => {
+    const dateStr = inv.created_at ? inv.created_at.substring(0, 10) : ''
+    const ptName = inv.patient_id ? patientMap.get(inv.patient_id) || 'Patient' : 'Patient'
+    const total = inv.total_amount || 0
+    const paid = inv.paid_amount || 0
+    const due = Math.max(0, total - paid)
+    return [
+      `"${dateStr}"`,
+      `"${ptName.replace(/"/g, '""')}"`,
+      total.toFixed(2),
+      paid.toFixed(2),
+      due.toFixed(2),
+      `"${inv.status || 'Active'}"`,
+    ].join(',')
+  })
+
+  const csvContent = [headers.join(','), ...rows].join('\n')
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `Clinic_Analytics_Revenue_${rangeLabel}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
