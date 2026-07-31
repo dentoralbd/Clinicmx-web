@@ -298,6 +298,20 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                     </>
                   )}
                 </NavLink>
+                <NavLink
+                  to="/doctor-analytics"
+                  onClick={onNavClick}
+                  className={navLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={iconChipClass(isActive)}>
+                        <UserCheck className="w-5 h-5 text-teal-600" />
+                      </span>
+                      <span>Doctor Analytics</span>
+                    </>
+                  )}
+                </NavLink>
               </div>
             ) : null}
           </nav>

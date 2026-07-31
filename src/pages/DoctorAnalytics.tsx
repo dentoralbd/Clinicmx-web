@@ -37,7 +37,8 @@ export function DoctorAnalytics() {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (getAppRole() === 'admin') {
+    const role = getAppRole()
+    if (role === 'admin' || role === 'doctor') {
       loadData()
       loadDoctorProfile().then(setDoctorProfile, () => {})
     }
@@ -71,7 +72,8 @@ export function DoctorAnalytics() {
     }
   }
 
-  if (getAppRole() !== 'admin') {
+  const role = getAppRole()
+  if (role !== 'admin' && role !== 'doctor') {
     return <Navigate to="/dashboard" replace />
   }
 

@@ -516,6 +516,7 @@ export function PatientProfile() {
 
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
+  const [doctorsList, setDoctorsList] = useState<string[]>([])
 
   useEffect(() => {
     if (id) {
@@ -524,8 +525,38 @@ export function PatientProfile() {
     }
     setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
     setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
-    loadDoctorProfile()
+    loadDoctorProfile().then((dp) => {
+      setDoctorProfile(dp)
+      fetchDoctorsList(dp)
+    })
   }, [id])
+
+  async function fetchDoctorsList(profile: any) {
+    const set = new Set<string>()
+    if (profile?.full_name) set.add(profile.full_name)
+    const appUser = getAppUser()
+    if (appUser?.name) set.add(appUser.name)
+
+    try {
+      const { data: users } = await supabase.from('app_users').select('full_name, role').in('role', ['doctor', 'admin'])
+      if (users) {
+        users.forEach((u: any) => {
+          if (u.full_name && u.full_name.trim()) set.add(u.full_name.trim())
+        })
+      }
+    } catch {}
+
+    try {
+      const { data: txs } = await supabase.from('treatments').select('doctor_name')
+      if (txs) {
+        txs.forEach((t: any) => {
+          if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
+        })
+      }
+    } catch {}
+
+    setDoctorsList(Array.from(set))
+  }
 
   // Deep-link support: Appointments' "Add visit now" prompt lands here with
   // ?openVisit=1 to auto-open the Add Visit modal instead of requiring a
@@ -682,6 +713,7 @@ export function PatientProfile() {
         const teethList: Array<number | null> = item.teeth.length > 0 ? item.teeth : [null]
         const originalCost = parseFloat(item.cost) || 0
         const discountedCost = Math.round(originalCost * costFactor * 100) / 100
+        const defaultDoc = getAppUser()?.name || doctorProfile?.full_name || (doctorsList[0] || '')
         return teethList.map((tooth) => ({
           patient_id: id,
           tooth_number: tooth,
@@ -691,6 +723,8 @@ export function PatientProfile() {
           cost: discountedCost,
           original_cost: originalCost,
           notes: item.notes || null,
+          doctor_name: (item.doctor_name || defaultDoc || '').trim() || null,
+          doctor_share_pct: item.doctor_share_pct != null && item.doctor_share_pct !== '' ? parseFloat(item.doctor_share_pct) : 50,
           treatment_plan_group_id: planGroupId,
         }))
       })
@@ -730,11 +764,12 @@ export function PatientProfile() {
   }
 
   function addTreatmentPlanItem() {
+    const defaultDoc = getAppUser()?.name || doctorProfile?.full_name || (doctorsList[0] || '')
     setTreatmentPlanForm({
       ...treatmentPlanForm,
       items: [
         ...treatmentPlanForm.items,
-        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' },
+        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: defaultDoc, doctor_share_pct: '50' },
       ],
     })
   }
@@ -812,6 +847,8 @@ export function PatientProfile() {
     cost: number
     status: string
     notes: string | null
+    doctor_name?: string | null
+    doctor_share_pct?: number
   }) {
     try {
       const previous = treatments.find((t) => t.id === treatmentId)
@@ -4242,6 +4279,8 @@ export function PatientProfile() {
           setFormData={setTreatmentPlanForm}
           dentitionType={patientDentition}
           existingPlanned={plannedTreatments}
+          doctorsList={doctorsList}
+          defaultDoctorName={getAppUser()?.name || doctorProfile?.full_name}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
           onAddItem={addTreatmentPlanItem}
@@ -4253,6 +4292,7 @@ export function PatientProfile() {
         <EditTreatmentModal
           treatment={editingTreatment}
           dentitionType={patientDentition}
+          doctorsList={doctorsList}
           onSave={updateTreatmentFields}
           onClose={() => setEditingTreatment(null)}
         />
@@ -5792,9 +5832,10 @@ function PrescriptionFormModal({
   )
 }
 
-function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
+function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onClose }: {
   treatment: any
   dentitionType: any
+  doctorsList?: string[]
   onSave: (id: string, patch: {
     treatment_type: string
     tooth_number: number | null
@@ -5802,6 +5843,8 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
     cost: number
     status: string
     notes: string | null
+    doctor_name?: string | null
+    doctor_share_pct?: number
   }) => void
   onClose: () => void
 }) {
@@ -5812,6 +5855,8 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
     cost: String(treatment.cost ?? ''),
     status: treatment.status || 'Planned',
     notes: treatment.notes || '',
+    doctor_name: treatment.doctor_name || '',
+    doctor_share_pct: String(treatment.doctor_share_pct ?? 50),
   })
   const [saving, setSaving] = useState(false)
 
@@ -5826,6 +5871,8 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
         cost: parseFloat(form.cost) || 0,
         status: form.status,
         notes: form.notes || null,
+        doctor_name: form.doctor_name || null,
+        doctor_share_pct: form.doctor_share_pct ? parseFloat(form.doctor_share_pct) : 50,
       })
     } finally {
       setSaving(false)
@@ -5865,6 +5912,42 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
               <option>Scaling</option>
               <option>Other</option>
             </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Procedure done by Dr.
+              </label>
+              <select
+                value={form.doctor_name}
+                onChange={(e) => setForm({ ...form, doctor_name: e.target.value })}
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+              >
+                <option value="">Select Doctor...</option>
+                {(doctorsList || []).map((doc: string) => (
+                  <option key={doc} value={doc}>{doc}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
+              </label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  placeholder="50"
+                  value={form.doctor_share_pct}
+                  onChange={(e) => setForm({ ...form, doctor_share_pct: e.target.value })}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                />
+                <span className="text-xs font-bold text-slate-500">%</span>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -5937,7 +6020,7 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
   )
 }
 
-function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlanned, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
+function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlanned, doctorsList, defaultDoctorName, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
   function updateItem(index: number, patch: Record<string, any>) {
     const newItems = [...formData.items]
     newItems[index] = { ...newItems[index], ...patch }
@@ -6017,6 +6100,42 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
                     <option>Consultation</option>
                     <option>Other</option>
                   </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Procedure done by Dr.
+                    </label>
+                    <select
+                      value={item.doctor_name ?? defaultDoctorName ?? ''}
+                      onChange={(e) => updateItem(index, { doctor_name: e.target.value })}
+                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                    >
+                      <option value="">Select Doctor...</option>
+                      {(doctorsList || []).map((doc: string) => (
+                        <option key={doc} value={doc}>{doc}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        placeholder="50"
+                        value={item.doctor_share_pct ?? '50'}
+                        onChange={(e) => updateItem(index, { doctor_share_pct: e.target.value })}
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                      />
+                      <span className="text-xs font-bold text-slate-500">%</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
