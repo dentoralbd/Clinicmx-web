@@ -91,13 +91,18 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         const firstName = nameParts[0]
         const lastName = nameParts.slice(1).join(' ') || 'Patient'
 
+        const targetType = (app as any).entryType === 'followup' ? 'full' : 'consultation'
+        const parsedAge = (app as any).age ? parseInt((app as any).age) : null
+
         const { data: newPatient } = await supabase
           .from('patients')
           .insert([{
             first_name: firstName,
             last_name: lastName,
             phone: cleanPhone,
-            patient_type: 'consultation'
+            gender: (app as any).gender || 'Male',
+            age: parsedAge,
+            patient_type: targetType
           }])
           .select('id')
           .single()
