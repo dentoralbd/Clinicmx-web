@@ -31,6 +31,8 @@ interface Treatment {
   treatment_plan_group_id: string | null
   is_invoiced?: boolean | null
   invoice_id?: string | null
+  doctor_name?: string | null
+  doctor_share_pct?: number | null
   patients: {
     first_name: string
     last_name: string
@@ -610,6 +612,11 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, 
             ) : readyToBill ? (
               <span className="pill-warning text-xs">Ready to bill</span>
             ) : null}
+            {treatment.doctor_name && (
+              <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200" title={`Doctor Share: ${treatment.doctor_share_pct ?? 30}%`}>
+                👨‍⚕️ {treatment.doctor_name} ({treatment.doctor_share_pct ?? 30}%)
+              </span>
+            )}
           </div>
           {treatment.description && (
             <p className="text-sm text-text-secondary mt-1">{treatment.description}</p>

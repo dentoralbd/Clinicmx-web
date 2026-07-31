@@ -27,6 +27,8 @@ import { RevenueCalendar } from '@/components/analytics/RevenueCalendar'
 import { RevenueSection } from '@/components/analytics/RevenueSection'
 import { PatientSection } from '@/components/analytics/PatientSection'
 import { TreatmentMixSection } from '@/components/analytics/TreatmentMixSection'
+import { DoctorAnalyticsSection } from '@/components/analytics/DoctorAnalyticsSection'
+import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 
 const PAGE_SIZE = 1000
 
@@ -57,6 +59,7 @@ export function Analytics() {
   const [patients, setPatients] = useState<AnalyticsPatient[]>([])
   const [appointments, setAppointments] = useState<AnalyticsAppointment[]>([])
   const [payments, setPayments] = useState<AnalyticsPayment[]>([])
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null)
   const [range, setRange] = useState<AnalyticsRange>('12m')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -64,7 +67,10 @@ export function Analytics() {
 
   useEffect(() => {
     // Non-admins are redirected below; skip the data load entirely for them.
-    if (getAppRole() === 'admin') loadAnalytics()
+    if (getAppRole() === 'admin') {
+      loadAnalytics()
+      loadDoctorProfile().then(setDoctorProfile, () => {})
+    }
   }, [])
 
   async function loadAnalytics(isRefresh = false) {
@@ -79,8 +85,8 @@ export function Analytics() {
           'id, patient_id, items, total_amount, paid_amount, status, created_at',
           (q) => q.neq('status', 'Merged')
         ),
-        fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
-        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at, patient_type'),
+        fetchAllRows<any>('treatments', 'id, patient_id, tooth_number, treatment_type, description, status, cost, created_at, doctor_name, doctor_share_pct, invoice_id, is_invoiced'),
+        fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, patient_code, created_at, patient_type'),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
         fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
       ])
@@ -228,6 +234,12 @@ export function Analytics() {
         />
       </div>
 
+      <DoctorAnalyticsSection
+        treatments={treatments}
+        invoices={invoices}
+        patients={patients}
+        doctorProfile={doctorProfile}
+      />
       <RevenueCalendar payments={payments} invoices={invoices} patients={patients} />
       <RevenueSection monthly={monthly} byType={byType} topSources={topSources} />
       <PatientSection newPerMonth={newPerMonth} returningVsNew={returningVsNew} />
