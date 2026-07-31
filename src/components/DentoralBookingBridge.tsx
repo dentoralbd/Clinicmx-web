@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle } from 'lucide-react'
+import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle, Calendar, Clock, UserCheck, UserPlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 
@@ -7,6 +7,9 @@ interface DentoralAppointment {
   id: string
   name: string
   phone: string
+  gender?: string
+  age?: string
+  entryType?: string
   doctor: string
   treatment: string
   date: string
@@ -14,12 +17,29 @@ interface DentoralAppointment {
   status: string
 }
 
+interface PatientMatch {
+  id: string
+  first_name: string
+  last_name: string
+  phone: string
+  patient_code?: string
+  patient_type?: string
+}
+
 export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: () => void }) {
   const [serials, setSerials] = useState<DentoralAppointment[]>([])
   const [loading, setLoading] = useState(false)
   const [adminPassword, setAdminPassword] = useState(() => localStorage.getItem('dentoral_bridge_pw') || '')
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
-  const [importingId, setImportingId] = useState<string | null>(null)
+  
+  // Interactive Confirmation Modal State
+  const [selectedApp, setSelectedApp] = useState<DentoralAppointment | null>(null)
+  const [matchingPatients, setMatchingPatients] = useState<PatientMatch[]>([])
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('NEW')
+  const [apptDate, setApptDate] = useState<string>('')
+  const [apptTime, setApptTime] = useState<string>('18:30')
+  const [apptDuration, setApptDuration] = useState<number>(30)
+  const [confirming, setConfirming] = useState<boolean>(false)
 
   const fetchSerials = async (pw?: string) => {
     const key = pw || adminPassword
@@ -60,77 +80,110 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
     fetchSerials(val)
   }
 
-  const confirmAndImportToClinicmx = async (app: DentoralAppointment) => {
-    setImportingId(app.id)
+  // Open modal & search for matching patients by phone/name
+  const openConfirmModal = async (app: DentoralAppointment) => {
+    setSelectedApp(app)
+    setApptDate(app.date || new Date().toISOString().split('T')[0])
+    setApptTime('18:30')
+    setApptDuration(30)
+    setSelectedPatientId('NEW')
+
+    const cleanPhone = (app.phone || '').replace(/[^0-9]/g, '')
+    const nameParts = (app.name || '').trim().split(' ')
+    const firstName = nameParts[0] || ''
+
     try {
-      // 1. Update status on DentOral live KV database
-      await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Password': adminPassword
-        },
-        body: JSON.stringify({ id: app.id, status: 'Confirmed' })
-      })
+      let query = supabase.from('patients').select('id, first_name, last_name, phone, patient_code, patient_type')
+      
+      if (cleanPhone.length >= 6) {
+        query = query.or(`phone.ilike.%${cleanPhone}%,first_name.ilike.%${firstName}%`)
+      } else {
+        query = query.ilike('first_name', `%${firstName}%`)
+      }
 
-      // 2. Import into Clinicmx Supabase appointments if matching patient exists or create lightweight record
-      const cleanPhone = (app.phone || '').replace(/[^0-9+]/g, '')
+      const { data } = await query.limit(5)
+      const matches = (data || []) as PatientMatch[]
+      setMatchingPatients(matches)
 
-      // Try searching patient by phone in Supabase
-      const { data: existingPatients } = await supabase
-        .from('patients')
-        .select('id, first_name, last_name')
-        .eq('phone', cleanPhone)
-        .limit(1)
+      if (matches.length > 0) {
+        setSelectedPatientId(matches[0].id) // default to first match
+      }
+    } catch (err) {
+      console.warn('Error searching matching patients:', err)
+      setMatchingPatients([])
+    }
+  }
 
-      let patientId = existingPatients && existingPatients.length > 0 ? existingPatients[0].id : null
+  // Execute confirmation & schedule insertion
+  const handleFinalConfirm = async () => {
+    if (!selectedApp) return
+    setConfirming(true)
 
-      if (!patientId) {
-        // Create new patient in Clinicmx
-        const nameParts = (app.name || 'Web Patient').split(' ')
+    try {
+      let finalPatientId = selectedPatientId
+
+      // 1. If 'NEW', create patient in Clinicmx with patient_type = 'consultation'
+      if (selectedPatientId === 'NEW') {
+        const nameParts = (selectedApp.name || 'Web Patient').trim().split(' ')
         const firstName = nameParts[0]
         const lastName = nameParts.slice(1).join(' ') || 'Patient'
+        const cleanPhone = (selectedApp.phone || '').replace(/[^0-9+]/g, '')
 
-        const targetType = (app as any).entryType === 'followup' ? 'full' : 'consultation'
-        const parsedAge = (app as any).age ? parseInt((app as any).age) : null
+        const targetType = selectedApp.entryType === 'followup' ? 'full' : 'consultation'
+        const parsedAge = selectedApp.age ? parseInt(selectedApp.age) : null
 
-        const { data: newPatient } = await supabase
+        const { data: newPatient, error: ptErr } = await supabase
           .from('patients')
           .insert([{
             first_name: firstName,
             last_name: lastName,
             phone: cleanPhone,
-            gender: (app as any).gender || 'Male',
+            gender: selectedApp.gender || 'Male',
             age: parsedAge,
             patient_type: targetType
           }])
           .select('id')
           .single()
 
-        if (newPatient) patientId = newPatient.id
+        if (ptErr) throw ptErr
+        if (newPatient) finalPatientId = newPatient.id
       }
 
-      if (patientId) {
-        // Create appointment in Clinicmx
-        await supabase.from('appointments').insert([{
-          patient_id: patientId,
-          date_time: new Date().toISOString(),
-          duration: 30,
-          type: app.treatment || 'DentOral Web Serial',
-          status: 'Confirmed',
-          notes: `Imported from DentOral Web Serial #${app.id} (${app.doctor})`
-        }])
-      }
+      // 2. Combine selected Date and Time into Date ISO string
+      const startDateTime = new Date(`${apptDate}T${apptTime}:00`)
 
-      alert(`✅ Serial #${app.id} for ${app.name} has been CONFIRMED and added to Consultations list in Clinicmx!`)
+      // 3. Insert Appointment into Clinicmx Supabase appointments table
+      const { error: apptErr } = await supabase.from('appointments').insert([{
+        patient_id: finalPatientId,
+        date_time: startDateTime.toISOString(),
+        duration: apptDuration,
+        type: selectedApp.treatment || 'Consultation',
+        status: 'Confirmed',
+        notes: `Imported from DentOral Web Serial #${selectedApp.id} (${selectedApp.doctor})`
+      }])
+
+      if (apptErr) throw apptErr
+
+      // 4. Update status on DentOral live Cloudflare KV API
+      await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Password': adminPassword
+        },
+        body: JSON.stringify({ id: selectedApp.id, status: 'Confirmed' })
+      })
+
+      alert(`✅ Serial #${selectedApp.id} for ${selectedApp.name} confirmed for ${apptDate} at ${apptTime}!`)
+
+      setSelectedApp(null)
       fetchSerials()
       if (onImportSuccess) onImportSuccess()
-    } catch (err) {
-      console.error('Import error:', err)
-      alert(`Serial #${app.id} marked confirmed on DentOral.`)
-      fetchSerials()
+    } catch (err: any) {
+      console.error('Confirmation error:', err)
+      alert(`⚠️ Failed to confirm appointment: ${err.message || 'Check database connection'}`)
     } finally {
-      setImportingId(null)
+      setConfirming(false)
     }
   }
 
@@ -186,7 +239,9 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
                 <span className="font-bold text-slate-900 mr-2">{app.name}</span>
                 <span className="text-slate-500 mr-2">📞 {app.phone}</span>
                 <span className="bg-teal-50 text-teal-800 px-2 py-0.5 rounded font-semibold">{app.doctor}</span>
-                <div className="text-slate-500 text-[11px] mt-0.5">{app.treatment} • {app.createdAt}</div>
+                <div className="text-slate-500 text-[11px] mt-0.5">
+                  {app.treatment} • Requested: {app.date} • {app.createdAt}
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <a href={`tel:${app.phone.replace(/[^0-9+]/g, '')}`} className="p-1.5 bg-blue-50 text-blue-700 rounded hover:bg-blue-100" title="Call Patient">
@@ -198,15 +253,150 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
                 <Button
                   size="sm"
                   className="bg-teal-600 hover:bg-teal-700 text-white text-xs h-8"
-                  disabled={importingId === app.id}
-                  onClick={() => confirmAndImportToClinicmx(app)}
+                  onClick={() => openConfirmModal(app)}
                 >
                   <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                  {importingId === app.id ? 'Importing...' : 'Confirm & Add to Schedule'}
+                  Confirm & Schedule
                 </Button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Interactive Confirm & Schedule Modal */}
+      {selectedApp && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-center pb-3 border-b mb-4">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-teal-600" />
+                  Confirm & Schedule Serial #{selectedApp.id}
+                </h3>
+                <p className="text-xs text-slate-500">Assign patient and set manual appointment time slot</p>
+              </div>
+              <button onClick={() => setSelectedApp(null)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+
+              {/* Patient Match Selection */}
+              <div className="bg-slate-50 p-3 rounded-lg border">
+                <label className="font-bold text-slate-800 block mb-1.5">1. Patient Entry Selection:</label>
+                
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 p-2 bg-white rounded border cursor-pointer hover:bg-teal-50/50">
+                    <input
+                      type="radio"
+                      name="patientMatch"
+                      value="NEW"
+                      checked={selectedPatientId === 'NEW'}
+                      onChange={() => setSelectedPatientId('NEW')}
+                      className="text-teal-600"
+                    />
+                    <UserPlus className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                    <div>
+                      <span className="font-bold text-slate-900 block">Add as New Consultation Patient</span>
+                      <span className="text-[11px] text-slate-500">
+                        {selectedApp.name} • {selectedApp.phone} • {selectedApp.gender || 'Male'} • Age: {selectedApp.age || 'N/A'}
+                      </span>
+                    </div>
+                  </label>
+
+                  {matchingPatients.length > 0 && (
+                    <div className="pt-2">
+                      <div className="text-[11px] font-semibold text-slate-600 mb-1">Matching Patients Found in Clinicmx:</div>
+                      {matchingPatients.map((match) => (
+                        <label key={match.id} className="flex items-center gap-2 p-2 bg-white rounded border cursor-pointer hover:bg-blue-50/50 mb-1">
+                          <input
+                            type="radio"
+                            name="patientMatch"
+                            value={match.id}
+                            checked={selectedPatientId === match.id}
+                            onChange={() => setSelectedPatientId(match.id)}
+                            className="text-blue-600"
+                          />
+                          <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                          <div>
+                            <span className="font-bold text-slate-900 block">
+                              {match.first_name} {match.last_name} {match.patient_code ? `(${match.patient_code})` : ''}
+                            </span>
+                            <span className="text-[11px] text-slate-500">Phone: {match.phone || 'N/A'} • Type: {match.patient_type || 'consultation'}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Date & Time Picker */}
+              <div className="bg-slate-50 p-3 rounded-lg border">
+                <label className="font-bold text-slate-800 block mb-2">2. Manual Date & Time Schedule:</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-600 font-medium mb-1">Appointment Date *</label>
+                    <input
+                      type="date"
+                      value={apptDate}
+                      onChange={(e) => setApptDate(e.target.value)}
+                      className="w-full border rounded p-2 text-xs bg-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-medium mb-1">Time Slot *</label>
+                    <input
+                      type="time"
+                      value={apptTime}
+                      onChange={(e) => setApptTime(e.target.value)}
+                      className="w-full border rounded p-2 text-xs bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-slate-600 font-medium mb-1">Duration (Minutes)</label>
+                  <select
+                    value={apptDuration}
+                    onChange={(e) => setApptDuration(parseInt(e.target.value))}
+                    className="w-full border rounded p-2 text-xs bg-white"
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes (Standard)</option>
+                    <option value={45}>45 Minutes</option>
+                    <option value={60}>60 Minutes</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Booking Context Note */}
+              <div className="text-[11px] text-slate-500 bg-amber-50 p-2.5 rounded border border-amber-200">
+                📌 <strong>Doctor:</strong> {selectedApp.doctor}<br/>
+                🦷 <strong>Treatment:</strong> {selectedApp.treatment}
+              </div>
+
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t mt-4">
+              <Button variant="outline" size="sm" onClick={() => setSelectedApp(null)} disabled={confirming}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={handleFinalConfirm}
+                disabled={confirming}
+              >
+                <CheckCircle className="w-4 h-4 mr-1" />
+                {confirming ? 'Saving & Scheduling...' : '💾 Confirm Serial & Schedule'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
