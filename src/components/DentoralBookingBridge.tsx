@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle, Calendar, Clock, UserCheck, UserPlus, X } from 'lucide-react'
+import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle, Calendar, UserCheck, UserPlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
-import { loadScheduleContext, getWindowsForDay } from '@/lib/appointmentSchedule'
+import { SlotPicker } from '@/components/SlotPicker'
 
 interface DentoralAppointment {
   id: string
@@ -37,8 +37,10 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   const [selectedApp, setSelectedApp] = useState<DentoralAppointment | null>(null)
   const [matchingPatients, setMatchingPatients] = useState<PatientMatch[]>([])
   const [selectedPatientId, setSelectedPatientId] = useState<string>('NEW')
-  const [apptDate, setApptDate] = useState<string>('')
-  const [apptTime, setApptTime] = useState<string>('18:30')
+  
+  // Reused Clinicmx SlotPicker state
+  const [slotDate, setSlotDate] = useState<Date>(new Date())
+  const [slotStart, setSlotStart] = useState<Date | null>(null)
   const [apptDuration, setApptDuration] = useState<number>(30)
   const [confirming, setConfirming] = useState<boolean>(false)
 
@@ -84,8 +86,8 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   // Open modal & search for matching patients by phone/name
   const openConfirmModal = async (app: DentoralAppointment) => {
     setSelectedApp(app)
-    setApptDate(app.date || new Date().toISOString().split('T')[0])
-    setApptTime('18:30')
+    setSlotDate(app.date ? new Date(app.date) : new Date())
+    setSlotStart(null)
     setApptDuration(30)
     setSelectedPatientId('NEW')
 
@@ -107,7 +109,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
       setMatchingPatients(matches)
 
       if (matches.length > 0) {
-        setSelectedPatientId(matches[0].id) // default to first match
+        setSelectedPatientId(matches[0].id)
       }
     } catch (err) {
       console.warn('Error searching matching patients:', err)
@@ -115,76 +117,19 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
     }
   }
 
-  // Execute confirmation & schedule insertion with clinic hours & overlap verification
+  // Execute confirmation & schedule insertion using slotStart Date from SlotPicker
   const handleFinalConfirm = async () => {
     if (!selectedApp) return
+    if (!slotStart) {
+      alert('⚠️ Please choose an appointment date and time slot first!')
+      return
+    }
     setConfirming(true)
 
     try {
-      // 1. Check clinic schedule first (Clinic Hours / overrides)
-      const selectedDateObj = new Date(apptDate)
-      const scheduleCtx = await loadScheduleContext(selectedDateObj, selectedDateObj)
-      const windows = getWindowsForDay(selectedDateObj, scheduleCtx)
-
-      if (windows.length === 0) {
-        alert('⚠️ The clinic is closed on this date according to Clinic Hours settings. Please choose a different date.')
-        setConfirming(false)
-        return
-      }
-
-      // Convert selected time to minutes from midnight
-      const [sh, sm] = apptTime.split(':').map(Number)
-      const apptStartMin = sh * 60 + sm
-      const apptEndMin = apptStartMin + apptDuration
-
-      const isWithinClinicHours = windows.some(w => {
-        const wStartMin = w.start_hour * 60 + w.start_minute
-        const wEndMin = w.end_hour * 60 + w.end_minute
-        return apptStartMin >= wStartMin && apptEndMin <= wEndMin
-      })
-
-      if (!isWithinClinicHours) {
-        const openHoursStr = windows.map(w => 
-          `${String(w.start_hour).padStart(2, '0')}:${String(w.start_minute).padStart(2, '0')} - ${String(w.end_hour).padStart(2, '0')}:${String(w.end_minute).padStart(2, '0')}`
-        ).join(', ')
-        alert(`⚠️ Selected time falls outside of scheduled Clinic Hours on this day.\n\nOpen hours: ${openHoursStr || 'None'}.\nPlease choose a different time slot.`)
-        setConfirming(false)
-        return
-      }
-
-      // 2. Check for double booking conflicts in Clinicmx
-      const startOfDay = new Date(selectedDateObj)
-      startOfDay.setHours(0, 0, 0, 0)
-      const endOfDay = new Date(selectedDateObj)
-      endOfDay.setHours(23, 59, 59, 999)
-
-      const { data: dayAppts, error: fetchErr } = await supabase
-        .from('appointments')
-        .select('id, date_time, duration, status')
-        .gte('date_time', startOfDay.toISOString())
-        .lte('date_time', endOfDay.toISOString())
-        .neq('status', 'Cancelled')
-
-      if (fetchErr) throw fetchErr
-
-      const startDateTime = new Date(`${apptDate}T${apptTime}:00`)
-      const endDateTime = new Date(startDateTime.getTime() + apptDuration * 60000)
-
-      const hasOverlap = (dayAppts || []).some(appt => {
-        const apptStart = new Date(appt.date_time)
-        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
-        return startDateTime < apptEnd && endDateTime > apptStart
-      })
-
-      if (hasOverlap) {
-        alert('⚠️ Another appointment is already scheduled during this time slot. Please choose a different time.')
-        setConfirming(false)
-        return
-      }
-
       let finalPatientId = selectedPatientId
 
-      // 3. Create new patient if 'NEW'
+      // 1. Create new patient if 'NEW'
       if (selectedPatientId === 'NEW') {
         const nameParts = (selectedApp.name || 'Web Patient').trim().split(' ')
         const firstName = nameParts[0]
@@ -208,7 +153,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
             last_name: lastName,
             phone: cleanPhone,
             gender: selectedApp.gender || 'Male',
-            date_of_birth: dateOfBirth, // Use valid date_of_birth column instead of non-existent age column
+            date_of_birth: dateOfBirth,
             patient_type: targetType
           }])
           .select('id')
@@ -218,10 +163,10 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         if (newPatient) finalPatientId = newPatient.id
       }
 
-      // 4. Insert Appointment record
+      // 2. Insert Appointment record directly with slotStart datetime
       const { error: apptErr } = await supabase.from('appointments').insert([{
         patient_id: finalPatientId,
-        date_time: startDateTime.toISOString(),
+        date_time: slotStart.toISOString(),
         duration: apptDuration,
         type: selectedApp.treatment || 'Consultation',
         status: 'Confirmed',
@@ -230,7 +175,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
       if (apptErr) throw apptErr
 
-      // 5. Update status on DentOral live KV database
+      // 3. Update status on DentOral live Cloudflare KV
       await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
         method: 'POST',
         headers: {
@@ -240,7 +185,9 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         body: JSON.stringify({ id: selectedApp.id, status: 'Confirmed' })
       })
 
-      alert(`✅ Serial #${selectedApp.id} for ${selectedApp.name} confirmed for ${apptDate} at ${apptTime}!`)
+      const formattedDate = slotStart.toLocaleDateString()
+      const formattedTime = slotStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      alert(`✅ Serial #${selectedApp.id} for ${selectedApp.name} confirmed for ${formattedDate} at ${formattedTime}!`)
 
       setSelectedApp(null)
       fetchSerials()
@@ -333,14 +280,14 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
       {/* Interactive Confirm & Schedule Modal */}
       {selectedApp && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b mb-4">
               <div>
                 <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-teal-600" />
                   Confirm & Schedule Serial #{selectedApp.id}
                 </h3>
-                <p className="text-xs text-slate-500">Assign patient and set manual appointment time slot</p>
+                <p className="text-xs text-slate-500">Assign patient and select live calendar slot</p>
               </div>
               <button onClick={() => setSelectedApp(null)} className="text-slate-400 hover:text-slate-600 p-1">
                 <X className="w-5 h-5" />
@@ -399,44 +346,35 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
                 </div>
               </div>
 
-              {/* Date & Time Picker */}
+              {/* Clinic Calendar & Slots Selection */}
               <div className="bg-slate-50 p-3 rounded-lg border">
-                <label className="font-bold text-slate-800 block mb-2">2. Manual Date & Time Schedule:</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-600 font-medium mb-1">Appointment Date *</label>
-                    <input
-                      type="date"
-                      value={apptDate}
-                      onChange={(e) => setApptDate(e.target.value)}
-                      className="w-full border rounded p-2 text-xs bg-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-medium mb-1">Time Slot *</label>
-                    <input
-                      type="time"
-                      value={apptTime}
-                      onChange={(e) => setApptTime(e.target.value)}
-                      className="w-full border rounded p-2 text-xs bg-white"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-3">
+                <label className="font-bold text-slate-800 block mb-2">2. Clinic Calendar & Time Slot Selection:</label>
+                
+                <div className="mb-3">
                   <label className="block text-slate-600 font-medium mb-1">Duration (Minutes)</label>
                   <select
                     value={apptDuration}
-                    onChange={(e) => setApptDuration(parseInt(e.target.value))}
+                    onChange={(e) => {
+                      setApptDuration(parseInt(e.target.value))
+                      setSlotStart(null)
+                    }}
                     className="w-full border rounded p-2 text-xs bg-white"
                   >
                     <option value={15}>15 Minutes</option>
                     <option value={30}>30 Minutes (Standard)</option>
                     <option value={45}>45 Minutes</option>
-                    <option value={60}>60 Minutes</option>
+                    <option value={60}>60 Minutes (1 Hour)</option>
                   </select>
+                </div>
+
+                <div className="border bg-white p-3 rounded-lg">
+                  <SlotPicker
+                    date={slotDate}
+                    onDateChange={setSlotDate}
+                    durationMinutes={apptDuration}
+                    selectedStart={slotStart}
+                    onSelectStart={setSlotStart}
+                  />
                 </div>
               </div>
 
@@ -456,7 +394,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
                 size="sm"
                 className="bg-teal-600 hover:bg-teal-700 text-white"
                 onClick={handleFinalConfirm}
-                disabled={confirming}
+                disabled={confirming || !slotStart}
               >
                 <CheckCircle className="w-4 h-4 mr-1" />
                 {confirming ? 'Saving & Scheduling...' : '💾 Confirm Serial & Schedule'}
