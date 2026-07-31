@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle, Calendar, Clock, UserCheck, UserPlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { loadScheduleContext, getWindowsForDay } from '@/lib/appointmentSchedule'
 
 interface DentoralAppointment {
   id: string
@@ -114,15 +115,76 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
     }
   }
 
-  // Execute confirmation & schedule insertion
+  // Execute confirmation & schedule insertion with clinic hours & overlap verification
   const handleFinalConfirm = async () => {
     if (!selectedApp) return
     setConfirming(true)
 
     try {
+      // 1. Check clinic schedule first (Clinic Hours / overrides)
+      const selectedDateObj = new Date(apptDate)
+      const scheduleCtx = await loadScheduleContext(selectedDateObj, selectedDateObj)
+      const windows = getWindowsForDay(selectedDateObj, scheduleCtx)
+
+      if (windows.length === 0) {
+        alert('⚠️ The clinic is closed on this date according to Clinic Hours settings. Please choose a different date.')
+        setConfirming(false)
+        return
+      }
+
+      // Convert selected time to minutes from midnight
+      const [sh, sm] = apptTime.split(':').map(Number)
+      const apptStartMin = sh * 60 + sm
+      const apptEndMin = apptStartMin + apptDuration
+
+      const isWithinClinicHours = windows.some(w => {
+        const wStartMin = w.start_hour * 60 + w.start_minute
+        const wEndMin = w.end_hour * 60 + w.end_minute
+        return apptStartMin >= wStartMin && apptEndMin <= wEndMin
+      })
+
+      if (!isWithinClinicHours) {
+        const openHoursStr = windows.map(w => 
+          `${String(w.start_hour).padStart(2, '0')}:${String(w.start_minute).padStart(2, '0')} - ${String(w.end_hour).padStart(2, '0')}:${String(w.end_minute).padStart(2, '0')}`
+        ).join(', ')
+        alert(`⚠️ Selected time falls outside of scheduled Clinic Hours on this day.\n\nOpen hours: ${openHoursStr || 'None'}.\nPlease choose a different time slot.`)
+        setConfirming(false)
+        return
+      }
+
+      // 2. Check for double booking conflicts in Clinicmx
+      const startOfDay = new Date(selectedDateObj)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(selectedDateObj)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      const { data: dayAppts, error: fetchErr } = await supabase
+        .from('appointments')
+        .select('id, date_time, duration, status')
+        .gte('date_time', startOfDay.toISOString())
+        .lte('date_time', endOfDay.toISOString())
+        .neq('status', 'Cancelled')
+
+      if (fetchErr) throw fetchErr
+
+      const startDateTime = new Date(`${apptDate}T${apptTime}:00`)
+      const endDateTime = new Date(startDateTime.getTime() + apptDuration * 60000)
+
+      const hasOverlap = (dayAppts || []).some(appt => {
+        const apptStart = new Date(appt.date_time)
+        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000)
+        return startDateTime < apptEnd && endDateTime > apptStart
+      })
+
+      if (hasOverlap) {
+        alert('⚠️ Another appointment is already scheduled during this time slot. Please choose a different time.')
+        setConfirming(false)
+        return
+      }
+
       let finalPatientId = selectedPatientId
 
-      // 1. If 'NEW', create patient in Clinicmx with patient_type = 'consultation'
+      // 3. Create new patient if 'NEW'
       if (selectedPatientId === 'NEW') {
         const nameParts = (selectedApp.name || 'Web Patient').trim().split(' ')
         const firstName = nameParts[0]
@@ -131,6 +193,13 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
         const targetType = selectedApp.entryType === 'followup' ? 'full' : 'consultation'
         const parsedAge = selectedApp.age ? parseInt(selectedApp.age) : null
+        
+        let dateOfBirth: string | null = null
+        if (parsedAge) {
+          const today = new Date()
+          const approxBirth = new Date(today.getFullYear() - parsedAge, today.getMonth(), today.getDate())
+          dateOfBirth = approxBirth.toISOString().split('T')[0]
+        }
 
         const { data: newPatient, error: ptErr } = await supabase
           .from('patients')
@@ -139,7 +208,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
             last_name: lastName,
             phone: cleanPhone,
             gender: selectedApp.gender || 'Male',
-            age: parsedAge,
+            date_of_birth: dateOfBirth, // Use valid date_of_birth column instead of non-existent age column
             patient_type: targetType
           }])
           .select('id')
@@ -149,10 +218,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         if (newPatient) finalPatientId = newPatient.id
       }
 
-      // 2. Combine selected Date and Time into Date ISO string
-      const startDateTime = new Date(`${apptDate}T${apptTime}:00`)
-
-      // 3. Insert Appointment into Clinicmx Supabase appointments table
+      // 4. Insert Appointment record
       const { error: apptErr } = await supabase.from('appointments').insert([{
         patient_id: finalPatientId,
         date_time: startDateTime.toISOString(),
@@ -164,7 +230,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
       if (apptErr) throw apptErr
 
-      // 4. Update status on DentOral live Cloudflare KV API
+      // 5. Update status on DentOral live KV database
       await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
         method: 'POST',
         headers: {
