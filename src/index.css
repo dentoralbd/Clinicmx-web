@@ -181,11 +181,18 @@ button:focus-visible {
 
 /* ── Print styles for prescriptions ── */
 @media print {
-  body * {
-    visibility: hidden !important;
+  aside, nav, header, .no-print {
+    display: none !important;
   }
-  .prescription-print-overlay,
-  .prescription-print-overlay * {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  body:has(.prescription-print-overlay) * {
+    visibility: hidden;
+  }
+  body:has(.prescription-print-overlay) .prescription-print-overlay,
+  body:has(.prescription-print-overlay) .prescription-print-overlay * {
     visibility: visible !important;
   }
   .prescription-print-overlay {

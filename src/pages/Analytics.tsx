@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { getAppRole } from '@/lib/appSession'
 import { formatBDT } from '@/lib/utils'
-import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2, FileSpreadsheet, Printer } from 'lucide-react'
+import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2, FileSpreadsheet, Printer, FileText } from 'lucide-react'
 import {
   buildMonthAxis,
   filterByRange,
@@ -17,6 +17,7 @@ import {
   topRevenueSources,
   treatmentConversion,
   exportClinicAnalyticsCSV,
+  generateClinicAnalyticsPDF,
   type AnalyticsAppointment,
   type AnalyticsInvoice,
   type AnalyticsPatient,
@@ -193,12 +194,20 @@ export function Analytics() {
             <span className="hidden sm:inline">Export CSV</span>
           </button>
           <button
+            onClick={() => generateClinicAnalyticsPDF(rangeInvoices, patients, monthly, topSources, counts, range)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors"
+            title="Download PDF Financial Report"
+          >
+            <FileText className="w-4 h-4 text-teal-600" />
+            <span className="hidden sm:inline">PDF Report</span>
+          </button>
+          <button
             onClick={() => window.print()}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors"
-            title="Print Analytics Report"
+            title="Print Analytics Page"
           >
             <Printer className="w-4 h-4 text-slate-600" />
-            <span className="hidden sm:inline">Print Report</span>
+            <span className="hidden sm:inline">Print Page</span>
           </button>
           <button
             onClick={() => loadAnalytics(true)}

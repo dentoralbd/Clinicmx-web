@@ -1,4 +1,7 @@
 import { format, subMonths } from 'date-fns'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { formatBDT } from '@/lib/utils'
 import { getInvoiceItemLineTotal, getInvoiceItemSubtotal, type BillingLineItem } from '@/lib/billing'
 
 // Row subsets fetched by the Analytics page (read-only selects).
@@ -583,7 +586,138 @@ export function exportClinicAnalyticsCSV(
   a.download = `Clinic_Analytics_Revenue_${rangeLabel}.csv`
   document.body.appendChild(a)
   a.click()
-  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+/**
+ * Generates an A4 PDF Summary Report for Clinic Analytics.
+ */
+export function generateClinicAnalyticsPDF(
+  invoices: AnalyticsInvoice[],
+  patients: AnalyticsPatient[],
+  monthly: MonthlyRevenueRow[],
+  topSources: TopRevenueSourceRow[],
+  counts: ProcedureCountRow[],
+  rangeLabel: string
+) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' })
+  const marginX = 40
+  const pageWidth = doc.internal.pageSize.getWidth()
+
+  let y = 40
+
+  // Title Header
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(15, 118, 110)
+  doc.text('CLINIC FINANCIAL & REVENUE ANALYTICS REPORT', marginX, y)
+  y += 18
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(100, 116, 139)
+  doc.text(`Time Range Filter: ${rangeLabel.toUpperCase()}`, marginX, y)
+  doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy, hh:mm a')}`, pageWidth - marginX, y, { align: 'right' })
+  y += 20
+
+  // Summary Metrics Calculation
+  let totalBilled = 0
+  let totalPaid = 0
+  invoices.forEach((inv) => {
+    totalBilled += inv.total_amount || 0
+    totalPaid += inv.paid_amount || 0
+  })
+  const totalDue = Math.max(0, totalBilled - totalPaid)
+
+  // Summary Box Table
+  autoTable(doc, {
+    startY: y,
+    head: [['Total Invoices', 'Total Billed', 'Total Collected', 'Outstanding Due']],
+    body: [[
+      invoices.length.toString(),
+      formatBDT(totalBilled),
+      formatBDT(totalPaid),
+      formatBDT(totalDue),
+    ]],
+    styles: { fontSize: 9, cellPadding: 6, halign: 'center', fontStyle: 'bold' },
+    headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255] },
+    theme: 'grid',
+    margin: { left: marginX, right: marginX },
+  })
+
+  y = (doc as any).lastAutoTable.finalY + 20
+
+  // Monthly Revenue Table
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(15, 23, 42)
+  doc.text('Monthly Revenue Breakdown', marginX, y)
+  y += 10
+
+  const monthlyRows = monthly.map((m) => [m.label, formatBDT(m.billed), formatBDT(m.collected)])
+  autoTable(doc, {
+    startY: y,
+    head: [['Month', 'Billed Amount', 'Collected Amount']],
+    body: monthlyRows,
+    styles: { fontSize: 8, cellPadding: 5 },
+    headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+    theme: 'striped',
+    margin: { left: marginX, right: marginX },
+  })
+
+  y = (doc as any).lastAutoTable.finalY + 20
+
+  // Top Revenue Patients
+  if (topSources && topSources.length > 0) {
+    if (y > 700) {
+      doc.addPage()
+      y = 40
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Top Revenue Sources (Patients)', marginX, y)
+    y += 10
+
+    const ptRows = topSources.slice(0, 10).map((pt) => [pt.name, formatBDT(pt.totalBilled), formatBDT(pt.totalPaid)])
+    autoTable(doc, {
+      startY: y,
+      head: [['Patient Name', 'Total Billed', 'Total Paid']],
+      body: ptRows,
+      styles: { fontSize: 8, cellPadding: 5 },
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      theme: 'striped',
+      margin: { left: marginX, right: marginX },
+    })
+
+    y = (doc as any).lastAutoTable.finalY + 20
+  }
+
+  // Treatment Mix Breakdown
+  if (counts && counts.length > 0) {
+    if (y > 700) {
+      doc.addPage()
+      y = 40
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Procedure Breakdown', marginX, y)
+    y += 10
+
+    const procRows = counts.map((c) => [c.type, c.count.toString()])
+    autoTable(doc, {
+      startY: y,
+      head: [['Procedure / Treatment Type', 'Completed Count']],
+      body: procRows,
+      styles: { fontSize: 8, cellPadding: 5 },
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      theme: 'striped',
+      margin: { left: marginX, right: marginX },
+    })
+  }
+
+  doc.save(`Clinic_Analytics_Report_${rangeLabel}.pdf`)
+}
+
 
