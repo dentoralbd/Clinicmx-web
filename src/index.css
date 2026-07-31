@@ -284,3 +284,30 @@ button:focus-visible {
     border-radius: 0 !important;
   }
 }
+
+/* ── Print styles for analytics report ── */
+@media print {
+  .analytics-report-modal-backdrop {
+    background: transparent !important;
+    position: static !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .analytics-report-print-overlay,
+  .analytics-report-print-overlay * {
+    visibility: visible !important;
+  }
+  .analytics-report-print-overlay {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+}
+

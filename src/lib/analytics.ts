@@ -43,7 +43,7 @@ export interface AnalyticsPayment {
   payment_date: string
 }
 
-export type AnalyticsRange = '6m' | '12m' | 'all'
+export type AnalyticsRange = '1m' | '3m' | '6m' | '12m' | 'all' | 'custom'
 
 // ---------- month axis helpers ----------
 
@@ -63,16 +63,25 @@ export function monthLabel(key: string): string {
 }
 
 /** Start date for a range, or null for 'all'. */
-export function rangeStart(range: AnalyticsRange, now = new Date()): Date | null {
+export function rangeStart(range: AnalyticsRange, customStart?: string, now = new Date()): Date | null {
   if (range === 'all') return null
-  const months = range === '6m' ? 6 : 12
+  if (range === 'custom' && customStart) {
+    const d = new Date(`${customStart}T00:00:00`)
+    return isNaN(d.getTime()) ? null : d
+  }
+  const months = range === '1m' ? 1 : range === '3m' ? 3 : range === '6m' ? 6 : 12
   const start = subMonths(new Date(now.getFullYear(), now.getMonth(), 1), months - 1)
   return start
 }
 
 /** Contiguous list of 'yyyy-MM' keys from the range start (or earliest data) through the current month. */
-export function buildMonthAxis(range: AnalyticsRange, dataDates: string[], now = new Date()): string[] {
-  let start = rangeStart(range, now)
+export function buildMonthAxis(
+  range: AnalyticsRange,
+  dataDates: string[],
+  customStart?: string,
+  now = new Date()
+): string[] {
+  let start = rangeStart(range, customStart, now)
   if (!start) {
     const keys = dataDates.map(monthKey).filter(Boolean).sort()
     start = keys.length > 0 ? new Date(`${keys[0]}-01T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), 1)
@@ -88,14 +97,26 @@ export function buildMonthAxis(range: AnalyticsRange, dataDates: string[], now =
 }
 
 /** Filter rows to those whose date falls inside the range (inclusive of the range's first month). */
-export function filterByRange<T>(rows: T[], getDate: (row: T) => string | null | undefined, range: AnalyticsRange, now = new Date()): T[] {
-  const start = rangeStart(range, now)
-  if (!start) return rows
+export function filterByRange<T>(
+  rows: T[],
+  getDate: (row: T) => string | null | undefined,
+  range: AnalyticsRange,
+  customStart?: string,
+  customEnd?: string,
+  now = new Date()
+): T[] {
+  if (range === 'all') return rows
+  const start = rangeStart(range, customStart, now)
+  const endDate = range === 'custom' && customEnd ? new Date(`${customEnd}T23:59:59`) : null
+
   return rows.filter((row) => {
     const raw = getDate(row)
     if (!raw) return false
     const d = new Date(raw)
-    return !isNaN(d.getTime()) && d >= start
+    if (isNaN(d.getTime())) return false
+    if (start && d < start) return false
+    if (endDate && d > endDate) return false
+    return true
   })
 }
 

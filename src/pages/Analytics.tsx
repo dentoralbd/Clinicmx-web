@@ -29,6 +29,7 @@ import { RevenueCalendar } from '@/components/analytics/RevenueCalendar'
 import { RevenueSection } from '@/components/analytics/RevenueSection'
 import { PatientSection } from '@/components/analytics/PatientSection'
 import { TreatmentMixSection } from '@/components/analytics/TreatmentMixSection'
+import { ClinicAnalyticsReportPrintModal } from '@/components/analytics/ClinicAnalyticsReportPrintModal'
 
 const PAGE_SIZE = 1000
 
@@ -48,9 +49,12 @@ async function fetchAllRows<T>(table: string, columns: string, filter?: (q: any)
 }
 
 const RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
+  { value: '1m', label: '1M' },
+  { value: '3m', label: '3M' },
   { value: '6m', label: '6M' },
   { value: '12m', label: '12M' },
   { value: 'all', label: 'All' },
+  { value: 'custom', label: 'Custom' },
 ]
 
 export function Analytics() {
@@ -60,9 +64,12 @@ export function Analytics() {
   const [appointments, setAppointments] = useState<AnalyticsAppointment[]>([])
   const [payments, setPayments] = useState<AnalyticsPayment[]>([])
   const [range, setRange] = useState<AnalyticsRange>('12m')
+  const [customStart, setCustomStart] = useState<string>('')
+  const [customEnd, setCustomEnd] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [showPrintModal, setShowPrintModal] = useState(false)
 
   useEffect(() => {
     // Non-admins are redirected below; skip the data load entirely for them.
@@ -109,18 +116,31 @@ export function Analytics() {
   // the one place that should exclude them until they convert.
   const fullPatients = useMemo(() => patients.filter((p) => p.patient_type !== 'consultation'), [patients])
 
-  const rangeInvoices = useMemo(() => filterByRange(invoices, (inv) => inv.created_at, range), [invoices, range])
-  const rangeTreatments = useMemo(() => filterByRange(treatments, (t) => t.created_at, range), [treatments, range])
-  const rangePatients = useMemo(() => filterByRange(fullPatients, (p) => p.created_at, range), [fullPatients, range])
+  const rangeInvoices = useMemo(
+    () => filterByRange(invoices, (inv) => inv.created_at, range, customStart, customEnd),
+    [invoices, range, customStart, customEnd]
+  )
+  const rangeTreatments = useMemo(
+    () => filterByRange(treatments, (t) => t.created_at, range, customStart, customEnd),
+    [treatments, range, customStart, customEnd]
+  )
+  const rangePatients = useMemo(
+    () => filterByRange(fullPatients, (p) => p.created_at, range, customStart, customEnd),
+    [fullPatients, range, customStart, customEnd]
+  )
 
   const monthAxis = useMemo(
     () =>
-      buildMonthAxis(range, [
-        ...invoices.map((inv) => inv.created_at),
-        ...patients.map((p) => p.created_at),
-        ...appointments.map((a) => a.date_time || ''),
-      ]),
-    [range, invoices, patients, appointments]
+      buildMonthAxis(
+        range,
+        [
+          ...invoices.map((inv) => inv.created_at),
+          ...patients.map((p) => p.created_at),
+          ...appointments.map((a) => a.date_time || ''),
+        ],
+        customStart
+      ),
+    [range, invoices, patients, appointments, customStart]
   )
 
   const summary = useMemo(() => revenueSummary(rangeInvoices), [rangeInvoices])
@@ -185,6 +205,26 @@ export function Analytics() {
               </button>
             ))}
           </div>
+
+          {range === 'custom' && (
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                placeholder="From Date"
+              />
+              <span className="text-xs font-semibold text-slate-500">to</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                placeholder="To Date"
+              />
+            </div>
+          )}
           <button
             onClick={() => exportClinicAnalyticsCSV(rangeInvoices, patients, range)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
@@ -202,12 +242,12 @@ export function Analytics() {
             <span className="hidden sm:inline">PDF Report</span>
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => setShowPrintModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors"
-            title="Print Analytics Page"
+            title="Print Invoices Statement & Revenue Ledger"
           >
             <Printer className="w-4 h-4 text-slate-600" />
-            <span className="hidden sm:inline">Print Page</span>
+            <span className="hidden sm:inline">Print Statement</span>
           </button>
           <button
             onClick={() => loadAnalytics(true)}
@@ -259,6 +299,18 @@ export function Analytics() {
       <RevenueSection monthly={monthly} byType={byType} topSources={topSources} />
       <PatientSection newPerMonth={newPerMonth} returningVsNew={returningVsNew} />
       <TreatmentMixSection counts={counts} avgCosts={avgCosts} conversion={conversion} />
+
+      {showPrintModal && (
+        <ClinicAnalyticsReportPrintModal
+          invoices={rangeInvoices}
+          patients={patients}
+          monthly={monthly}
+          topSources={topSources}
+          counts={counts}
+          rangeLabel={range}
+          onClose={() => setShowPrintModal(false)}
+        />
+      )}
     </div>
   )
 }
