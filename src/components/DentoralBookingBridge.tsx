@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, AlertCircle, Calendar, UserCheck, UserPlus, X } from 'lucide-react'
+import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, Calendar, UserCheck, UserPlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { SlotPicker } from '@/components/SlotPicker'
@@ -30,8 +30,6 @@ interface PatientMatch {
 export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: () => void }) {
   const [serials, setSerials] = useState<DentoralAppointment[]>([])
   const [loading, setLoading] = useState(false)
-  const [adminPassword, setAdminPassword] = useState(() => localStorage.getItem('dentoral_bridge_pw') || '')
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
   
   // Interactive Confirmation Modal State
   const [selectedApp, setSelectedApp] = useState<DentoralAppointment | null>(null)
@@ -44,26 +42,15 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   const [apptDuration, setApptDuration] = useState<number>(30)
   const [confirming, setConfirming] = useState<boolean>(false)
 
-  const fetchSerials = async (pw?: string) => {
-    const key = pw || adminPassword
-    if (!key) {
-      setShowPasswordPrompt(true)
-      return
-    }
-
+  const fetchSerials = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`https://dentoralbd.pages.dev/api/appointments`, {
-        headers: { 'X-Admin-Password': key }
-      })
+      const res = await fetch(`https://dentoralbd.pages.dev/api/appointments`)
 
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
           setSerials(data.filter((a: DentoralAppointment) => a.status === 'Pending'))
-          setShowPasswordPrompt(false)
-        } else if (data.error === 'Unauthorized') {
-          setShowPasswordPrompt(true)
         }
       }
     } catch (err) {
@@ -74,14 +61,10 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   }
 
   useEffect(() => {
-    if (adminPassword) fetchSerials()
+    fetchSerials()
   }, [])
 
-  const savePassword = (val: string) => {
-    setAdminPassword(val)
-    localStorage.setItem('dentoral_bridge_pw', val)
-    fetchSerials(val)
-  }
+
 
   // Open modal & search for matching patients by phone/name
   const openConfirmModal = async (app: DentoralAppointment) => {
@@ -179,8 +162,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
       await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Password': adminPassword
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ id: selectedApp.id, status: 'Confirmed' })
       })
@@ -222,24 +204,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         </div>
       </div>
 
-      {showPasswordPrompt ? (
-        <div className="bg-slate-50 p-3 rounded-lg border text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <span>Enter DentOral Admin Password to sync:</span>
-          <input
-            type="password"
-            className="border px-2 py-1 rounded text-xs"
-            placeholder="Admin Password"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') savePassword((e.target as HTMLInputElement).value)
-            }}
-          />
-          <Button size="sm" onClick={(e) => {
-            const input = (e.currentTarget.previousElementSibling as HTMLInputElement)?.value
-            if (input) savePassword(input)
-          }}>Connect</Button>
-        </div>
-      ) : serials.length === 0 ? (
+      {serials.length === 0 ? (
         <div className="text-center py-4 text-xs text-slate-500 bg-slate-50 rounded-lg">
           ✨ No pending online serial requests right now. New bookings will appear here automatically.
         </div>
