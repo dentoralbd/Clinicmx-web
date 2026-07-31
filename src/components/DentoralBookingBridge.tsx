@@ -45,13 +45,17 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   const fetchSerials = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`https://dentoralbd.pages.dev/api/appointments`)
+      const res = await fetch(`https://dentoralbd.pages.dev/api/appointments?t=${Date.now()}`, {
+        cache: 'no-store'
+      })
 
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
           setSerials(data.filter((a: DentoralAppointment) => a.status === 'Pending'))
         }
+      } else {
+        console.warn(`Dentoral API returned status ${res.status}`)
       }
     } catch (err) {
       console.warn('Failed to fetch DentOral serials:', err)
@@ -62,6 +66,8 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
   useEffect(() => {
     fetchSerials()
+    const interval = setInterval(fetchSerials, 20000)
+    return () => clearInterval(interval)
   }, [])
 
 
