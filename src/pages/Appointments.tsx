@@ -7,6 +7,7 @@ import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { RescheduleModal } from '@/components/RescheduleModal'
 import { ReminderQueue } from '@/components/ReminderQueue'
+import { DentoralBookingBridge } from '@/components/DentoralBookingBridge'
 import { getPatientDobOrAge } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 import { loadScheduleContext, getWindowsForDay, type ScheduleContext } from '@/lib/appointmentSchedule'
@@ -173,6 +174,8 @@ export function Appointments() {
       )}
 
       <ReminderQueue refreshToken={reminderRefresh} />
+
+      <DentoralBookingBridge onImportSuccess={loadAppointments} />
 
       <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
