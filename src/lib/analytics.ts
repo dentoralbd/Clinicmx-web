@@ -386,6 +386,8 @@ export interface TopRevenueSource {
   patientId: string
   name: string
   collected: number
+  totalBilled: number
+  totalPaid: number
   invoiceCount: number
 }
 
@@ -396,26 +398,29 @@ export function topRevenueSources(
 ): TopRevenueSource[] {
   const nameById = new Map<string, string>()
   for (const p of patients) {
-    nameById.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown Patient')
+    nameById.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient')
   }
-  const byPatient = new Map<string, { collected: number; invoiceCount: number }>()
+  const byPatient = new Map<string, { totalBilled: number; totalPaid: number; invoiceCount: number }>()
   for (const inv of invoices) {
     if (!isActiveInvoice(inv) || !inv.patient_id) continue
+    const billed = inv.total_amount || 0
     const paid = inv.paid_amount || 0
-    if (paid <= 0) continue
-    const bucket = byPatient.get(inv.patient_id) || { collected: 0, invoiceCount: 0 }
-    bucket.collected += paid
+    const bucket = byPatient.get(inv.patient_id) || { totalBilled: 0, totalPaid: 0, invoiceCount: 0 }
+    bucket.totalBilled += billed
+    bucket.totalPaid += paid
     bucket.invoiceCount += 1
     byPatient.set(inv.patient_id, bucket)
   }
   return Array.from(byPatient.entries())
-    .map(([patientId, { collected, invoiceCount }]) => ({
+    .map(([patientId, { totalBilled, totalPaid, invoiceCount }]) => ({
       patientId,
-      name: nameById.get(patientId) || 'Unknown Patient',
-      collected,
+      name: nameById.get(patientId) || 'Patient',
+      collected: totalPaid,
+      totalBilled,
+      totalPaid,
       invoiceCount,
     }))
-    .sort((a, b) => b.collected - a.collected)
+    .sort((a, b) => b.totalPaid - a.totalPaid)
     .slice(0, limit)
 }
 

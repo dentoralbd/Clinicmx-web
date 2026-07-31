@@ -129,6 +129,35 @@ export function ClinicAnalyticsReportPrintModal({
           </div>
         </div>
 
+        {/* Top Revenue Sources Table */}
+        {topSources && topSources.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-bold text-xs uppercase text-slate-700 tracking-wider mb-3">Top Revenue Sources (Patients)</h3>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-300 bg-slate-100 text-slate-700">
+                  <th className="py-2 px-2.5 font-bold">#</th>
+                  <th className="py-2 px-2.5 font-bold">Patient Name</th>
+                  <th className="py-2 px-2.5 font-bold text-right">Invoices</th>
+                  <th className="py-2 px-2.5 font-bold text-right">Total Billed</th>
+                  <th className="py-2 px-2.5 font-bold text-right">Total Paid</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {topSources.slice(0, 10).map((pt, idx) => (
+                  <tr key={pt.patientId || idx} className="hover:bg-slate-50">
+                    <td className="py-2 px-2.5 text-slate-500 font-mono">{idx + 1}</td>
+                    <td className="py-2 px-2.5 font-semibold text-slate-800">{pt.name}</td>
+                    <td className="py-2 px-2.5 text-right text-slate-600">{pt.invoiceCount}</td>
+                    <td className="py-2 px-2.5 text-right font-medium text-slate-900">{formatBDT(pt.totalBilled || 0)}</td>
+                    <td className="py-2 px-2.5 text-right font-medium text-emerald-700">{formatBDT(pt.totalPaid || pt.collected || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Invoice Itemized Table */}
         <div className="mb-6">
           <h3 className="font-bold text-xs uppercase text-slate-700 tracking-wider mb-3">Itemized Invoices ({invoices.length})</h3>
@@ -147,7 +176,7 @@ export function ClinicAnalyticsReportPrintModal({
             <tbody className="divide-y divide-slate-200">
               {invoices.map((inv) => {
                 const dateStr = inv.created_at ? safeFormat(inv.created_at, 'dd MMM yyyy') : '-'
-                const ptName = inv.patient_id ? patientMap.get(inv.patient_id) || 'Patient' : 'General'
+                const ptName = inv.patient_id ? patientMap.get(inv.patient_id) || 'Patient' : 'Patient'
                 const billed = inv.total_amount || 0
                 const paid = inv.paid_amount || 0
                 const due = Math.max(0, billed - paid)
