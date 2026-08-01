@@ -620,9 +620,8 @@ export function exportClinicAnalyticsCSV(
  */
 export function generateClinicAnalyticsPDF(
   invoices: AnalyticsInvoice[],
-  patients: AnalyticsPatient[],
-  monthly: MonthlyRevenueRow[],
-  topSources: TopRevenueSourceRow[],
+  monthly: MonthlyRevenuePoint[],
+  topSources: TopRevenueSource[],
   counts: ProcedureCountRow[],
   rangeLabel: string
 ) {

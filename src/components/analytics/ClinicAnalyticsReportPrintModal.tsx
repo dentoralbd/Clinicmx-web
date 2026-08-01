@@ -3,14 +3,13 @@ import { Printer, X, FileSpreadsheet, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
-import { cleanLogoSource } from '@/lib/logoImage'
-import { exportClinicAnalyticsCSV, generateClinicAnalyticsPDF, type AnalyticsInvoice, type AnalyticsPatient, type MonthlyRevenueRow, type TopRevenueSourceRow, type ProcedureCountRow } from '@/lib/analytics'
+import { exportClinicAnalyticsCSV, generateClinicAnalyticsPDF, type AnalyticsInvoice, type AnalyticsPatient, type MonthlyRevenuePoint, type TopRevenueSource, type ProcedureCountRow } from '@/lib/analytics'
 
 interface ClinicAnalyticsReportPrintModalProps {
   invoices: AnalyticsInvoice[]
   patients: AnalyticsPatient[]
-  monthly: MonthlyRevenueRow[]
-  topSources: TopRevenueSourceRow[]
+  monthly: MonthlyRevenuePoint[]
+  topSources: TopRevenueSource[]
   counts: ProcedureCountRow[]
   rangeLabel: string
   onClose: () => void
@@ -43,7 +42,6 @@ export function ClinicAnalyticsReportPrintModal({
     totalPaid += inv.paid_amount || 0
   })
   const totalDue = Math.max(0, totalBilled - totalPaid)
-  const logoSrc = cleanLogoSource(doctor?.logo_url)
 
   function handlePrint() {
     window.print()
@@ -72,7 +70,7 @@ export function ClinicAnalyticsReportPrintModal({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => generateClinicAnalyticsPDF(invoices, patients, monthly, topSources, counts, rangeLabel)}
+            onClick={() => generateClinicAnalyticsPDF(invoices, monthly, topSources, counts, rangeLabel)}
             className="text-xs text-slate-200 border-slate-700 hover:bg-slate-800"
           >
             <FileText className="w-4 h-4 mr-1 text-teal-400" /> Download PDF
@@ -91,9 +89,9 @@ export function ClinicAnalyticsReportPrintModal({
         {/* Header */}
         <div className="flex justify-between items-start border-b border-slate-200 pb-6 mb-6 gap-4">
           <div>
-            <h1 className="font-bold text-xl text-slate-900">{doctor?.clinic_name || 'ClinicMx Dental Care'}</h1>
+            <h1 className="font-bold text-xl text-slate-900">{doctor?.workplace || 'ClinicMx Dental Care'}</h1>
             <p className="text-xs text-slate-500">{doctor?.full_name || 'Dental Clinic Management System'}</p>
-            <p className="text-xs text-slate-500">{doctor?.address || ''} {doctor?.phone ? `· ${doctor.phone}` : ''}</p>
+            <p className="text-xs text-slate-500">{doctor?.clinic_address || ''} {doctor?.phone ? `· ${doctor.phone}` : ''}</p>
           </div>
           <div className="text-right">
             <h2 className="font-bold text-sm text-teal-700 tracking-wider uppercase">Revenue & Invoice Statement</h2>
