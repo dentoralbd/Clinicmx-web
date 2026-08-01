@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -5897,6 +5897,12 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
   })
   const [saving, setSaving] = useState(false)
 
+  // Doctor Share % feeds the month-end payout calculation across a doctor's
+  // whole body of work — it's an admin-set figure, not something a doctor
+  // or operator needs to see or touch per treatment. Non-admins keep the
+  // value they were given (the default, or whatever admin already set).
+  const canSetSharePct = getAppRole() === 'admin'
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -5951,10 +5957,10 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
             </select>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <div className={`grid grid-cols-1 ${canSetSharePct ? 'sm:grid-cols-2' : ''} gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200`}>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Procedure done by Dr.
+                <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Attending Doctor
               </label>
               <select
                 value={form.doctor_name}
@@ -5967,24 +5973,26 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
-              </label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  placeholder="50"
-                  value={form.doctor_share_pct}
-                  onChange={(e) => setForm({ ...form, doctor_share_pct: e.target.value })}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-                />
-                <span className="text-xs font-bold text-slate-500">%</span>
+            {canSetSharePct && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    placeholder="30"
+                    value={form.doctor_share_pct}
+                    onChange={(e) => setForm({ ...form, doctor_share_pct: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                  />
+                  <span className="text-xs font-bold text-slate-500">%</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div>
@@ -6066,6 +6074,18 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
 
   const plannedList = (existingPlanned as any[]) || []
 
+  // A logged-in doctor may only ever attribute their own work — showing
+  // every doctor here would let them reassign a treatment plan to a
+  // colleague. Admin keeps the full picker (per-item, in case a plan spans
+  // multiple attending doctors). Locked, not just defaulted: there's no
+  // interactive way to change it away from defaultDoctorName below.
+  const isDoctorLocked = getAppRole() === 'doctor'
+
+  // Doctor Share % feeds the month-end payout calculation across a doctor's
+  // whole body of work — it's an admin-set figure, not something a doctor
+  // or operator needs to see or touch per treatment plan.
+  const canSetSharePct = getAppRole() === 'admin'
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
@@ -6139,40 +6159,49 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
                   </select>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div className={`grid grid-cols-1 ${canSetSharePct ? 'sm:grid-cols-2' : ''} gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200`}>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                      <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Procedure done by Dr.
+                      <UserCheck className="w-3.5 h-3.5 text-teal-600" /> Attending Doctor
                     </label>
-                    <select
-                      value={item.doctor_name ?? defaultDoctorName ?? ''}
-                      onChange={(e) => updateItem(index, { doctor_name: e.target.value })}
-                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-                    >
-                      <option value="">Select Doctor...</option>
-                      {(doctorsList || []).map((doc: string) => (
-                        <option key={doc} value={doc}>{doc}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                      <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        placeholder="50"
-                        value={item.doctor_share_pct ?? '30'}
-                        onChange={(e) => updateItem(index, { doctor_share_pct: e.target.value })}
+                    {isDoctorLocked ? (
+                      <div className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-teal-800 bg-slate-100 flex items-center justify-between">
+                        <span>👨‍⚕️ {defaultDoctorName || 'Not linked to a doctor name — contact admin'}</span>
+                        <Lock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      </div>
+                    ) : (
+                      <select
+                        value={item.doctor_name ?? defaultDoctorName ?? ''}
+                        onChange={(e) => updateItem(index, { doctor_name: e.target.value })}
                         className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-                      />
-                      <span className="text-xs font-bold text-slate-500">%</span>
-                    </div>
+                      >
+                        <option value="">Select Doctor...</option>
+                        {(doctorsList || []).map((doc: string) => (
+                          <option key={doc} value={doc}>{doc}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
+                  {canSetSharePct && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <DollarSign className="w-3.5 h-3.5 text-teal-600" /> Doctor Share %
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          placeholder="30"
+                          value={item.doctor_share_pct ?? '30'}
+                          onChange={(e) => updateItem(index, { doctor_share_pct: e.target.value })}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                        />
+                        <span className="text-xs font-bold text-slate-500">%</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
