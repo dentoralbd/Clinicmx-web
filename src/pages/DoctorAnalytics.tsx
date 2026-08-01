@@ -126,6 +126,7 @@ export function DoctorAnalytics() {
         treatments={treatments}
         invoices={invoices}
         patients={patients}
+        payments={payments}
         labWorks={labWorks}
         doctorProfile={doctorProfile}
       />
