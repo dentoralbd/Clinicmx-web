@@ -6,7 +6,7 @@ What each module does today (2026-08-01), as behavior — implementation notes l
 
 ## 1. Login & roles
 
-- Role selector: **Admin** (PIN `6040`, client-side), **Doctor** / **Operator** (accounts in `app_users`, email-or-phone identifier + password).
+- Role selector: **Admin** (PIN-gated, client-side, see `VITE_ADMIN_PASSWORD`), **Doctor** / **Operator** (accounts in `app_users`, email-or-phone identifier + password).
 - Roles: admin = everything incl. delete/revert/clinic-profile/users; doctor = default no-delete, can revert; operator = default no-delete/no-revert. Per-user permission overrides (page toggles + `can_delete`/`can_revert`/`can_edit_clinic_profile`) set by admin in Users tab. Unknown/legacy permission keys fail open.
 - **Three more per-account permissions (2026-08-01), same Users-tab mechanism:** `can_set_doctor_share_pct` (see the Doctor Share % field, §15b), `can_access_doctor_analytics`, `can_access_staff_analytics` (both gate tabs on the Financial Analysis page, §15c). Independently grantable — e.g. an operator can get Staff Analytics without also getting Doctor Analytics. `can_access_staff_analytics` is the one backed by real RLS (DATABASE.md §3); the other two only control what the UI shows/allows — the underlying `treatments` write permission was already broad before these existed and is unchanged by them.
 - Page access enforced per-route (`RequirePage`); wrong login shakes; session persists in localStorage until logout.

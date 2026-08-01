@@ -157,7 +157,7 @@ production.
   compiled into the public JS bundle). Local dev (`npm run dev`, no Functions layer) is unaffected
   — that path still logs in PIN-only, as before. `ADMIN_PASSWORD` renamed to
   `SECURE_STORAGE_PASSPHRASE` to make clear it no longer authenticates anyone — the server does —
-  it only derives the secure-storage encryption key. Value unchanged (`6040`, user's choice).
+  it only derives the secure-storage encryption key. Value unchanged (user's choice).
 - **`.env.example` / `API.md`** — removed the trap instructing a Google service-account private
   key into a `VITE_`-bundled variable (that integration has zero importers and isn't deployed);
   fixed `API.md` documenting the wrong Google OAuth env var names.

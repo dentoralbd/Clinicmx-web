@@ -15,8 +15,10 @@ import { supabase } from '@/lib/supabase'
 // constant only (a) gives a fast client-side "Incorrect password" hint
 // before the server round-trip, and (b) derives the secure-storage
 // encryption key for every role (see completeLogin below), so it must stay
-// in sync with ADMIN_PIN in the Cloudflare dashboard / .dev.vars.
-const SECURE_STORAGE_PASSPHRASE = '6040'
+// in sync with ADMIN_PIN in the Cloudflare dashboard / .dev.vars. Sourced
+// from VITE_ADMIN_PASSWORD (.env locally, Cloudflare Pages env var in
+// production) so the value itself never lives in the git repo.
+const SECURE_STORAGE_PASSPHRASE = import.meta.env.VITE_ADMIN_PASSWORD
 
 export function Login() {
   const [role, setRole] = useState<AppRole | null>(null)

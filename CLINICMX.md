@@ -117,7 +117,7 @@ All routes nested under `ProtectedRoute` → `DashboardLayout` (`src/App.tsx`):
 
 Custom app-level auth — **not** Supabase Auth (that's roadmap M3):
 
-- **Admin:** PIN `6040` compared client-side (`Login.tsx`); works offline by construction.
+- **Admin:** PIN compared client-side (`Login.tsx`, sourced from `VITE_ADMIN_PASSWORD`); works offline by construction.
 - **Doctor / Operator:** accounts in the `app_users` table; PBKDF2-SHA256 (100k iterations) password hashes verified client-side (`lib/appUsers.ts`); requires network.
 - Session state in localStorage (`clinicmx_auth`, `clinicmx_role`, `clinicmx_user`); an AES key in sessionStorage encrypts sensitive localStorage entries (`secureLocalStorage.ts`) — dies when the tab closes.
 - **Permissions** (`lib/appSession.ts`): per-user JSON overriding role defaults — `can_delete`, `can_revert`, `can_edit_clinic_profile`, plus per-page toggles enforced by `RequirePage`. Admin bypasses all checks. Missing keys fail open (backward compatibility with pre-feature sessions).

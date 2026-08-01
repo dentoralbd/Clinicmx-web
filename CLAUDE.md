@@ -38,7 +38,7 @@ No tests, no linter. Verification = typecheck + build + manually exercising the 
 
 ## Login (app-level gate, not Supabase)
 
-- Admin PIN: `6040`. Doctor/Operator accounts live in the `app_users` table (created via DoctorProfile → Admin zone → Users).
+- Admin PIN: see `VITE_ADMIN_PASSWORD` in `.env` (must match `ADMIN_PIN` in the Cloudflare dashboard / `.dev.vars`). Doctor/Operator accounts live in the `app_users` table (created via DoctorProfile → Admin zone → Users).
 - **Admin 2FA (2026-07-19):** once the Cloudflare secrets are set, an unknown device also needs a Telegram OTP after the PIN (7-day trusted-device token afterward; recovery code as fallback). Unconfigured/local dev = PIN-only. Endpoint `functions/api/admin-otp.ts`; secrets + `ADMIN_AUTH` KV binding live in the Cloudflare Pages dashboard (see API.md §2). The `ADMIN_PASSWORD` constant in Login.tsx must stay — it derives the secure-storage encryption key for every role.
 
 ## Environment
