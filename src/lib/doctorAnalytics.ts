@@ -101,16 +101,23 @@ export function calculateDoctorFinancialSummary(
     const amount = Number(t.cost || 0)
     const ptInfo = patientMap.get(t.patient_id) || { name: 'Patient' }
 
-    // Proportional paid amount
+    // Proportional paid amount — gated on the treatment actually being
+    // Completed. Collected money doesn't count as "paid" for payout
+    // purposes until the work is done: a partially-paid invoice for
+    // still-planned/in-progress treatments must not inflate Total Paid or
+    // Dr. Income (user decision, 2026-08-01 — previously this counted the
+    // invoice's payment ratio regardless of treatment status).
     let totalPaid = 0
-    if (t.invoice_id && invoiceMap.has(t.invoice_id)) {
-      const inv = invoiceMap.get(t.invoice_id)!
-      if (inv.totalAmount > 0) {
-        const payRatio = Math.min(1, Math.max(0, inv.paidAmount / inv.totalAmount))
-        totalPaid = amount * payRatio
+    if (t.status === 'Completed') {
+      if (t.invoice_id && invoiceMap.has(t.invoice_id)) {
+        const inv = invoiceMap.get(t.invoice_id)!
+        if (inv.totalAmount > 0) {
+          const payRatio = Math.min(1, Math.max(0, inv.paidAmount / inv.totalAmount))
+          totalPaid = amount * payRatio
+        }
+      } else if (t.is_invoiced) {
+        totalPaid = amount
       }
-    } else if (t.status === 'Completed' && t.is_invoiced) {
-      totalPaid = amount
     }
 
     // TxC (Direct Lab Cost)
