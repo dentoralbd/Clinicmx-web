@@ -19,6 +19,7 @@ import {
   calculateDoctorFinancialSummary,
   exportFinancialStatementCSV,
   generateFinancialStatementPDF,
+  bulkAssignDefaultDoctor,
   type DoctorFinancialSummary,
 } from '@/lib/doctorAnalytics'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
@@ -37,6 +38,10 @@ interface DoctorAnalyticsSectionProps {
   payments?: any[]
   labWorks?: any[]
   doctorProfile: DoctorProfileData | null
+  /** Called after a successful bulk doctor assignment so the caller can
+   * re-fetch treatments — this component only has the snapshot it was
+   * given as props, not a way to refresh it itself. */
+  onDataChanged?: () => void
 }
 
 export function DoctorAnalyticsSection({
@@ -46,8 +51,10 @@ export function DoctorAnalyticsSection({
   payments = [],
   labWorks = [],
   doctorProfile,
+  onDataChanged,
 }: DoctorAnalyticsSectionProps) {
   const role = getAppRole()
+  const isAdmin = role === 'admin'
   const appUser = getAppUser()
   const isDoctorOnly = role === 'doctor'
 
@@ -133,6 +140,35 @@ export function DoctorAnalyticsSection({
   const handleDownloadPDF = () => {
     const doc = generateFinancialStatementPDF(summary, doctorProfile)
     doc.save(`Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`)
+  }
+
+  // Bulk-fix for the most common Needs Attention cause: historical
+  // treatments with no doctor_name at all. Counted across ALL treatments
+  // (not just the current period/doctor filter) since the fix should
+  // clear every blank, not just the ones currently in view.
+  const blankDoctorCount = useMemo(() => treatments.filter((t) => !(t.doctor_name || '').trim()).length, [treatments])
+  const [bulkDoctorChoice, setBulkDoctorChoice] = useState('')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
+
+  async function handleBulkAssign() {
+    if (!bulkDoctorChoice) return
+    const ok = confirm(
+      `Assign "${bulkDoctorChoice}" as the doctor for ${blankDoctorCount} treatment(s) that currently have no doctor set?\n\n` +
+        `Each one is individually revertible afterward via its edit history, but there is no single bulk undo for this action.`
+    )
+    if (!ok) return
+    setBulkAssigning(true)
+    try {
+      const { updatedCount } = await bulkAssignDefaultDoctor(treatments, patients, bulkDoctorChoice)
+      alert(`Assigned ${updatedCount} treatment(s) to ${bulkDoctorChoice}.`)
+      setBulkDoctorChoice('')
+      onDataChanged?.()
+    } catch (err) {
+      console.error('Bulk doctor assignment failed:', err)
+      alert('Failed to bulk-assign a doctor. Please try again.')
+    } finally {
+      setBulkAssigning(false)
+    }
   }
 
   const handleDownloadCSV = () => {
@@ -308,6 +344,35 @@ export function DoctorAnalyticsSection({
               {formatBDT(summary.flaggedTotal)}
             </span>
           </div>
+
+          {isAdmin && blankDoctorCount > 0 && (
+            <div className="p-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-amber-900">
+                {blankDoctorCount} treatment(s) across all time have no doctor set. Assign a default:
+              </span>
+              <select
+                value={bulkDoctorChoice}
+                onChange={(e) => setBulkDoctorChoice(e.target.value)}
+                className="text-xs px-2.5 py-1.5 border border-amber-300 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+              >
+                <option value="">Select doctor...</option>
+                {uniqueDoctors.map((doc) => (
+                  <option key={doc} value={doc}>
+                    {doc}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                disabled={!bulkDoctorChoice || bulkAssigning}
+                onClick={handleBulkAssign}
+              >
+                {bulkAssigning ? 'Assigning...' : `Assign to all ${blankDoctorCount}`}
+              </Button>
+            </div>
+          )}
+
           <div className="overflow-auto max-h-[30vh]">
             <table className="w-full text-xs text-left text-amber-900">
               <thead className="bg-amber-200/50 font-bold border-b border-amber-200 sticky top-0">

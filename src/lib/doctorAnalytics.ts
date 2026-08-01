@@ -3,6 +3,9 @@ import autoTable from 'jspdf-autotable'
 import { drawFooter, drawLetterhead } from '@/lib/invoicePdf'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { formatBDT, safeFormat, csvCell } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+import { logEdit } from '@/lib/editHistory'
+import { logActivity } from '@/lib/activityLog'
 
 // ============================================================================
 // Two-part ledger, matching the clinic's reference statement format
@@ -343,6 +346,65 @@ export function calculateDoctorFinancialSummary(
     flaggedRows,
     flaggedTotal,
   }
+}
+
+/**
+ * Bulk-fixes the most common "Needs Attention" cause: treatments logged
+ * before doctor attribution existed, which have no doctor_name at all.
+ * Admin picks one doctor to backfill onto every currently-blank treatment
+ * — this only ever fills a blank, it NEVER overwrites a treatment that
+ * already has some doctor_name set (even a wrong one), and it never
+ * touches mixed-doctor invoices or invoices with no linked treatments —
+ * those need per-invoice judgment, not a blanket default.
+ *
+ * Each affected row is snapshotted via logEdit before the write (same
+ * log-first-edit-second pattern as PatientProfile.tsx's
+ * updateGroupTreatmentsStatus), so any individual assignment can be
+ * reverted afterward through the normal edit-history UI even though this
+ * action itself has no single bulk "undo".
+ */
+export async function bulkAssignDefaultDoctor(
+  treatments: any[],
+  patients: any[],
+  doctorName: string
+): Promise<{ updatedCount: number }> {
+  const trimmedDoctorName = doctorName.trim()
+  if (!trimmedDoctorName) throw new Error('Pick a doctor first.')
+
+  const patientMap = new Map<string, string>()
+  patients.forEach((p) => {
+    patientMap.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient')
+  })
+
+  const targets = treatments.filter((t) => !(t.doctor_name || '').trim())
+  if (targets.length === 0) return { updatedCount: 0 }
+
+  await Promise.all(
+    targets.map((t) =>
+      logEdit({
+        entityType: 'treatment',
+        entityId: t.id,
+        entityLabel: t.treatment_type,
+        patientId: t.patient_id,
+        patientName: patientMap.get(t.patient_id) ?? null,
+        previousPayload: t,
+        details: `Bulk-assigned default doctor "${trimmedDoctorName}" (was unset)`,
+      })
+    )
+  )
+
+  const ids = targets.map((t) => t.id)
+  const { error } = await supabase.from('treatments').update({ doctor_name: trimmedDoctorName }).in('id', ids)
+  if (error) throw error
+
+  logActivity({
+    action: 'edit',
+    entityType: 'treatment',
+    entityLabel: `${targets.length} treatment(s)`,
+    details: `Bulk-assigned default doctor "${trimmedDoctorName}" to ${targets.length} treatment(s) that had no doctor set`,
+  })
+
+  return { updatedCount: targets.length }
 }
 
 /**

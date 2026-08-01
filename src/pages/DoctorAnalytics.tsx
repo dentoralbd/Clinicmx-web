@@ -129,6 +129,7 @@ export function DoctorAnalytics() {
         payments={payments}
         labWorks={labWorks}
         doctorProfile={doctorProfile}
+        onDataChanged={() => loadData(true)}
       />
     </div>
   )
