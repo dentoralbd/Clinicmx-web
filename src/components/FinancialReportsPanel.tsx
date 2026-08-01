@@ -9,28 +9,49 @@ interface InvoiceSummary {
   status: string
 }
 
-export function FinancialReportsPanel() {
-  const [invoices, setInvoices] = useState<InvoiceSummary[]>([])
-  const [loading, setLoading] = useState(true)
+interface FinancialReportsPanelProps {
+  invoices?: InvoiceSummary[]
+}
+
+export function FinancialReportsPanel({ invoices: invoicesProp }: FinancialReportsPanelProps = {}) {
+  const [fetchedInvoices, setFetchedInvoices] = useState<InvoiceSummary[]>([])
+  const [loading, setLoading] = useState(!invoicesProp)
 
   useEffect(() => {
-    loadInvoices()
-  }, [])
+    if (!invoicesProp) {
+      loadInvoices()
+    }
+  }, [invoicesProp])
 
   async function loadInvoices() {
     setLoading(true)
     const { data } = await supabase
       .from('invoices')
       .select('total_amount, paid_amount, due_date, status')
+      .neq('status', 'Merged')
+      .neq('status', 'Cancelled')
+      .neq('status', 'Void')
+      .neq('status', 'Deleted')
 
-    setInvoices((data as InvoiceSummary[]) || [])
+    setFetchedInvoices((data as InvoiceSummary[]) || [])
     setLoading(false)
   }
+
+  const invoices = useMemo(() => {
+    const list = invoicesProp || fetchedInvoices
+    return list.filter(
+      (inv) =>
+        inv.status !== 'Merged' &&
+        inv.status !== 'Cancelled' &&
+        inv.status !== 'Void' &&
+        inv.status !== 'Deleted'
+    )
+  }, [invoicesProp, fetchedInvoices])
 
   const totals = useMemo(() => {
     const revenue = invoices.reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0)
     const billed = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
-    const outstanding = billed - revenue
+    const outstanding = Math.max(0, billed - revenue)
     const now = new Date()
 
     const aging = {
@@ -43,7 +64,7 @@ export function FinancialReportsPanel() {
       if (invoice.status === 'Paid' || !invoice.due_date) return
       const dueDate = new Date(invoice.due_date)
       const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
-      const pending = (invoice.total_amount || 0) - (invoice.paid_amount || 0)
+      const pending = Math.max(0, (invoice.total_amount || 0) - (invoice.paid_amount || 0))
 
       if (diffDays > 60) aging.over60 += pending
       else if (diffDays > 30) aging.over30 += pending
@@ -57,13 +78,15 @@ export function FinancialReportsPanel() {
     <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Financial Reports</h3>
-        <button
-          onClick={loadInvoices}
-          className="text-sm text-primary hover:underline"
-          type="button"
-        >
-          Refresh
-        </button>
+        {!invoicesProp && (
+          <button
+            onClick={loadInvoices}
+            className="text-sm text-primary hover:underline"
+            type="button"
+          >
+            Refresh
+          </button>
+        )}
       </div>
 
       {loading ? (

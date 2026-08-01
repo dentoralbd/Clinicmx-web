@@ -702,7 +702,7 @@ export function Billing() {
         </div>
       </div>
 
-      {showReports && <FinancialReportsPanel />}
+      {showReports && <FinancialReportsPanel invoices={invoices} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <SummaryCard title="Total Billed" value={formatBDT(stats.total)} icon={<DollarSign className="w-6 h-6" />} color="blue" />
