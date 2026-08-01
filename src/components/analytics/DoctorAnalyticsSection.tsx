@@ -287,9 +287,9 @@ export function DoctorAnalyticsSection({
             ✨ No matching financial statement records found.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[65vh]">
             <table className="w-full text-xs text-left text-slate-700">
-              <thead className="bg-slate-800 text-white font-bold border-b">
+              <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
                 <tr>
                   <th className="p-2.5 whitespace-nowrap">Date</th>
                   <th className="p-2.5">Patient Name</th>
