@@ -117,7 +117,7 @@ export function calculateDoctorFinancialSummary(
     const txC = labCostMap.get(t.id) || (t.treatment_plan_group_id ? labCostMap.get(t.treatment_plan_group_id) || 0 : 0)
 
     const netA = Math.max(0, totalPaid - txC)
-    const doctorSharePct = Number(t.doctor_share_pct ?? 50) // Default 50% — matches migration 043 and every write path
+    const doctorSharePct = Number(t.doctor_share_pct ?? 30) // Default 30% — matches migration 044 and every write path
 
     // Income calculation
     const drIncome = netA * (doctorSharePct / 100)

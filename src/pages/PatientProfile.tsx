@@ -483,7 +483,7 @@ export function PatientProfile() {
         cost: '',
         notes: '',
         doctor_name: '',
-        doctor_share_pct: '50',
+        doctor_share_pct: '30',
       },
     ],
     discount_type: 'fixed' as 'fixed' | 'percentage',
@@ -761,7 +761,7 @@ export function PatientProfile() {
           original_cost: originalCost,
           notes: item.notes || null,
           doctor_name: (item.doctor_name || defaultDoc || '').trim() || null,
-          doctor_share_pct: item.doctor_share_pct != null && item.doctor_share_pct !== '' ? parseFloat(item.doctor_share_pct) : 50,
+          doctor_share_pct: item.doctor_share_pct != null && item.doctor_share_pct !== '' ? parseFloat(item.doctor_share_pct) : 30,
           treatment_plan_group_id: planGroupId,
         }))
       })
@@ -783,7 +783,7 @@ export function PatientProfile() {
       })
       setShowTreatmentPlanForm(false)
       setTreatmentPlanForm({
-        items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: '', doctor_share_pct: '50' }],
+        items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: '', doctor_share_pct: '30' }],
         discount_type: 'fixed',
         discount_value: '',
       })
@@ -806,7 +806,7 @@ export function PatientProfile() {
       ...treatmentPlanForm,
       items: [
         ...treatmentPlanForm.items,
-        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: defaultDoc, doctor_share_pct: '50' },
+        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: defaultDoc, doctor_share_pct: '30' },
       ],
     })
   }
@@ -5893,7 +5893,7 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
     status: treatment.status || 'Planned',
     notes: treatment.notes || '',
     doctor_name: treatment.doctor_name || '',
-    doctor_share_pct: String(treatment.doctor_share_pct ?? 50),
+    doctor_share_pct: String(treatment.doctor_share_pct ?? 30),
   })
   const [saving, setSaving] = useState(false)
 
@@ -5909,7 +5909,7 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
         status: form.status,
         notes: form.notes || null,
         doctor_name: form.doctor_name || null,
-        doctor_share_pct: form.doctor_share_pct ? parseFloat(form.doctor_share_pct) : 50,
+        doctor_share_pct: form.doctor_share_pct ? parseFloat(form.doctor_share_pct) : 30,
       })
     } finally {
       setSaving(false)
@@ -6166,7 +6166,7 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
                         max="100"
                         step="1"
                         placeholder="50"
-                        value={item.doctor_share_pct ?? '50'}
+                        value={item.doctor_share_pct ?? '30'}
                         onChange={(e) => updateItem(index, { doctor_share_pct: e.target.value })}
                         className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
                       />

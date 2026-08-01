@@ -613,8 +613,8 @@ function TreatmentRow({ treatment, planItemCount = 0, onDelete, onStatusChange, 
               <span className="pill-warning text-xs">Ready to bill</span>
             ) : null}
             {treatment.doctor_name && (
-              <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200" title={`Doctor Share: ${treatment.doctor_share_pct ?? 50}%`}>
-                👨‍⚕️ {treatment.doctor_name} ({treatment.doctor_share_pct ?? 50}%)
+              <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200" title={`Doctor Share: ${treatment.doctor_share_pct ?? 30}%`}>
+                👨‍⚕️ {treatment.doctor_name} ({treatment.doctor_share_pct ?? 30}%)
               </span>
             )}
           </div>
