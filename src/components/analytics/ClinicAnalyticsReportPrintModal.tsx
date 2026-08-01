@@ -50,15 +50,18 @@ export function ClinicAnalyticsReportPrintModal({
   return (
     <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 sm:p-6 flex flex-col items-center analytics-report-modal-backdrop">
       {/* Top Floating Control Bar (Hidden on Print) */}
-      <div className="w-full max-w-4xl bg-slate-900 text-white rounded-xl p-4 mb-4 flex items-center justify-between gap-4 shadow-xl no-print">
-        <div className="flex items-center gap-3">
-          <FileText className="w-5 h-5 text-teal-400" />
-          <div>
+      <div className="w-full max-w-4xl bg-slate-900 text-white rounded-xl p-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xl no-print">
+        <div className="flex items-center gap-3 min-w-0">
+          <FileText className="w-5 h-5 text-teal-400 flex-shrink-0" />
+          <div className="min-w-0">
             <h3 className="font-bold text-sm">Clinic Revenue Statement & Invoice Ledger</h3>
             <p className="text-xs text-slate-400">{invoices.length} Invoices · Filter: {rangeLabel.toUpperCase()}</p>
           </div>
+          <button onClick={onClose} className="sm:hidden ml-auto p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white flex-shrink-0">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             size="sm"
             variant="outline"
@@ -78,7 +81,7 @@ export function ClinicAnalyticsReportPrintModal({
           <Button size="sm" onClick={handlePrint} className="bg-teal-600 hover:bg-teal-700 text-white text-xs">
             <Printer className="w-4 h-4 mr-1" /> Print Report
           </Button>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
+          <button onClick={onClose} className="hidden sm:block p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -101,7 +104,7 @@ export function ClinicAnalyticsReportPrintModal({
         </div>
 
         {/* Top Summary Block */}
-        <div className="grid grid-cols-4 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-center">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-center">
           <div>
             <p className="text-[11px] font-semibold uppercase text-slate-500">Total Billed</p>
             <p className="text-base font-bold text-slate-900 mt-0.5">{formatBDT(totalBilled)}</p>
