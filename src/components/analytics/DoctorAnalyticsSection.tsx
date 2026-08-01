@@ -59,10 +59,12 @@ export function DoctorAnalyticsSection({
   // Unique months list
   const uniqueMonths = useMemo(() => {
     const set = new Set<string>()
+    // Same bucket-date rule as calculateDoctorFinancialSummary: a treatment
+    // completed in a later month than it was created must offer that later
+    // month in the dropdown, not just its creation month.
     treatments.forEach((t) => {
-      if (t.created_at) {
-        set.add(t.created_at.substring(0, 7))
-      }
+      const bucket = t.completed_at || t.created_at
+      if (bucket) set.add(bucket.substring(0, 7))
     })
     return Array.from(set).sort().reverse()
   }, [treatments])

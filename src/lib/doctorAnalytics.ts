@@ -91,10 +91,18 @@ export function calculateDoctorFinancialSummary(
       return
     }
 
-    // Month filter
+    // Month filter — bucketed by when the treatment was actually
+    // completed/paid (completed_at), not when it was first logged. Falls
+    // back to created_at for treatments that aren't Completed yet (no
+    // completion date exists), which is also when their Total Paid is
+    // always 0 anyway — see the Completed gate below. User decision,
+    // 2026-08-01: a July-created crown finished and paid in August must
+    // show in August's statement, not July's.
     const createdDateStr = t.created_at ? t.created_at.substring(0, 10) : ''
-    if (selectedMonthYear !== 'ALL' && createdDateStr) {
-      const dateStrMonth = createdDateStr.substring(0, 7)
+    const completedDateStr = t.completed_at ? t.completed_at.substring(0, 10) : ''
+    const bucketDateStr = completedDateStr || createdDateStr
+    if (selectedMonthYear !== 'ALL' && bucketDateStr) {
+      const dateStrMonth = bucketDateStr.substring(0, 7)
       if (dateStrMonth !== selectedMonthYear) return
     }
 
@@ -134,7 +142,7 @@ export function calculateDoctorFinancialSummary(
 
     rows.push({
       id: t.id,
-      date: createdDateStr,
+      date: bucketDateStr,
       patientName: ptInfo.name,
       patientCode: ptInfo.code,
       refBy: docName,

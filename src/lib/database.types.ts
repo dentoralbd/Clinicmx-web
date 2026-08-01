@@ -334,6 +334,7 @@ export interface Database {
           treatment_plan_group_id: string | null
           doctor_name: string | null
           doctor_share_pct: number | null
+          completed_at: string | null
           created_at: string
         }
         Insert: {
@@ -354,6 +355,7 @@ export interface Database {
           treatment_plan_group_id?: string | null
           doctor_name?: string | null
           doctor_share_pct?: number | null
+          completed_at?: string | null
           created_at?: string
         }
         Update: {
@@ -374,6 +376,7 @@ export interface Database {
           treatment_plan_group_id?: string | null
           doctor_name?: string | null
           doctor_share_pct?: number | null
+          completed_at?: string | null
           created_at?: string
         }
         Relationships: [
