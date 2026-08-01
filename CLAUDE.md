@@ -52,6 +52,7 @@ No tests, no linter. Verification = typecheck + build + manually exercising the 
 - **Schema change → three files:** the SQL migration in `supabase/migrations/`, `src/lib/database.types.ts` (hand-maintained), and `src/lib/entityTables.ts` (`ENTITY_TABLE_COLUMNS`, if the entity is audit-tracked). See [DATABASE.md](DATABASE.md) for migration conventions.
 - **New drug category → three places:** the `category` union in `src/lib/dentalDrugDatabase.ts`, plus `CATEGORY_META` and `CATEGORY_ORDER` in `src/components/DrugPicker.tsx`. Missing either DrugPicker list makes those drugs invisible in the default dropdown (happened with Antifibrinolytic).
 - **Audit ordering:** `logEdit`/`logDeletion` must snapshot the row **before** the write, or restore breaks.
+- **Any new PDF "download" → `sharePdf()`, never `jsPDF.save()`** (2026-08-01) — the app also ships as a native Android APK with no download handler; `.save()` silently does nothing there. See UI-UX.md §7 for the full pattern; found three PDF generators that skipped it and were broken in the app.
 - `main.tsx` reloads on `vite:preloadError` (stale-chunk recovery) — unconditional today; needs a loop guard before any service worker lands (roadmap M1).
 
 ## Where things are
@@ -59,6 +60,7 @@ No tests, no linter. Verification = typecheck + build + manually exercising the 
 - Technical reference: [CLINICMX.md](CLINICMX.md) · Schema: [DATABASE.md](DATABASE.md) · Data access & functions: [API.md](API.md) · Feature behavior: [FEATURES.md](FEATURES.md) · Design system: [UI-UX.md](UI-UX.md)
 - Offline/Android plan (approved, not started): [OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md) — start with "Start M1 from OFFLINE_ROADMAP.md"
 - The core screen is `src/pages/PatientProfile.tsx` (~5,900 lines; tabs for visits, treatments, prescriptions, files, dental chart, billing). Edit it surgically.
+- **`D:\Claude\Clinicmx-web-apk`** (sibling directory, own repo, not documented elsewhere) is a bare Capacitor Android wrapper for the ClinicMx APK — `capacitor.config.json`'s `server.url` points straight at the live `clinicmx-web.pages.dev` deployment, so **any web-app change here ships to the APK automatically on the next Cloudflare deploy, no separate Android build needed** — only a genuinely native change (new Capacitor plugin, Android permission, manifest edit) requires touching that project and rebuilding. No plugins installed there as of 2026-08-01 (bare `@capacitor/core`/`android`/`cli` only) — no filesystem/share bridge exists, which is why `sharePdf()` (Web Share API) rather than native file APIs is the load-bearing mechanism for anything the app needs to save/share on Android.
 
 ## Workflow expectations
 

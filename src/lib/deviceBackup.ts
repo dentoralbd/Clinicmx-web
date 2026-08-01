@@ -49,6 +49,8 @@ export const BACKUP_TABLES = [
   'appointment_schedule_date_overrides',
   'app_users',
   'authorized_ips',
+  'staff', // payroll roster (migration 045, 2026-08-01)
+  'staff_salary_payments', // after staff: staff_salary_payments.staff_id
   'delete_history',
   'edit_history',
   'activity_log',

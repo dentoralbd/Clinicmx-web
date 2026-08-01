@@ -4,6 +4,138 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-01 — Fix PDF downloads silently failing in the Android app
+`Clinicmx-web-apk` (sibling Capacitor project, `D:\Claude\Clinicmx-web-apk` — a bare Android WebView
+wrapper pointed at the live `clinicmx-web.pages.dev` URL, no bundled build step) reported PDFs not
+saving. Root cause: `jsPDF.save()` relies on the browser's native `<a download>` + blob-URL
+mechanism, which silently does nothing in that WebView (no download handler, no filesystem plugin
+installed — confirmed via `Clinicmx-web-apk/package.json`, only bare `@capacitor/core`). Every
+other PDF in the app (prescriptions, invoices, treatment plans, estimates) already avoided this by
+going through `sharePdf()` (`src/lib/sharePdf.ts`) — tries the Web Share API first
+(`navigator.share` with a real `File`), which the Capacitor WebView *does* support and opens the
+native OS share sheet; falls back to the old download+alert only when Web Share isn't available.
+Doctor Analytics, Clinic Analytics, and Staff Analytics were the three PDF exports never wired up
+to this pattern. Fixed all three to use `sharePdf()`; extended `SharePdfInfo`'s
+`channel`/`email`/`waNumber` to be optional for generic "just give me the file" downloads (no
+specific recipient) — the fallback now shows a plain "downloaded" alert instead of requiring a
+channel. `generateClinicAnalyticsPDF` now returns the `jsPDF` document instead of calling `.save()`
+internally, matching `generateFinancialStatementPDF`/`generateStaffSalaryPDF`, which already did.
+No native/Android change needed — since the APK just loads the live URL, this fixes itself on the
+next deploy.
+
+## 2026-08-01 — Clinic Revenue Statement print modal: mobile overlap + 9 stale baseline TS errors
+- **Mobile fix:** the print modal's top control bar (title + Export/Download/Print/Close buttons)
+  was a single non-wrapping flex row, and the summary block was a hard `grid-cols-4` — both
+  collided/overlapped on phone-width screens. Stacks the control bar below `sm:`, moves Close inline
+  with the title on mobile, and drops the summary grid to 2 columns below `sm:`. Verified at 360px
+  against live data.
+- **Fixed 9 pre-existing TypeScript errors** (confirmed via `git stash` to predate this session,
+  left alone under scope discipline until asked to fix them) — two were real, user-visible bugs, not
+  just typos: `generateClinicAnalyticsPDF`'s signature referenced `MonthlyRevenueRow`/
+  `TopRevenueSourceRow`, types that were never exported (real names `MonthlyRevenuePoint`/
+  `TopRevenueSource`); and `ClinicAnalyticsReportPrintModal.tsx` read `doctor?.clinic_name`/
+  `doctor?.address`, neither of which exist on `DoctorProfileData` (real fields `workplace`/
+  `clinic_address`) — so the printed clinic report's header **always** silently showed the generic
+  "ClinicMx Dental Care" placeholder with no address, regardless of the real clinic profile. Also
+  removed a dead `logoSrc` line (`cleanLogoSource(doctor?.logo_url)` — wrong field, unawaited
+  Promise, never rendered anywhere) and an unused `patients` parameter on
+  `generateClinicAnalyticsPDF`. `npx tsc --noEmit` now reports zero errors for the first time this
+  project has been worked on by Claude Code.
+
+## 2026-08-01 — Financial Analysis rebuilt: real-payment payout ledger, Staff Analytics, per-account permissions
+Built on top of the security-review fixes below (migrations 043–044). Sidebar's admin "Doctor
+Analytics" link became **"Financial Analysis"** (`/financial-analysis`), a tabbed page for **Doctor
+Analytics** + new **Staff Analytics**; doctors keep their own separate, unchanged, self-locked
+"Doctor Analytics" entry.
+- **Doctor payout statement rebuilt as a two-part ledger** (`src/lib/doctorAnalytics.ts`), replacing
+  per-treatment allocation (`Total Paid` = treatment cost × the invoice's payment ratio — produced
+  fractional "paid" amounts like BDT 3,333.33 against a still-incomplete BDT 4,000 crown, the root
+  of "Madhobi Rani's crown works aren't completed, still show paid?"). Now: a **Work Done** log
+  (procedures performed, no money columns) and a separate **Collections** log driven entirely by
+  real `payments` rows — every `Total Paid`/`Dr. Income` figure is now a real amount someone
+  actually paid, never a derived slice. Attribution: `payment → invoice → linked treatments →
+  doctor_name`; an invoice with treatments from **two different doctors** is flagged into a new
+  **Needs Attention** panel for manual resolution rather than split or guessed (explicit user
+  decision). TxC is pro-rated per payment against the invoice's total lab cost. Also checks for
+  standing reconciliation gaps (`invoice.paid_amount` with no matching `payments` rows — a legacy
+  fallback in `recordInvoicePayment` can update the invoice total without writing a ledger row);
+  verified 0 gaps across 23 invoices in production at the time of this change. `Work Done` buckets
+  by `completed_at` (see migration 047 below), falling back to `created_at` for not-yet-completed
+  treatments.
+- **Bulk-assign default doctor** (Needs Attention panel, admin-only): verifying against real
+  production data found virtually every treatment had no `doctor_name` set at all — every real
+  payment was landing in Needs Attention, Total Collected/Dr. Income showing BDT 0.00 across the
+  board. Admin picks one doctor from a dropdown, applied to every treatment currently missing
+  `doctor_name` — only ever fills a blank, never overwrites an existing (even wrong) assignment,
+  never touches mixed-doctor or no-linked-treatment flags. Each row snapshotted via `logEdit` first
+  (same pattern as `PatientProfile.tsx`'s `updateGroupTreatmentsStatus`), so any individual
+  assignment stays revertible afterward even though the bulk action itself has no single undo.
+- **Doctor field locked to self for the `doctor` role** in New Treatment Plan / Edit Treatment
+  (previously an open dropdown, letting a doctor reassign a treatment to a colleague); Doctor Share
+  % hidden from non-admins in both modals (admin-set, feeds month-end payout only); relabeled
+  "Procedure done by Dr." → "Attending Doctor".
+- **`treatments.completed_at`** (migration 047): a `BEFORE INSERT OR UPDATE` trigger stamps it the
+  moment `status` transitions into `'Completed'` (any write path — direct edit, invoice flow,
+  future ones — one trigger instead of scattering the logic across app code) and clears it back to
+  `NULL` if status moves away from Completed. One-time backfill from `created_at` for treatments
+  already Completed (no `updated_at` column exists to backfill from instead). Statement bucketing
+  switched from creation month to completion month — a July-created crown finished and paid in
+  August now shows in August's statement, not July's.
+- **New Staff Analytics tab** (`src/components/analytics/StaffAnalyticsSection.tsx`,
+  `src/lib/staff.ts`, migration 045 — new `staff` + `staff_salary_payments` tables): roster of
+  salaried staff (name, phone, designation, monthly salary — including any fixed-salary doctors),
+  plus a monthly salary statement generator (month/date selection, generate rows, record
+  bonus/deduction/advance/payment per staff member, export CSV/PDF). `staff_salary_payments` snapshots
+  `base_salary` at row-creation time so a later raise doesn't silently rewrite an already-generated
+  month's statement.
+- **Three new per-account permissions** (Admin → Users, `app_users.permissions` JSONB):
+  `can_set_doctor_share_pct`, `can_access_doctor_analytics`, `can_access_staff_analytics` —
+  independently grantable so e.g. an operator can be given Staff Analytics without also getting
+  Doctor Analytics. `can_access_staff_analytics` is backed by real RLS (migration 046 — `staff`/
+  `staff_salary_payments` policies use `app_can('can_access_staff_analytics')`, same helper
+  pattern as migration 039); the other two are UI-layer workflow controls only (the underlying
+  `treatments` RLS already permits any active app user to write those columns — unchanged by this
+  work, noted rather than tightened).
+
+## 2026-08-01 — Security review of Anti-Gravity changes to DentOral bridge + Doctor Analytics (migrations 043–044)
+While Claude Code was rate-limited (2026-07-29 to 07-31), the user built the DentOral booking
+bridge, an earlier single-list version of Doctor Analytics, and Clinic Analytics reporting in
+Anti-Gravity — reviewed for vulnerabilities once Claude Code was back. Branch
+`fix/antigravity-security-review`, merged same day.
+- **PostgREST filter injection** in `DentoralBookingBridge.tsx` (`src/components/`) — the public
+  booking form's name field was interpolated raw into a `.or()` filter string, reachable by anyone
+  once the bridge's own admin-password gate had separately been disabled by user decision (accepted
+  risk, not fixed here). Replaced with parameterised `.ilike()` queries + metacharacter stripping.
+- **Doctor Analytics "My Appointed Work" lock failed open**: an unresolved doctor identity
+  (`doctorProfile` still loading, or no `full_name` on the account) fell through to `'ALL'`,
+  showing a doctor every other doctor's payout and the clinic's total income while the UI still
+  claimed it was locked to their own work. Now fails closed with an explicit
+  "Could not determine which doctor you are" panel and zero data until identity resolves.
+- **CSV formula injection** in both new exporters — added a shared `csvCell()` escape helper
+  (`src/lib/utils.ts`) so a leading `=`/`+`/`-`/`@` in any patient name, note, or treatment type
+  can't execute as a formula when the CSV is opened in Excel/Sheets.
+- **Payout math**: `rf_pct` (referral fee) was read but no migration ever created the column, so it
+  silently always computed to zero — removed rather than shown as a permanently-zero line (later
+  fully superseded by the two-part ledger above). Default `doctor_share_pct` disagreed four ways
+  (DB default 30, every write path saving 50, list display showing 30, payout math using 50) —
+  first unified to 50%, then reverted to 30% same day per user decision (migration 044) after
+  landing 043 with 50%; both migrations are in the file history rather than 043 being edited after
+  the fact, since it had already run live.
+- **Doctor attribution defaulted to whoever was logged in with no role check** — an operator
+  creating a treatment plan was silently attributed as a 50%-share doctor for procedures they never
+  performed. Gated the default (and the "Procedure done by Dr." dropdown) to `doctor`/`admin` roles
+  only; migration 043 adds an `app_users_select_roster` RLS policy so non-admins can actually see
+  the doctor roster (previously admin-only per migration 039's `app_users` policy, silently
+  starving the dropdown for everyone else).
+- Synced migration 042's `treatments.doctor_name`/`doctor_share_pct` (added by Anti-Gravity,
+  never mirrored) into `src/lib/database.types.ts` and `entityTables.ts` — the gap meant an audit
+  restore of a treatment was silently dropping both columns.
+- Cleared a stale `dentoral_bridge_pw` localStorage value left behind from the now-removed
+  password-prompt flow.
+- **Accepted risk, not fixed (explicit user decision):** the DentOral booking API
+  (`dentoralbd.pages.dev/api/appointments`) has no authentication — confirmed live, a plain `GET`
+  returns patient name/phone/age/gender with no credential. Left as-is at the user's direction.
+
 ## 2026-07-25 — Security hardening Phase 1: authenticate the backup endpoints
 Following `SECURITY-HARDENING.md`. While researching, found that `GET /api/list-backups` was
 reachable with no credentials and returned real backup filenames/Drive file IDs from production —

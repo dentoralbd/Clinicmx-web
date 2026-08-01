@@ -1,11 +1,11 @@
 # DATABASE.md — Database Schema & Migration Guidelines
 
 **Database:** Supabase PostgreSQL, project `https://mgzmxnkrbdawymdviclv.supabase.co` — **live production data**. Storage bucket: `patient-files` (public; created manually in the dashboard).
-**Schema source of truth:** `supabase/migrations/001–030` (applied by hand in the Supabase SQL editor — there is no migration runner or CLI pipeline). TypeScript mirror: `src/lib/database.types.ts` (hand-maintained).
+**Schema source of truth:** `supabase/migrations/001–047` (applied by hand in the Supabase SQL editor — there is no migration runner or CLI pipeline). TypeScript mirror: `src/lib/database.types.ts` (hand-maintained).
 
 ---
 
-## 1. Tables (25)
+## 1. Tables (27)
 
 ### Core clinical
 
@@ -14,11 +14,18 @@
 | `patients` | `patient_code` (unique; `PT-1xxxxx` for full patients, `CO-4xxxxx` for consultation-only — assigned by the `assign_patient_code_trigger` BEFORE INSERT trigger, 034, based on `NEW.patient_type`, replacing the old plain column default. 035 moved the CO- start to 400001; 036 switched `generate_consultation_code()` from a fixed sequence to `MAX(existing CO- number)+1`, so converting/deleting the highest-numbered consultation frees its number for reuse — see FEATURES.md §3b), name, phone (normalized on save), email, `date_of_birth`, gender, `weight` (kg, for dosing), address, `medical_history`, notes, `patient_type` (033 — `'full'`\|`'consultation'`, default `'full'`; consultation-only walk-ins are hidden from full-patient screens until converted; converting one via the app assigns a fresh `PT-1xxxxx` code in the same update). `updated_at` trigger. |
 | `appointments` | `patient_id` FK, `date_time`, `duration`, `type`, `status`, notes, `reminder_sent_at` (029 — nullable timestamp, set when staff taps the one-tap WhatsApp reminder in the Appointments page queue; cleared on reschedule). |
 | `patient_visits` | Per-visit clinical summary: `visit_date`, chief_complaint, examination_findings, diagnosis, treatment_plan, notes, `invoice_id` FK (023 — links a visit to the invoice it created **or paid down**). |
-| `treatments` | `patient_id`, `appointment_id`, `prescription_id` + `prescription_entry_id` (links to the prescription entry that planned it), `tooth_number`, `treatment_type`, description, `status`, `cost`, `original_cost` (026 — pre-discount cost), `is_invoiced` + `invoice_id` (010), `treatment_plan_group_id` (019 — groups multi-tooth/multi-item plans for billing). |
+| `treatments` | `patient_id`, `appointment_id`, `prescription_id` + `prescription_entry_id` (links to the prescription entry that planned it), `tooth_number`, `treatment_type`, description, `status`, `cost`, `original_cost` (026 — pre-discount cost), `is_invoiced` + `invoice_id` (010), `treatment_plan_group_id` (019 — groups multi-tooth/multi-item plans for billing), `doctor_name` + `doctor_share_pct` (042 — free-text attributed doctor + their revenue-share %, default **30** as of migration 044; UI only lets `doctor`/`admin` roles set the default, and only `admin` can edit the % — see FEATURES.md §15b), `completed_at` (047 — `TIMESTAMPTZ`, auto-stamped by a `BEFORE INSERT OR UPDATE` trigger the moment `status` transitions into `'Completed'`, cleared back to `NULL` if it moves away; Doctor Analytics buckets payout statements by this, not `created_at`). |
 | `prescriptions` | `medications` JSONB, `investigations` JSONB, legacy text fields (`chief_complaint`, `on_examination`, `diagnosis`, `treatment_plan`) **plus** multi-entry JSONB versions (`*_entries`, 014 — entries with per-entry tooth tags; the app writes both), notes, `weight_at_prescription`, `prescribed_date`, `appointment_id`. |
 | `dental_records` | Per-tooth chart records (tooth number, condition, notes). `updated_at` trigger. |
 | `patient_files` | Metadata for Storage uploads: `patient_id`, category (profile photo / clinical image / x-ray), path, name, type. Binary lives in the `patient-files` bucket. |
 | `lab_work` | Lab tab (030): labwork sent to a dental lab (crowns, bridges, dentures, ortho appliances…). `lab_name`, `work_type` (checked enum), `teeth` JSONB (FDI `number[]`), `unit_count`, `shade`, `material`, `pricing_mode` (`per_unit`\|`flat`) + `unit_price`/`flat_price`, `status` (Pending→Sent→Received→Delivered, or Cancelled), `date_sent`/`expected_date`/`date_received`, `is_paid` (boolean — paid **to the lab**, not a patient invoice; no partial-payment tracking), `source_plan_group_id`/`source_treatment_id` (provenance for rows auto-created when a lab-related treatment is saved — see `src/lib/labWork.ts`). `UNIQUE(source_plan_group_id, work_type)` makes the auto-create idempotent. `updated_at` trigger. |
+
+### Staff & payroll (045)
+
+| Table | Purpose / key columns |
+|---|---|
+| `staff` | Salaried staff roster (Staff Analytics tab, incl. any fixed-salary doctors): name, phone, designation, `monthly_salary`, `is_active`. |
+| `staff_salary_payments` | One row per (staff, `period_month` `'YYYY-MM'`), `UNIQUE(staff_id, period_month)` so "generate this month" is an idempotent upsert. `base_salary` is a **snapshot** of `staff.monthly_salary` at row-creation time — a later raise doesn't rewrite an already-generated month's statement. Plus `bonus`, `deduction`, `advance`, `amount_paid`, `payment_date`, notes. |
 
 ### Templates & reference
 
@@ -50,7 +57,7 @@
 
 | Table | Purpose / key columns |
 |---|---|
-| `app_users` | Staff accounts (doctor/operator): `identifier` (email or normalized phone), `password_hash`+`password_salt` (PBKDF2-SHA256, 100k iters, hashed client-side), `role`, `permissions` JSONB (overrides role defaults; incl. `can_any_ip` since 027), `is_active`, `last_login_at`. Admin is NOT here — admin is the client-side PIN. |
+| `app_users` | Staff accounts (doctor/operator): `identifier` (email or normalized phone), `password_hash`+`password_salt` (PBKDF2-SHA256, 100k iters, hashed client-side), `role`, `permissions` JSONB (overrides role defaults; incl. `can_any_ip` since 027, and `can_set_doctor_share_pct`/`can_access_doctor_analytics`/`can_access_staff_analytics` since 2026-08-01 — see FEATURES.md §1), `is_active`, `last_login_at`. Admin is NOT here — admin is the client-side PIN. |
 | `authorized_ips` | Per-user login network gate (027): `user_id` FK→`app_users` (cascade), `ip`, `status` (pending/approved/denied), `requested_by`, `requested_at`, `decided_at`; UNIQUE(user_id, ip). App code caps approved rows at 5 per user on approval. |
 | `doctor_profiles` | Clinic/doctor letterhead data (name, degrees, regno, chambers…). Singleton usage; RLS opened by 025 so it syncs across devices (was per-user in 011). |
 | `activity_log` | Fire-and-forget usage log: actor, action, entity_type/id, details JSONB, `occurred_at`. |
@@ -63,11 +70,41 @@
 
 ## 3. Row Level Security — current state
 
-RLS is **enabled with allow-all policies** (`FOR ALL USING (true)`) on every table — i.e. decorative. The anon key in the client bundle can read/write everything; the app's login/permissions are client-side only. This is a known, accepted gap: **roadmap M3** replaces it with Supabase Auth + real policies (authenticated-only access, deletes gated on role/`can_delete`, anon revoked on tables, storage, and RPCs). Exception: `doctor_profiles` briefly had a real per-user policy (011) which broke cross-device sync and was opened up (025).
+**Stale note removed 2026-08-01** — this section previously said RLS was decorative (`FOR ALL USING (true)` everywhere); that was true through migration 038 but has not been true since **039 (2026-07-26, roadmap M3 landed)**. Current state:
+
+- Every table requires a real Supabase Auth session (`authenticated` role) — the anon key in the
+  client bundle has **zero** grants on any table/sequence/function as of 039 (`REVOKE ALL ... FROM
+  anon`), confirmed live: `permission denied for table X` for every anon request.
+- Login (Admin PIN, or Doctor/Operator email+password) mints a real Supabase Auth session behind
+  the scenes — see `src/pages/Login.tsx` and `functions/api/admin-otp.ts`.
+- Shared SQL helper functions (`038_auth_identity.sql`), all `SECURITY DEFINER`, `STABLE`,
+  `search_path` pinned:
+  - `is_active_app_user()` — the base gate on the 20 "ordinary data" tables (patients, treatments,
+    invoices, etc.): any active `app_users` row, any role, may SELECT/INSERT/UPDATE.
+  - `is_app_admin()` — admin-only gate, used for DELETE on the ordinary-data tables and for the
+    account-management tables (`app_users`, `doctor_profiles` delete, etc.).
+  - `app_can(flag text)` — per-account permission gate: `role = 'admin' OR
+    (permissions ->> flag)::boolean`. Admin always passes; anyone else needs that key `true` in
+    their `app_users.permissions` JSONB. Used for `can_edit_clinic_profile`, `can_delete`,
+    `can_revert`, and (since 046) `can_access_staff_analytics` on `staff`/`staff_salary_payments`.
+- `app_users` itself has **column-level** grants (039 §4) — `SELECT` excludes `password_hash`/
+  `password_salt` entirely; a plain `select('*')` fails with `permission denied for column
+  password_hash` (must name columns explicitly, see `src/lib/appUsers.ts`). Non-admins can only read
+  their own row by default; 043 added `app_users_select_roster` (an *additional* OR'd policy) so
+  any active user can see the names/roles of active doctors/admins — needed for the doctor
+  attribution dropdown, doesn't expose anything the column grant already blocks.
+- **A new table gets zero grants by default** — 039 only revoked *future* anon grants, it never
+  added a matching default grant for `authenticated`. Every new table needs an explicit
+  `GRANT SELECT, INSERT, UPDATE, DELETE ON <table> TO authenticated;` in the same migration that
+  creates it (both `staff` and `staff_salary_payments`, 045, do this) or PostgREST reports
+  `Could not find the table 'public.X' in the schema cache` — looks like a stale-cache bug, isn't
+  one.
+- `doctor_profiles` is deliberately **not** scoped per-user (011's attempt broke cross-device sync,
+  reverted 025) — every active user can read/write the one clinic profile row.
 
 ## 4. Migration guidelines
 
-1. **Numbering:** next is `037_short_name.sql` (031 added `backup_settings`, 032 added `app_notifications`, 033 added `patients.patient_type`, 034 added the `CO-` consultation patient-code series + `assign_patient_code_trigger`, 035 revised the CO- series start to 400001, 036 switched `generate_consultation_code()` to `MAX(existing)+1` so freed CO- numbers get reused). Watch out — history already contains two duplicate numbers (`003_add_patient_code` / `003_patient_files`, and `014_add_patient_weight` / `014_prescription_multi_entry_fields`). Don't add more; check the folder before numbering.
+1. **Numbering:** next is `048_short_name.sql`. Recent: 037 fixed the `patient_code_seq` pollution incident; 038 added the Supabase-Auth helper functions (`is_active_app_user()`/`is_app_admin()`/`app_can()`); **039 is the RLS lockdown** — see §3 above, the load-bearing one; 040/041 unaccounted for in this doc (check the folder if it matters); 042 added `treatments.doctor_name`/`doctor_share_pct`; 043 fixed migration-042 fallout (RLS filter injection response, `app_users_select_roster` policy) + unified default share to 50%; 044 revised that default to 30% same day per user decision; 045 added `staff`/`staff_salary_payments`; 046 added `app_can('can_access_staff_analytics')` RLS to those two tables; 047 added `treatments.completed_at` + its auto-stamp trigger. Watch out — history already contains two duplicate numbers (`003_add_patient_code` / `003_patient_files`, and `014_add_patient_weight` / `014_prescription_multi_entry_fields`). Don't add more; check the folder before numbering.
 2. **Idempotent style:** use `IF NOT EXISTS` / guarded `DO $$` blocks (the established pattern) so re-running in the SQL editor is safe.
 3. **Application is manual:** paste into the Supabase SQL editor. There is no `supabase db push`, no migration state table — the file numbering is the only record. Note in the PR/commit when a migration has actually been applied to prod.
 4. **Live-data protocol (mandatory):** staging-first (restore a nightly backup into a scratch Supabase project via `scripts/backup/restore.mjs`), explicit user sign-off, fresh manual backup immediately before applying, written rollback statement alongside the migration.
@@ -77,7 +114,7 @@ RLS is **enabled with allow-all policies** (`FOR ALL USING (true)`) on every tab
 
 ## 5. Backups & restore
 
-- Nightly: all 25 tables → zipped JSON + `patient-files` mirror → Google Drive (3:00 AM BDT; workflow live only on `gsbanikudc-byte/Clinicmx-web`). Daily/weekly/monthly tiers, retention, verification, anomaly detection, encryption (2026-07-18).
+- Nightly: all 27 tables → zipped JSON + `patient-files` mirror → Google Drive (3:00 AM BDT; workflow live only on `gsbanikudc-byte/Clinicmx-web`, and per the workspace-level CLAUDE.md this scheduled run is retired 2026-07-20 in favor of the in-app mechanism below — the script itself still works if run by hand). Daily/weekly/monthly tiers, retention, verification, anomaly detection, encryption (2026-07-18). **2026-08-01: `staff`/`staff_salary_payments` (migration 045, shipped same day) had been left out of both `scripts/backup/lib.mjs`'s `TABLES_IN_DEPENDENCY_ORDER` and the in-app `BACKUP_TABLES` (`src/lib/deviceBackup.ts`) — found and fixed while writing this doc entry, per rule 6 above. Restores normally (no `app_users`-style skip; it's plain business data, not credentials).**
 - In-app: `/backup` page — device JSON download/restore (dry-run first) + one-tap Drive upload.
 - Restore tooling: `scripts/backup/restore.mjs`, dry-run by default, `--confirm` to write.
 - **Incident history:** a real invoice was accidentally deleted 2026-07-02 (pre-backup era) — the reason this system exists. Assume no second chances: back up before risky operations.

@@ -1,6 +1,6 @@
 # FEATURES.md — Detailed Functional Specifications
 
-What each module does today (2026-07-18), as behavior — implementation notes live in [CLINICMX.md](CLINICMX.md), schema in [DATABASE.md](DATABASE.md). When modifying a module, the described behavior is the contract: don't change adjacent behavior without an explicit request.
+What each module does today (2026-08-01), as behavior — implementation notes live in [CLINICMX.md](CLINICMX.md), schema in [DATABASE.md](DATABASE.md). When modifying a module, the described behavior is the contract: don't change adjacent behavior without an explicit request.
 
 ---
 
@@ -8,6 +8,7 @@ What each module does today (2026-07-18), as behavior — implementation notes l
 
 - Role selector: **Admin** (PIN `6040`, client-side), **Doctor** / **Operator** (accounts in `app_users`, email-or-phone identifier + password).
 - Roles: admin = everything incl. delete/revert/clinic-profile/users; doctor = default no-delete, can revert; operator = default no-delete/no-revert. Per-user permission overrides (page toggles + `can_delete`/`can_revert`/`can_edit_clinic_profile`) set by admin in Users tab. Unknown/legacy permission keys fail open.
+- **Three more per-account permissions (2026-08-01), same Users-tab mechanism:** `can_set_doctor_share_pct` (see the Doctor Share % field, §15b), `can_access_doctor_analytics`, `can_access_staff_analytics` (both gate tabs on the Financial Analysis page, §15c). Independently grantable — e.g. an operator can get Staff Analytics without also getting Doctor Analytics. `can_access_staff_analytics` is the one backed by real RLS (DATABASE.md §3); the other two only control what the UI shows/allows — the underlying `treatments` write permission was already broad before these existed and is unchanged by them.
 - Page access enforced per-route (`RequirePage`); wrong login shakes; session persists in localStorage until logout.
 - **Network access gate (2026-07-18):** doctor/operator logins (after the password verifies) check the device's public IP (ipify, 3s timeout) against that user's admin-approved list in `authorized_ips` — max 5 per user, oldest replaced on approval. Unknown IP → pending request + "Waiting for admin approval" screen (polls every 10s, auto-enters on approval); denied IP → refused. IP lookup failure → login **blocked** (fail-closed) unless the user has the **"Entry from any IP"** permission (`can_any_ip`, new Users-tab checkbox), which skips the gate entirely; missing key on old accounts = gated (fails closed, unlike page keys). Admin logins are never gated. Managed in Admin zone → **Network Access** tab; approve/deny/remove actions land in the Activity Log (`ip_access`).
 - **Admin 2FA (2026-07-19):** after the PIN, an unknown device must enter a 6-digit code sent to the admin's **Telegram** (Cloudflare Pages Function `/api/admin-otp`; channel pluggable — Gmail planned). Behavior contract: code valid **5 min**, max **5 wrong codes** per code; successful verification stores a signed trusted-device token so that browser skips the OTP for **7 days**; ≥10 failures (PIN/code/recovery) per IP per hour → endpoint locks out for an hour; max 5 Telegram sends per IP per hour. If Telegram delivery fails, the card switches to the **recovery code** path (long passphrase, `ADMIN_RECOVERY_CODE` secret). While the Cloudflare secrets/KV are **not configured** the endpoint answers `unconfigured` and admin login stays PIN-only (deploy-safe); same PIN-only fallback in local dev where functions don't run. The hardcoded PIN constant remains in the bundle **only** as the secure-storage key-derivation input (all roles need it); the server holds its own `ADMIN_PIN` copy for the actual gate.
@@ -49,6 +50,7 @@ Live stats (patients, today's appointments, revenue/dues) + today's appointment 
 - Statuses (scheduled → completed/cancelled…); **Reschedule** action with its own modal; **completing an appointment prompts to add a visit** for that patient (2026-07-17).
 - Appointment links propagate: prescriptions/treatments/invoices created from a visit carry `appointment_id`.
 - **One-tap WhatsApp reminders (2026-07-20):** a collapsible "Reminders due today" queue at the top of the page lists Scheduled/Confirmed appointments happening today within the next 6 hours that haven't been reminded yet (`reminder_sent_at IS NULL`). One tap opens `wa.me` with a prefilled message and marks the appointment reminded (with an Undo until the next refresh); patients with no phone show a disabled row instead of disappearing. Rescheduling clears `reminder_sent_at` so the reminder becomes due again in the new window. Deliberately manual-tap, not the official WhatsApp Cloud API — that requires a per-message-billed Meta Business account and a dedicated phone number removed from the WhatsApp phone app; n8n was also considered and rejected since it only orchestrates and still needs the same Cloud API plus separate paid hosting.
+- **DentOral booking bridge (`DentoralBookingBridge.tsx`, built outside Claude Code — Anti-Gravity, late July):** pulls pending online booking requests from the separate `dentoralbd.pages.dev` marketing site into a card on this page; matches against existing patients by phone/name (parameterised query, security-reviewed 2026-08-01 — was briefly a PostgREST filter-injection risk from the public booking form's free-text name field), lets staff confirm and schedule directly into `appointments`. **The DentOral-side API has no authentication** (`X-Admin-Password` check removed by user decision, confirmed live) — a plain `GET` on `dentoralbd.pages.dev/api/appointments` returns patient name/phone/age/gender to anyone. Accepted risk, not ClinicMx's to fix.
 
 ## 5. Treatments (`/treatments` + profile tab)
 
@@ -125,6 +127,65 @@ Charts (recharts) over live data with a **6M / 12M / All** range selector (clien
 Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar link renders only for admin.
 
 **Consultation-only patients excluded from new-patient counts, but not from revenue attribution (2026-07-22):** `Analytics.tsx` fetches all patients (unfiltered) so revenue features that need a name — Top Revenue Sources, the Daily Earnings calendar's per-patient breakdown — can still resolve a consultation-only patient's name instead of showing "Unknown Patient" (a bug in the initial cut: the fetch was filtered at the query level, breaking name lookups for anyone who'd paid a consultation fee but not converted). Only the "New Patients" stat tile and the new-registrations/returning-vs-new charts use a separately filtered `fullPatients` list (`patient_type !== 'consultation'`) so walk-ins who haven't converted don't inflate those. Consultation-fee invoices/payments are never filtered, so the fee always counts in Revenue Collected/Outstanding — see §3b.
+
+## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01)
+
+Sidebar entry replaces admin's old direct "Doctor Analytics" link, at the same position (below
+Analytics). Two tabs, each independently gated: **Doctor Analytics** — admin, or anyone granted
+`can_access_doctor_analytics`; **Staff Analytics** — admin, or anyone granted
+`can_access_staff_analytics`. A user with only one permission never sees so much as a dead button
+for the other. Doctors keep their own separate, unrelated sidebar entry — "Doctor Analytics",
+self-locked to their own work — untouched by any of this.
+
+### 15b-i. Doctor Analytics tab — two-part payout ledger
+
+Replaced an earlier version that computed each treatment's `Total Paid` as its cost × the parent
+invoice's payment ratio — produced fractional, never-actually-paid amounts (e.g. BDT 3,333.33
+against a still-incomplete BDT 4,000 crown). Now two independent logs instead of one table:
+
+- **Work Done** — one row per treatment (Date, Patient, Ref By, Source of Income, Amount, Note), no
+  money columns. Answers "what was performed", nothing else. Bucketed by `completed_at` (falling
+  back to `created_at` for treatments not yet Completed — see DATABASE.md).
+- **Collections** — one row per real `payments` row (Date, Patient, Ref By, Total Paid, TxC, Net A,
+  %, Clinic Income, Dr. Income). `Total Paid` is always a real payment amount, never a derived
+  slice. Attribution: `payment → invoice → its linked treatments → doctor_name`. Exactly one
+  distinct doctor across an invoice's treatments → the whole payment is theirs; TxC is that
+  payment's pro-rata share of the invoice's total lab cost; `%` is the cost-weighted average
+  `doctor_share_pct` across the invoice's treatments (default **30%**, migration 044).
+- **Needs Attention** panel (only shown in the unscoped "All Doctors" admin view — never inside a
+  specific/self-locked doctor's view, since these payments don't have one confirmed doctor):
+  payments on invoices with **two or more distinct doctors** across their treatments, payments on
+  invoices with **no linked treatments**, and standing **reconciliation gaps** (`invoice.paid_amount`
+  with no matching `payments` row on file — a legacy fallback in `recordInvoicePayment` can update
+  the invoice total without writing a ledger row). Never silently folded into any doctor's total.
+- **Bulk-assign default doctor** (admin only, inside Needs Attention): picks one doctor, applies to
+  every treatment currently missing `doctor_name` in one action. Only fills blanks — never
+  overwrites an existing assignment (even a wrong one), never touches the mixed-doctor or
+  no-linked-treatment flags above (those need per-invoice judgment). Each affected row is
+  individually revertible afterward via the normal edit-history/Admin restore flow, though the bulk
+  action itself has no single undo.
+- **Doctor Share % (admin-only field)** and the **doctor picker** in New Treatment Plan / Edit
+  Treatment: a logged-in `doctor` role sees the doctor field locked to themselves (can't reassign a
+  treatment to a colleague); `operator` sees an open picker with **no default** (never silently
+  attributed to the operator's own name — an earlier bug); `admin` sees the full picker. Doctor
+  Share % itself is hidden from non-admins entirely (`can_set_doctor_share_pct` permission
+  overrides this) — it's an admin-set figure that only feeds the month-end payout calculation above,
+  not something a doctor/operator needs to see per treatment. Field labeled "Attending Doctor".
+- Export: CSV and PDF, both showing Work Done / Collections / Needs Attention as clearly separated
+  sections with their own subtotals — never merged into one table.
+
+### 15b-ii. Staff Analytics tab (new 2026-08-01, migration 045)
+
+- **Roster:** salaried staff (name, phone, designation, monthly salary, active/inactive) — includes
+  any fixed-salary doctors, not just non-clinical staff. Admin CRUD; delete admin-only (matches the
+  `staff_delete`/`staff_salary_payments_delete` RLS policy, which stays admin-only even though
+  select/insert/update are `can_access_staff_analytics`-gated, same convention as
+  `doctor_profiles_delete`).
+- **Monthly salary statement:** pick a month, "Generate" seeds one row per active staff member
+  (idempotent — re-running never overwrites figures already entered, `UNIQUE(staff_id,
+  period_month)`), `base_salary` snapshotted from the roster's current `monthly_salary` at that
+  moment so a later raise doesn't rewrite an already-generated month. Record bonus/deduction/
+  advance/amount-paid per staff member per month; export CSV/PDF.
 
 ## 16. Notifications
 
