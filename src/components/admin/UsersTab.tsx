@@ -27,11 +27,25 @@ const PAGE_OPTIONS: Array<{ key: AppPageKey; label: string }> = [
   { key: 'qr-search', label: 'QR Search' },
 ]
 
-const ACTION_OPTIONS: Array<{ key: 'can_delete' | 'can_revert' | 'can_edit_clinic_profile' | 'can_any_ip'; label: string; hint: string }> = [
+const ACTION_OPTIONS: Array<{
+  key:
+    | 'can_delete'
+    | 'can_revert'
+    | 'can_edit_clinic_profile'
+    | 'can_any_ip'
+    | 'can_set_doctor_share_pct'
+    | 'can_access_staff_analytics'
+    | 'can_access_doctor_analytics'
+  label: string
+  hint: string
+}> = [
   { key: 'can_delete', label: 'Delete data', hint: 'Delete records and restore deletions' },
   { key: 'can_revert', label: 'Revert edits', hint: 'Undo changes from Edit History' },
   { key: 'can_edit_clinic_profile', label: 'Edit clinic details', hint: 'Logo, doctor and clinic letterhead info' },
   { key: 'can_any_ip', label: 'Entry from any IP', hint: 'Skip network approval; login allowed from anywhere' },
+  { key: 'can_set_doctor_share_pct', label: 'Set Doctor Share %', hint: 'Enter/edit the doctor payout percentage on treatments' },
+  { key: 'can_access_staff_analytics', label: 'Staff Analytics', hint: 'View and manage the staff roster and salary statements' },
+  { key: 'can_access_doctor_analytics', label: 'Doctor Analytics', hint: 'View doctor payout statements in Financial Analysis' },
 ]
 
 interface UserFormState {

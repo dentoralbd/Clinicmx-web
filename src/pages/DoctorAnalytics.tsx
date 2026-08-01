@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { getAppRole } from '@/lib/appSession'
+import { getAppRole, canAccessDoctorAnalytics } from '@/lib/appSession'
 import { RefreshCw, UserCheck } from 'lucide-react'
 import { DoctorAnalyticsSection } from '@/components/analytics/DoctorAnalyticsSection'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
@@ -38,7 +38,7 @@ export function DoctorAnalytics() {
 
   useEffect(() => {
     const role = getAppRole()
-    if (role === 'admin' || role === 'doctor') {
+    if (role === 'admin' || role === 'doctor' || canAccessDoctorAnalytics()) {
       loadData()
       loadDoctorProfile().then(setDoctorProfile, () => {})
     }
@@ -73,7 +73,7 @@ export function DoctorAnalytics() {
   }
 
   const role = getAppRole()
-  if (role !== 'admin' && role !== 'doctor') {
+  if (role !== 'admin' && role !== 'doctor' && !canAccessDoctorAnalytics()) {
     return <Navigate to="/dashboard" replace />
   }
 

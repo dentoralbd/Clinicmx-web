@@ -54,7 +54,7 @@ import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromD
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { translateDrugDefaults, translateDosage, retranslateMedication, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
 import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
-import { canDelete, getAppUser, getAppRole } from '@/lib/appSession'
+import { canDelete, getAppUser, getAppRole, canSetDoctorSharePct } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { logActivity } from '@/lib/activityLog'
@@ -5901,7 +5901,7 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
   // whole body of work — it's an admin-set figure, not something a doctor
   // or operator needs to see or touch per treatment. Non-admins keep the
   // value they were given (the default, or whatever admin already set).
-  const canSetSharePct = getAppRole() === 'admin'
+  const canSetSharePct = canSetDoctorSharePct()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -6084,7 +6084,7 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
   // Doctor Share % feeds the month-end payout calculation across a doctor's
   // whole body of work — it's an admin-set figure, not something a doctor
   // or operator needs to see or touch per treatment plan.
-  const canSetSharePct = getAppRole() === 'admin'
+  const canSetSharePct = canSetDoctorSharePct()
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

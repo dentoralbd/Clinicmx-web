@@ -1,20 +1,24 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getAppRole } from '@/lib/appSession'
+import { canAccessDoctorAnalytics, canAccessStaffAnalytics } from '@/lib/appSession'
 import { PieChart, UserCheck, Users } from 'lucide-react'
 import { DoctorAnalytics } from '@/pages/DoctorAnalytics'
 import { StaffAnalyticsSection } from '@/components/analytics/StaffAnalyticsSection'
 
 type FinancialTab = 'doctor' | 'staff'
 
-// Admin-only container. Doctors keep their existing direct "Doctor
-// Analytics" sidebar entry (self-locked to their own work) — this page
-// and its Staff Analytics tab are not part of that flow.
+// Admin sees both tabs by default. Non-admins reach this page only with an
+// explicit per-account permission (Admin -> Users) for one tab, the other,
+// or both — each tab's button/panel is independently gated so a user with
+// just one permission never sees so much as a dead button for the other.
+// Doctors keep their existing direct "Doctor Analytics" sidebar entry
+// (self-locked to their own work) — unrelated to this page.
 export function FinancialAnalysis() {
-  const role = getAppRole()
-  const [tab, setTab] = useState<FinancialTab>('doctor')
+  const canDoctor = canAccessDoctorAnalytics()
+  const canStaff = canAccessStaffAnalytics()
+  const [tab, setTab] = useState<FinancialTab>(canDoctor ? 'doctor' : 'staff')
 
-  if (role !== 'admin') {
+  if (!canDoctor && !canStaff) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -29,34 +33,36 @@ export function FinancialAnalysis() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2 border-b border-gray-200">
-        <button
-          type="button"
-          onClick={() => setTab('doctor')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-            tab === 'doctor'
-              ? 'border-teal-600 text-teal-700'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <UserCheck className="w-4 h-4" /> Doctor Analytics
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('staff')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-            tab === 'staff'
-              ? 'border-teal-600 text-teal-700'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Users className="w-4 h-4" /> Staff Analytics
-        </button>
-      </div>
+      {canDoctor && canStaff && (
+        <div className="flex items-center gap-2 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setTab('doctor')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+              tab === 'doctor'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" /> Doctor Analytics
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('staff')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+              tab === 'staff'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Users className="w-4 h-4" /> Staff Analytics
+          </button>
+        </div>
+      )}
 
-      {tab === 'doctor' && <DoctorAnalytics />}
+      {tab === 'doctor' && canDoctor && <DoctorAnalytics />}
 
-      {tab === 'staff' && <StaffAnalyticsSection />}
+      {tab === 'staff' && canStaff && <StaffAnalyticsSection />}
     </div>
   )
 }

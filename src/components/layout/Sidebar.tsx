@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart } from 'lucide-react'
-import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, type AppPageKey } from '@/lib/appSession'
+import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, canAccessStaffAnalytics, type AppPageKey } from '@/lib/appSession'
 
 interface SidebarProps {
   isOpen: boolean
@@ -79,7 +79,8 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
   const appRole = getAppRole()
   const isAdmin = appRole === 'admin'
   // Non-admins see a Doctor/Operator Zone entry only if some zone tab is available to them
-  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete()
+  const hasFinancialAccess = canAccessDoctorAnalytics() || canAccessStaffAnalytics()
+  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete() || hasFinancialAccess
   const zoneLabel = appRole === 'operator' ? 'Operator Zone' : 'Doctor Zone'
   const visibleGroups = menuGroups
     .map((group) => ({
@@ -312,6 +313,22 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                     </>
                   )}
                 </NavLink>
+                {hasFinancialAccess && (
+                  <NavLink
+                    to="/financial-analysis"
+                    onClick={onNavClick}
+                    className={navLinkClass}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span className={iconChipClass(isActive)}>
+                          <PieChart className="w-5 h-5 text-teal-600" />
+                        </span>
+                        <span>Financial Analysis</span>
+                      </>
+                    )}
+                  </NavLink>
+                )}
               </div>
             ) : null}
           </nav>

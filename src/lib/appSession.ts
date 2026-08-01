@@ -22,6 +22,18 @@ export interface AppPermissions {
   // Skip the per-user IP approval gate at login. Missing key (accounts saved
   // before this feature) must read as false — the gate applies.
   can_any_ip: boolean
+  // Enter/edit the doctor payout percentage on a treatment (normally
+  // admin-only in the New Treatment Plan / Edit Treatment modals).
+  can_set_doctor_share_pct: boolean
+  // View and manage the Staff Analytics tab (roster + salary statements),
+  // normally admin-only. Mirrored by RLS on staff/staff_salary_payments
+  // via app_can('can_access_staff_analytics') — see migration 046.
+  can_access_staff_analytics: boolean
+  // View the Doctor Analytics tab (all-doctors payout statements) in
+  // Financial Analysis, normally admin-only. UI-only gate: the underlying
+  // treatments/invoices/patients rows are already readable by any active
+  // app user per migration 039 — this controls navigation, not data access.
+  can_access_doctor_analytics: boolean
   pages: Record<AppPageKey, boolean>
 }
 
@@ -42,6 +54,9 @@ export const DEFAULT_PERMISSIONS: Record<AppRole, AppPermissions> = {
     can_revert: true,
     can_edit_clinic_profile: true,
     can_any_ip: true,
+    can_set_doctor_share_pct: true,
+    can_access_staff_analytics: true,
+    can_access_doctor_analytics: true,
     pages: { ...ALL_PAGES_ON },
   },
   doctor: {
@@ -49,6 +64,9 @@ export const DEFAULT_PERMISSIONS: Record<AppRole, AppPermissions> = {
     can_revert: true,
     can_edit_clinic_profile: false,
     can_any_ip: false,
+    can_set_doctor_share_pct: false,
+    can_access_staff_analytics: false,
+    can_access_doctor_analytics: false,
     pages: { ...ALL_PAGES_ON },
   },
   operator: {
@@ -56,6 +74,9 @@ export const DEFAULT_PERMISSIONS: Record<AppRole, AppPermissions> = {
     can_revert: false,
     can_edit_clinic_profile: false,
     can_any_ip: false,
+    can_set_doctor_share_pct: false,
+    can_access_staff_analytics: false,
+    can_access_doctor_analytics: false,
     pages: { ...ALL_PAGES_ON },
   },
 }
@@ -133,6 +154,24 @@ export function canEditClinicProfile() {
   const role = getAppRole()
   if (role === 'admin') return true
   return getAppUser()?.permissions?.can_edit_clinic_profile === true
+}
+
+export function canSetDoctorSharePct() {
+  const role = getAppRole()
+  if (role === 'admin') return true
+  return getAppUser()?.permissions?.can_set_doctor_share_pct === true
+}
+
+export function canAccessStaffAnalytics() {
+  const role = getAppRole()
+  if (role === 'admin') return true
+  return getAppUser()?.permissions?.can_access_staff_analytics === true
+}
+
+export function canAccessDoctorAnalytics() {
+  const role = getAppRole()
+  if (role === 'admin') return true
+  return getAppUser()?.permissions?.can_access_doctor_analytics === true
 }
 
 export function hasPageAccess(page: AppPageKey) {
