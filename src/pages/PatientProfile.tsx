@@ -403,6 +403,21 @@ function saveLocalItem(key: string, item: any) {
 }
 // ─────────────────────────────────────────────────────
 
+// Only a doctor's or admin's own name is a plausible default "procedure
+// done by" attribution. An operator entering a treatment plan is not the
+// one performing it — defaulting to their session name silently fabricates
+// payout data (found in the 2026-08-01 review: operators showed up in
+// Doctor Analytics owed a share of collections for procedures they never
+// performed). Deliberately no doctorsList[0] fallback either — guessing
+// whichever doctor happens to sort first is exactly how a wrong payout
+// gets created; leaving the field blank so a human has to choose is safer
+// than a silent wrong guess.
+function resolveDefaultDoctorName(doctorProfile: { full_name?: string } | null): string {
+  const role = getAppRole()
+  const selfName = role === 'doctor' || role === 'admin' ? getAppUser()?.name : undefined
+  return (selfName || doctorProfile?.full_name || '').trim()
+}
+
 export function PatientProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -460,7 +475,16 @@ export function PatientProfile() {
   const [showTreatmentPlanForm, setShowTreatmentPlanForm] = useState(false)
   const [treatmentPlanForm, setTreatmentPlanForm] = useState({
     items: [
-      { treatment_type: '', teeth: [] as number[], description: '', status: 'Planned', cost: '', notes: '' },
+      {
+        treatment_type: '',
+        teeth: [] as number[],
+        description: '',
+        status: 'Planned',
+        cost: '',
+        notes: '',
+        doctor_name: '',
+        doctor_share_pct: '50',
+      },
     ],
     discount_type: 'fixed' as 'fixed' | 'percentage',
     discount_value: '',
@@ -534,26 +558,39 @@ export function PatientProfile() {
   async function fetchDoctorsList(profile: any) {
     const set = new Set<string>()
     if (profile?.full_name) set.add(profile.full_name)
+    // Only a doctor/admin's own name belongs in the attribution list — an
+    // operator is never a valid "procedure done by" choice (see
+    // resolveDefaultDoctorName above for why).
+    const role = getAppRole()
     const appUser = getAppUser()
-    if (appUser?.name) set.add(appUser.name)
+    if ((role === 'doctor' || role === 'admin') && appUser?.name) set.add(appUser.name)
 
-    try {
-      const { data: users } = await supabase.from('app_users').select('full_name, role').in('role', ['doctor', 'admin'])
-      if (users) {
-        users.forEach((u: any) => {
-          if (u.full_name && u.full_name.trim()) set.add(u.full_name.trim())
-        })
-      }
-    } catch {}
+    // Requires migration 043's app_users_select_roster policy to return
+    // more than the caller's own row for non-admins (039_rls_lockdown.sql
+    // otherwise scopes app_users to auth_user_id = auth.uid() OR
+    // is_app_admin()). Until that migration runs, non-admins only see
+    // names already present on existing treatments below — a newly added
+    // doctor with no treatments yet stays invisible to them.
+    const { data: users, error: usersError } = await supabase
+      .from('app_users')
+      .select('full_name, role')
+      .in('role', ['doctor', 'admin'])
+    if (usersError) {
+      console.warn('Could not load doctor roster from app_users:', usersError)
+    } else if (users) {
+      users.forEach((u: any) => {
+        if (u.full_name && u.full_name.trim()) set.add(u.full_name.trim())
+      })
+    }
 
-    try {
-      const { data: txs } = await supabase.from('treatments').select('doctor_name')
-      if (txs) {
-        txs.forEach((t: any) => {
-          if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
-        })
-      }
-    } catch {}
+    const { data: txs, error: txsError } = await supabase.from('treatments').select('doctor_name')
+    if (txsError) {
+      console.warn('Could not load doctor names from treatments:', txsError)
+    } else if (txs) {
+      txs.forEach((t: any) => {
+        if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
+      })
+    }
 
     setDoctorsList(Array.from(set))
   }
@@ -713,7 +750,7 @@ export function PatientProfile() {
         const teethList: Array<number | null> = item.teeth.length > 0 ? item.teeth : [null]
         const originalCost = parseFloat(item.cost) || 0
         const discountedCost = Math.round(originalCost * costFactor * 100) / 100
-        const defaultDoc = getAppUser()?.name || doctorProfile?.full_name || (doctorsList[0] || '')
+        const defaultDoc = resolveDefaultDoctorName(doctorProfile)
         return teethList.map((tooth) => ({
           patient_id: id,
           tooth_number: tooth,
@@ -746,7 +783,7 @@ export function PatientProfile() {
       })
       setShowTreatmentPlanForm(false)
       setTreatmentPlanForm({
-        items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '' }],
+        items: [{ treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: '', doctor_share_pct: '50' }],
         discount_type: 'fixed',
         discount_value: '',
       })
@@ -764,7 +801,7 @@ export function PatientProfile() {
   }
 
   function addTreatmentPlanItem() {
-    const defaultDoc = getAppUser()?.name || doctorProfile?.full_name || (doctorsList[0] || '')
+    const defaultDoc = resolveDefaultDoctorName(doctorProfile)
     setTreatmentPlanForm({
       ...treatmentPlanForm,
       items: [
@@ -4280,7 +4317,7 @@ export function PatientProfile() {
           dentitionType={patientDentition}
           existingPlanned={plannedTreatments}
           doctorsList={doctorsList}
-          defaultDoctorName={getAppUser()?.name || doctorProfile?.full_name}
+          defaultDoctorName={resolveDefaultDoctorName(doctorProfile)}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
           onAddItem={addTreatmentPlanItem}

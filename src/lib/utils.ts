@@ -10,6 +10,19 @@ export function formatBDT(value: number): string {
   return bdtFormatter.format(value || 0)
 }
 
+/**
+ * Quote+escape a value for a CSV cell, and neutralise CSV/formula injection
+ * (Excel/Sheets execute a cell starting with =, +, -, @, tab, or CR as a
+ * formula on open). Prefix a leading apostrophe to force literal text.
+ * Use for any text field that can contain user-entered content (patient
+ * names, notes, treatment types) before it goes into a CSV export.
+ */
+export function csvCell(value: unknown): string {
+  const s = String(value ?? '')
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s
+  return `"${safe.replace(/"/g, '""')}"`
+}
+
 export function cn(...classes: (string | undefined | null | false | Record<string, boolean>)[]) {
   return classes
     .flatMap((c) => {

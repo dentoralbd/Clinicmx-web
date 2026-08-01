@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { DollarSign, FileSpreadsheet, FileText, UserCheck, Calendar, Activity, CheckCircle2, TrendingUp, Scissors, Lock } from 'lucide-react'
+import { DollarSign, FileSpreadsheet, FileText, UserCheck, Calendar, Activity, CheckCircle2, TrendingUp, Scissors, Lock, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
 import { getAppRole, getAppUser } from '@/lib/appSession'
@@ -10,6 +10,13 @@ import {
   type DoctorFinancialSummary,
 } from '@/lib/doctorAnalytics'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
+
+// Sentinel for "role is doctor but we haven't resolved which doctor yet"
+// (e.g. doctorProfile still loading, or the app_users row has no
+// full_name). Must never fall through to 'ALL' — that would show a
+// doctor every other doctor's payout and the clinic's total income
+// while the UI still claims "My Appointed Work".
+const UNRESOLVED = '__UNRESOLVED__'
 
 interface DoctorAnalyticsSectionProps {
   treatments: any[]
@@ -61,7 +68,7 @@ export function DoctorAnalyticsSection({
   }, [treatments])
 
   const [selectedDoctor, setSelectedDoctor] = useState<string>(
-    isDoctorOnly && currentDoctorName ? currentDoctorName : 'ALL'
+    isDoctorOnly ? (currentDoctorName || UNRESOLVED) : 'ALL'
   )
   const [selectedMonth, setSelectedMonth] = useState<string>(
     uniqueMonths[0] || new Date().toISOString().substring(0, 7)
@@ -69,14 +76,19 @@ export function DoctorAnalyticsSection({
   const [searchFilter, setSearchFilter] = useState('')
 
   useEffect(() => {
-    if (isDoctorOnly && currentDoctorName) {
-      setSelectedDoctor(currentDoctorName)
+    if (isDoctorOnly) {
+      setSelectedDoctor(currentDoctorName || UNRESOLVED)
     }
   }, [isDoctorOnly, currentDoctorName])
 
+  const identityUnresolved = isDoctorOnly && selectedDoctor === UNRESOLVED
+
   const summary: DoctorFinancialSummary = useMemo(() => {
+    if (identityUnresolved) {
+      return calculateDoctorFinancialSummary(treatments, invoices, patients, labWorks, UNRESOLVED, selectedMonth)
+    }
     return calculateDoctorFinancialSummary(treatments, invoices, patients, labWorks, selectedDoctor, selectedMonth)
-  }, [treatments, invoices, patients, labWorks, selectedDoctor, selectedMonth])
+  }, [treatments, invoices, patients, labWorks, selectedDoctor, selectedMonth, identityUnresolved])
 
   const filteredDisplayItems = useMemo(() => {
     if (!searchFilter.trim()) return summary.items
@@ -97,6 +109,26 @@ export function DoctorAnalyticsSection({
 
   const handleDownloadCSV = () => {
     exportFinancialStatementCSV(summary)
+  }
+
+  // Fail closed, not open: if we can't pin down which doctor this session
+  // belongs to (doctorProfile still loading, or the app_users row has no
+  // full_name), never fall through to showing every doctor's payout and
+  // the clinic's total income. Show nothing until identity resolves.
+  if (identityUnresolved) {
+    return (
+      <div className="bg-white rounded-xl border border-amber-200 p-8 text-center space-y-3">
+        <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+        <h3 className="font-display font-bold text-base text-slate-900">
+          Could not determine which doctor you are
+        </h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Your account isn't linked to a doctor name yet, so financial statements
+          can't be scoped safely to your work. Contact the admin to set your full
+          name in Doctor Profile or your staff account.
+        </p>
+      </div>
+    )
   }
 
   return (

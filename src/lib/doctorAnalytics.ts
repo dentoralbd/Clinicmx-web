@@ -2,8 +2,13 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { drawFooter, drawLetterhead } from '@/lib/invoicePdf'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
-import { formatBDT, safeFormat } from '@/lib/utils'
+import { formatBDT, safeFormat, csvCell } from '@/lib/utils'
 
+// No referral-fee (RF) tracking yet: an earlier version of this statement
+// read `t.rf_pct`, but no migration ever added that column to `treatments`,
+// so RF was silently always 0 in every export. Removed rather than shown
+// as a permanently-zero line; add rf_pct back with a real migration + UI
+// field if referral fees become something the clinic tracks.
 export interface FinancialStatementRow {
   id: string
   date: string
@@ -17,9 +22,6 @@ export interface FinancialStatementRow {
   txC: number // Treatment Cost / Lab Expense (Direct Cost)
   netA: number // Total Paid - TxC
   doctorSharePct: number // Doctor % (e.g. 50%, 30%)
-  rfPct: number // Referral Fee % (e.g. 0%, 20%)
-  rfAmount: number // Net A * (rfPct / 100)
-  net: number // Net A - rfAmount
   clinicIncome: number // Clinic's earnings
   drIncome: number // Doctor's earnings
 }
@@ -31,7 +33,6 @@ export interface DoctorFinancialSummary {
   totalPaid: number // Sum of Total Paid
   totalTxC: number // Sum of TxC (Lab/Direct Expenses)
   totalNetA: number // Sum of Net A
-  totalRFAmount: number // Sum of RF
   totalClinicIncome: number // Sum of Clinic Income
   totalDrIncome: number // Sum of Doctor Income
   rowCount: number
@@ -116,15 +117,11 @@ export function calculateDoctorFinancialSummary(
     const txC = labCostMap.get(t.id) || (t.treatment_plan_group_id ? labCostMap.get(t.treatment_plan_group_id) || 0 : 0)
 
     const netA = Math.max(0, totalPaid - txC)
-    const doctorSharePct = Number(t.doctor_share_pct ?? 50) // Default 50% matching clinic standard
-    const rfPct = Number(t.rf_pct ?? 0) // Referral fee %
-
-    const rfAmount = netA * (rfPct / 100)
-    const net = netA - rfAmount
+    const doctorSharePct = Number(t.doctor_share_pct ?? 50) // Default 50% — matches migration 043 and every write path
 
     // Income calculation
-    const drIncome = net * (doctorSharePct / 100)
-    const clinicIncome = net - drIncome
+    const drIncome = netA * (doctorSharePct / 100)
+    const clinicIncome = netA - drIncome
 
     const note = t.notes || (t.tooth_number ? `Tooth #${t.tooth_number}` : '')
 
@@ -141,9 +138,6 @@ export function calculateDoctorFinancialSummary(
       txC,
       netA,
       doctorSharePct,
-      rfPct,
-      rfAmount,
-      net,
       clinicIncome,
       drIncome,
     })
@@ -154,7 +148,6 @@ export function calculateDoctorFinancialSummary(
   let totalPaid = 0
   let totalTxC = 0
   let totalNetA = 0
-  let totalRFAmount = 0
   let totalClinicIncome = 0
   let totalDrIncome = 0
 
@@ -163,7 +156,6 @@ export function calculateDoctorFinancialSummary(
     totalPaid += r.totalPaid
     totalTxC += r.txC
     totalNetA += r.netA
-    totalRFAmount += r.rfAmount
     totalClinicIncome += r.clinicIncome
     totalDrIncome += r.drIncome
   })
@@ -175,7 +167,6 @@ export function calculateDoctorFinancialSummary(
     totalPaid,
     totalTxC,
     totalNetA,
-    totalRFAmount,
     totalClinicIncome,
     totalDrIncome,
     rowCount: rows.length,
@@ -194,7 +185,6 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
   csvLines.push(`"Clinic Income",${summary.totalClinicIncome.toFixed(2)}`)
   csvLines.push(`"Dr Income",${summary.totalDrIncome.toFixed(2)}`)
   csvLines.push(`"Clinic Cost (TxC)",${summary.totalTxC.toFixed(2)}`)
-  csvLines.push(`"RF (Referral)",${summary.totalRFAmount.toFixed(2)}`)
   csvLines.push('')
 
   // Detailed Table Headers
@@ -209,8 +199,6 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
     'TxC',
     'Net A',
     '%',
-    'RF',
-    'Net',
     'Clinic Income',
     'Dr. Income',
   ]
@@ -219,18 +207,16 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
   summary.items.forEach((r) => {
     csvLines.push(
       [
-        `"${r.date}"`,
-        `"${r.patientName.replace(/"/g, '""')}"`,
-        `"${r.refBy.replace(/"/g, '""')}"`,
-        `"${r.sourceOfIncome.replace(/"/g, '""')}"`,
+        csvCell(r.date),
+        csvCell(r.patientName),
+        csvCell(r.refBy),
+        csvCell(r.sourceOfIncome),
         r.amount.toFixed(2),
-        `"${r.note.replace(/"/g, '""')}"`,
+        csvCell(r.note),
         r.totalPaid.toFixed(2),
         r.txC.toFixed(2),
         r.netA.toFixed(2),
         `${r.doctorSharePct}%`,
-        r.rfAmount.toFixed(2),
-        r.net.toFixed(2),
         r.clinicIncome.toFixed(2),
         r.drIncome.toFixed(2),
       ].join(',')
@@ -251,8 +237,6 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
       summary.totalTxC.toFixed(2),
       summary.totalNetA.toFixed(2),
       '""',
-      summary.totalRFAmount.toFixed(2),
-      (summary.totalNetA - summary.totalRFAmount).toFixed(2),
       summary.totalClinicIncome.toFixed(2),
       summary.totalDrIncome.toFixed(2),
     ].join(',')
@@ -300,12 +284,11 @@ export function generateFinancialStatementPDF(
   // Top Summary Block Box
   autoTable(doc, {
     startY: y,
-    head: [['Total WorkFlow', 'Total Paid', 'Clinic Cost (TxC)', 'RF Fees', 'Clinic Income', 'Dr. Income']],
+    head: [['Total WorkFlow', 'Total Paid', 'Clinic Cost (TxC)', 'Clinic Income', 'Dr. Income']],
     body: [[
       formatBDT(summary.totalWorkflow),
       formatBDT(summary.totalPaid),
       formatBDT(summary.totalTxC),
-      formatBDT(summary.totalRFAmount),
       formatBDT(summary.totalClinicIncome),
       formatBDT(summary.totalDrIncome),
     ]],

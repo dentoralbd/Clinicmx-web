@@ -229,6 +229,8 @@ export interface Database {
           is_invoiced: boolean
           invoice_id: string | null
           treatment_plan_group_id: string | null
+          doctor_name: string | null
+          doctor_share_pct: number | null
           created_at: string
         }
         Insert: {
@@ -247,6 +249,8 @@ export interface Database {
           is_invoiced?: boolean
           invoice_id?: string | null
           treatment_plan_group_id?: string | null
+          doctor_name?: string | null
+          doctor_share_pct?: number | null
           created_at?: string
         }
         Update: {
@@ -265,6 +269,8 @@ export interface Database {
           is_invoiced?: boolean
           invoice_id?: string | null
           treatment_plan_group_id?: string | null
+          doctor_name?: string | null
+          doctor_share_pct?: number | null
           created_at?: string
         }
         Relationships: [

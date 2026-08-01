@@ -18,7 +18,7 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   },
   treatment: {
     table: 'treatments',
-    columns: ['id', 'patient_id', 'appointment_id', 'prescription_id', 'prescription_entry_id', 'tooth_number', 'treatment_type', 'description', 'status', 'cost', 'notes', 'is_invoiced', 'invoice_id', 'created_at'],
+    columns: ['id', 'patient_id', 'appointment_id', 'prescription_id', 'prescription_entry_id', 'tooth_number', 'treatment_type', 'description', 'status', 'cost', 'notes', 'is_invoiced', 'invoice_id', 'doctor_name', 'doctor_share_pct', 'created_at'],
   },
   prescription: {
     table: 'prescriptions',

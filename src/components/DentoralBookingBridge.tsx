@@ -65,6 +65,14 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   }
 
   useEffect(() => {
+    // Stale credential cleanup: the bridge used to prompt for and store an
+    // admin password here (removed — the DentOral endpoint no longer
+    // requires one). Any browser that used the old flow still has this
+    // sitting in plaintext on disk; clear it opportunistically.
+    try {
+      localStorage.removeItem('dentoral_bridge_pw')
+    } catch {}
+
     fetchSerials()
     const interval = setInterval(fetchSerials, 20000)
     return () => clearInterval(interval)
@@ -82,19 +90,35 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
     const cleanPhone = (app.phone || '').replace(/[^0-9]/g, '')
     const nameParts = (app.name || '').trim().split(' ')
-    const firstName = nameParts[0] || ''
+    // Booking name comes straight from the public DentOral form. Strip
+    // PostgREST filter metacharacters and ilike wildcards before it ever
+    // touches a query — this field is not trusted input.
+    const firstName = (nameParts[0] || '').replace(/[%,.()*]/g, '').trim()
+
+    const COLS = 'id, first_name, last_name, phone, patient_code, patient_type'
 
     try {
-      let query = supabase.from('patients').select('id, first_name, last_name, phone, patient_code, patient_type')
-      
-      if (cleanPhone.length >= 6) {
-        query = query.or(`phone.ilike.%${cleanPhone}%,first_name.ilike.%${firstName}%`)
-      } else {
-        query = query.ilike('first_name', `%${firstName}%`)
-      }
+      // Two separate parameterised queries instead of one hand-built
+      // .or() string — Supabase escapes values passed as .ilike()
+      // arguments, but does NOT escape a string interpolated into .or().
+      const [byPhone, byName] = await Promise.all([
+        cleanPhone.length >= 6
+          ? supabase.from('patients').select(COLS).ilike('phone', `%${cleanPhone}%`).limit(5)
+          : Promise.resolve({ data: [] as PatientMatch[] }),
+        firstName
+          ? supabase.from('patients').select(COLS).ilike('first_name', `%${firstName}%`).limit(5)
+          : Promise.resolve({ data: [] as PatientMatch[] }),
+      ])
 
-      const { data } = await query.limit(5)
-      const matches = (data || []) as PatientMatch[]
+      const seen = new Set<string>()
+      const matches: PatientMatch[] = []
+      for (const row of [...(byPhone.data || []), ...(byName.data || [])] as PatientMatch[]) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id)
+          matches.push(row)
+        }
+      }
+      matches.length = Math.min(matches.length, 5)
       setMatchingPatients(matches)
 
       if (matches.length > 0) {

@@ -1,7 +1,7 @@
 import { format, subMonths } from 'date-fns'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatBDT } from '@/lib/utils'
+import { formatBDT, csvCell } from '@/lib/utils'
 import { getInvoiceItemLineTotal, getInvoiceItemSubtotal, type BillingLineItem } from '@/lib/billing'
 
 // Row subsets fetched by the Analytics page (read-only selects).
@@ -595,12 +595,12 @@ export function exportClinicAnalyticsCSV(
     const paid = inv.paid_amount || 0
     const due = Math.max(0, total - paid)
     return [
-      `"${dateStr}"`,
-      `"${ptName.replace(/"/g, '""')}"`,
+      csvCell(dateStr),
+      csvCell(ptName),
       total.toFixed(2),
       paid.toFixed(2),
       due.toFixed(2),
-      `"${inv.status || 'Active'}"`,
+      csvCell(inv.status || 'Active'),
     ].join(',')
   })
 
