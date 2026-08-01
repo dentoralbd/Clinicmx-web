@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { getAppRole } from '@/lib/appSession'
 import { PieChart, UserCheck, Users } from 'lucide-react'
 import { DoctorAnalytics } from '@/pages/DoctorAnalytics'
+import { StaffAnalyticsSection } from '@/components/analytics/StaffAnalyticsSection'
 
 type FinancialTab = 'doctor' | 'staff'
 
@@ -55,15 +56,7 @@ export function FinancialAnalysis() {
 
       {tab === 'doctor' && <DoctorAnalytics />}
 
-      {tab === 'staff' && (
-        <div className="bg-white rounded-xl border border-gray-200/80 p-8 text-center space-y-2">
-          <Users className="w-8 h-8 text-slate-300 mx-auto" />
-          <h3 className="font-display font-bold text-base text-slate-900">Staff Analytics — coming soon</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Staff performance tracking will appear here once the metrics to track are defined.
-          </p>
-        </div>
-      )}
+      {tab === 'staff' && <StaffAnalyticsSection />}
     </div>
   )
 }

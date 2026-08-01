@@ -212,6 +212,109 @@ export interface Database {
         }
         Relationships: []
       }
+      staff: {
+        Row: {
+          id: string
+          full_name: string
+          phone: string | null
+          designation: string | null
+          monthly_salary: number
+          app_user_id: string | null
+          is_active: boolean
+          joined_on: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          full_name: string
+          phone?: string | null
+          designation?: string | null
+          monthly_salary?: number
+          app_user_id?: string | null
+          is_active?: boolean
+          joined_on?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          full_name?: string
+          phone?: string | null
+          designation?: string | null
+          monthly_salary?: number
+          app_user_id?: string | null
+          is_active?: boolean
+          joined_on?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_app_user_id_fkey'
+            columns: ['app_user_id']
+            isOneToOne: false
+            referencedRelation: 'app_users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      staff_salary_payments: {
+        Row: {
+          id: string
+          staff_id: string
+          period_month: string
+          base_salary: number
+          bonus: number
+          deduction: number
+          advance: number
+          amount_paid: number
+          payment_date: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          staff_id: string
+          period_month: string
+          base_salary?: number
+          bonus?: number
+          deduction?: number
+          advance?: number
+          amount_paid?: number
+          payment_date?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          staff_id?: string
+          period_month?: string
+          base_salary?: number
+          bonus?: number
+          deduction?: number
+          advance?: number
+          amount_paid?: number
+          payment_date?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_salary_payments_staff_id_fkey'
+            columns: ['staff_id']
+            isOneToOne: false
+            referencedRelation: 'staff'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       treatments: {
         Row: {
           id: string
