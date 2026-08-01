@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Users, UserPlus, Pencil, Trash2, Power, DollarSign, FileSpreadsheet, FileText, RefreshCw, AlertTriangle, X, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
+import { sharePdf } from '@/lib/sharePdf'
 import { supabase } from '@/lib/supabase'
 import { listAppUsers, type AppUserRecord } from '@/lib/appUsers'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
@@ -239,9 +240,14 @@ export function StaffAnalyticsSection() {
     exportStaffSalaryCSV(summary)
   }
 
-  function handleDownloadPDF() {
+  async function handleDownloadPDF() {
     const doc = generateStaffSalaryPDF(summary, doctorProfile)
-    doc.save(`Staff_Salary_${summary.staffLabel.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`)
+    const fileName = `Staff_Salary_${summary.staffLabel.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`
+    await sharePdf(doc, fileName, {
+      subject: `Staff Salary Statement — ${summary.staffLabel} (${summary.periodLabel})`,
+      text: `Staff salary statement for ${summary.staffLabel}, period ${summary.periodLabel}.`,
+      docLabel: 'Salary Statement',
+    })
   }
 
   if (loading) {

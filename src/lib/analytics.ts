@@ -616,7 +616,10 @@ export function exportClinicAnalyticsCSV(
 }
 
 /**
- * Generates an A4 PDF Summary Report for Clinic Analytics.
+ * Generates an A4 PDF Summary Report for Clinic Analytics. Returns the
+ * document rather than saving it — callers share it via sharePdf() (a
+ * plain jsPDF .save() silently does nothing in the Capacitor Android
+ * app's WebView, which has no download handler wired up).
  */
 export function generateClinicAnalyticsPDF(
   invoices: AnalyticsInvoice[],
@@ -624,7 +627,7 @@ export function generateClinicAnalyticsPDF(
   topSources: TopRevenueSource[],
   counts: ProcedureCountRow[],
   rangeLabel: string
-) {
+): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -742,7 +745,7 @@ export function generateClinicAnalyticsPDF(
     })
   }
 
-  doc.save(`Clinic_Analytics_Report_${rangeLabel}.pdf`)
+  return doc
 }
 
 

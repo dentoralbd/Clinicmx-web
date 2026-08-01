@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { getAppRole } from '@/lib/appSession'
 import { formatBDT } from '@/lib/utils'
+import { sharePdf } from '@/lib/sharePdf'
 import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2, FileSpreadsheet, Printer, FileText } from 'lucide-react'
 import {
   buildMonthAxis,
@@ -234,7 +235,14 @@ export function Analytics() {
             <span className="hidden sm:inline">Export CSV</span>
           </button>
           <button
-            onClick={() => generateClinicAnalyticsPDF(rangeInvoices, monthly, topSources, counts, range)}
+            onClick={async () => {
+              const doc = generateClinicAnalyticsPDF(rangeInvoices, monthly, topSources, counts, range)
+              await sharePdf(doc, `Clinic_Analytics_Report_${range}.pdf`, {
+                subject: `Clinic Analytics Report — ${range.toUpperCase()}`,
+                text: `Clinic revenue and invoice report, filter: ${range.toUpperCase()}.`,
+                docLabel: 'Clinic Analytics Report',
+              })
+            }}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors"
             title="Download PDF Financial Report"
           >

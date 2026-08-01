@@ -10,7 +10,10 @@ export function toWhatsAppNumber(phone: string): string | null {
 }
 
 export interface SharePdfInfo {
-  channel: 'email' | 'whatsapp'
+  /** Omit for a plain "save/share this file" action with no specific
+   * recipient — e.g. a report download button, as opposed to "send this
+   * prescription to the patient via WhatsApp". */
+  channel?: 'email' | 'whatsapp'
   email?: string | null
   waNumber?: string | null
   subject: string
@@ -21,9 +24,12 @@ export interface SharePdfInfo {
 
 /**
  * Shares a jsPDF document as a real file via the OS share sheet when the
- * browser supports it (Web Share API with files — most mobile browsers).
- * Falls back to downloading the PDF and opening the mail/WhatsApp compose
- * window, since a web link can never force-attach a file to those apps.
+ * browser supports it (Web Share API with files — most mobile browsers,
+ * and critically the Capacitor Android WebView the app runs in as a
+ * native APK, where a plain <a download> click silently does nothing).
+ * Falls back to downloading the PDF and, if a channel was given, opening
+ * the mail/WhatsApp compose window — a web link can never force-attach a
+ * file to those apps.
  */
 export async function sharePdf(doc: jsPDF, fileName: string, info: SharePdfInfo): Promise<void> {
   const blob = doc.output('blob')
@@ -50,8 +56,10 @@ export async function sharePdf(doc: jsPDF, fileName: string, info: SharePdfInfo)
   if (info.channel === 'email') {
     alert(`${docLabel} PDF downloaded. Please attach it to the email before sending.`)
     window.location.href = `mailto:${info.email}?subject=${encodeURIComponent(info.subject)}&body=${encodeURIComponent(info.text)}`
-  } else {
+  } else if (info.channel === 'whatsapp') {
     alert(`${docLabel} PDF downloaded. Please attach it in WhatsApp before sending.`)
     window.open(`https://wa.me/${info.waNumber}?text=${encodeURIComponent(info.text)}`, '_blank')
+  } else {
+    alert(`${docLabel} PDF downloaded.`)
   }
 }

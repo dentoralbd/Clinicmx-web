@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
+import { sharePdf } from '@/lib/sharePdf'
 import { getAppRole, getAppUser } from '@/lib/appSession'
 import {
   calculateDoctorFinancialSummary,
@@ -137,9 +138,14 @@ export function DoctorAnalyticsSection({
     )
   }, [summary.collectionRows, searchFilter])
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     const doc = generateFinancialStatementPDF(summary, doctorProfile)
-    doc.save(`Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`)
+    const fileName = `Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`
+    await sharePdf(doc, fileName, {
+      subject: `Financial Statement — ${summary.doctorName} (${summary.periodLabel})`,
+      text: `Doctor financial statement for ${summary.doctorName}, period ${summary.periodLabel}.`,
+      docLabel: 'Financial Statement',
+    })
   }
 
   // Bulk-fix for the most common Needs Attention cause: historical

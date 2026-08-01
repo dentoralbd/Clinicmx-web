@@ -3,6 +3,7 @@ import { Printer, X, FileSpreadsheet, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
+import { sharePdf } from '@/lib/sharePdf'
 import { exportClinicAnalyticsCSV, generateClinicAnalyticsPDF, type AnalyticsInvoice, type AnalyticsPatient, type MonthlyRevenuePoint, type TopRevenueSource, type ProcedureCountRow } from '@/lib/analytics'
 
 interface ClinicAnalyticsReportPrintModalProps {
@@ -47,6 +48,15 @@ export function ClinicAnalyticsReportPrintModal({
     window.print()
   }
 
+  async function handleDownloadPDF() {
+    const doc = generateClinicAnalyticsPDF(invoices, monthly, topSources, counts, rangeLabel)
+    await sharePdf(doc, `Clinic_Analytics_Report_${rangeLabel}.pdf`, {
+      subject: `Clinic Analytics Report — ${rangeLabel.toUpperCase()}`,
+      text: `Clinic revenue and invoice report, filter: ${rangeLabel.toUpperCase()}.`,
+      docLabel: 'Clinic Analytics Report',
+    })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 sm:p-6 flex flex-col items-center analytics-report-modal-backdrop">
       {/* Top Floating Control Bar (Hidden on Print) */}
@@ -73,7 +83,7 @@ export function ClinicAnalyticsReportPrintModal({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => generateClinicAnalyticsPDF(invoices, monthly, topSources, counts, rangeLabel)}
+            onClick={handleDownloadPDF}
             className="text-xs text-slate-200 border-slate-700 hover:bg-slate-800"
           >
             <FileText className="w-4 h-4 mr-1 text-teal-400" /> Download PDF
