@@ -45,8 +45,10 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   const fetchSerials = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`https://dentoralbd.pages.dev/api/appointments?t=${Date.now()}`, {
-        cache: 'no-store'
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/dentoral-bridge?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
       })
 
       if (res.ok) {
@@ -66,9 +68,11 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
   useEffect(() => {
     // Stale credential cleanup: the bridge used to prompt for and store an
-    // admin password here (removed — the DentOral endpoint no longer
-    // requires one). Any browser that used the old flow still has this
-    // sitting in plaintext on disk; clear it opportunistically.
+    // admin password here. That's gone for good — DentOral now requires a
+    // credential again, but it's a booking-scoped one held server-side in
+    // /api/dentoral-bridge (see that file), never typed or stored in the
+    // browser. Any browser that used the old flow still has the old admin
+    // password sitting in plaintext on disk; clear it opportunistically.
     try {
       localStorage.removeItem('dentoral_bridge_pw')
     } catch {}
@@ -189,10 +193,12 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
       if (apptErr) throw apptErr
 
       // 3. Update status on DentOral live Cloudflare KV
-      await fetch(`https://dentoralbd.pages.dev/api/appointments?action=update_status`, {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch(`/api/dentoral-bridge?action=update_status`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
         },
         body: JSON.stringify({ id: selectedApp.id, status: 'Confirmed' })
       })

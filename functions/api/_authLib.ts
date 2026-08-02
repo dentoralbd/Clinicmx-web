@@ -138,6 +138,47 @@ export async function requireAdminToken(
 }
 
 /**
+ * Gate for endpoints that should accept ANY logged-in ClinicMx staff member
+ * (doctor or operator), not just the admin's trusted-device token —
+ * dentoral-bridge.ts is the first user of this: it sits on the
+ * Appointments page every operator uses, not an admin-only screen, so
+ * gating it on requireAdminToken would reintroduce exactly the friction
+ * that got the DentOral endpoint's own password check removed.
+ *
+ * Verifies the browser's Supabase Auth access token — sent as a plain
+ * `Authorization: Bearer <token>` header, the same token supabase-js
+ * already holds in the persisted client session — against Supabase's own
+ * `/auth/v1/user` endpoint. Deliberately uses the (public) anon key only,
+ * never SUPABASE_SERVICE_ROLE_KEY: this check can only confirm "a real,
+ * unexpired session exists," so it can't accidentally be escalated into an
+ * admin-equivalent gate.
+ *
+ * Fails CLOSED: a missing SUPABASE_URL/SUPABASE_ANON_KEY (misconfiguration)
+ * rejects the request rather than letting it through.
+ */
+export async function requireStaffSession(
+  request: Request,
+  env: { SUPABASE_URL?: string; SUPABASE_ANON_KEY?: string }
+): Promise<Response | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    return json(500, { ok: false, error: 'Auth is not configured on the server.' })
+  }
+  const authHeader = request.headers.get('Authorization') || ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+  if (!token) return json(401, { ok: false, error: 'Sign-in required.' })
+
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_ANON_KEY },
+    })
+    if (!res.ok) return json(401, { ok: false, error: 'Sign-in required.' })
+    return null
+  } catch {
+    return json(401, { ok: false, error: 'Sign-in required.' })
+  }
+}
+
+/**
  * Mints a real Supabase Auth session for the admin's dedicated Auth user
  * (service_role, invisible to the client) so the admin's browser can
  * satisfy RLS policies once migration 039 lands. The PIN/OTP screens the
