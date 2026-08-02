@@ -47,12 +47,24 @@ export interface CollectionRow {
   drIncome: number
 }
 
+// Only 'no_linked_treatments' currently gets a UI resolve action — the
+// others need real judgment a one-click fix could get wrong: mixed_doctors
+// already has correctly-attributed treatments that a resolve could
+// misattribute; unknown_invoice and reconciliation_gap have no invoice to
+// attach a treatment to at all.
+export type FlaggedReasonCode = 'unknown_invoice' | 'no_linked_treatments' | 'no_doctor_assigned' | 'mixed_doctors' | 'reconciliation_gap'
+
 export interface FlaggedRow {
   id: string
   date: string // '' for standing reconciliation gaps (not tied to one event)
   patientName: string
   amount: number
   reason: string
+  reasonCode: FlaggedReasonCode
+  // Only set for reasonCode === 'no_linked_treatments' — what
+  // resolveUnlinkedPayment needs to create the attributing treatment.
+  invoiceId?: string
+  patientId?: string
 }
 
 // One row per patient, merging their Work Done + Collections for the
@@ -230,6 +242,7 @@ export function calculateDoctorFinancialSummary(
           patientName: 'Unknown',
           amount,
           reason: 'Payment references a removed, merged, or non-active invoice',
+          reasonCode: 'unknown_invoice',
         })
       }
       return
@@ -246,6 +259,9 @@ export function calculateDoctorFinancialSummary(
           patientName: ptInfo.name,
           amount,
           reason: 'Invoice has no linked treatments to attribute this payment to',
+          reasonCode: 'no_linked_treatments',
+          invoiceId: p.invoice_id,
+          patientId: invoice.patientId || undefined,
         })
       }
       return
@@ -261,6 +277,7 @@ export function calculateDoctorFinancialSummary(
           patientName: ptInfo.name,
           amount,
           reason: `${invoiceTreatments.length} treatment(s) on this invoice have no doctor assigned`,
+          reasonCode: 'no_doctor_assigned',
         })
       }
       return
@@ -274,6 +291,7 @@ export function calculateDoctorFinancialSummary(
           patientName: ptInfo.name,
           amount,
           reason: `${invoiceTreatments.length} treatments, ${distinctDoctors.size} doctors on this invoice — assign manually`,
+          reasonCode: 'mixed_doctors',
         })
       }
       return
@@ -340,6 +358,7 @@ export function calculateDoctorFinancialSummary(
           patientName: ptInfo.name,
           amount: gap,
           reason: 'Invoice shows this much paid with no matching payment record on file — data gap, not a new payout',
+          reasonCode: 'reconciliation_gap',
         })
       }
     })
@@ -493,6 +512,47 @@ export async function bulkAssignDefaultDoctor(
   })
 
   return { updatedCount: targets.length }
+}
+
+/**
+ * Resolves a single "no linked treatments" flagged payment (e.g. a
+ * walk-in fee or manually-typed invoice line item that will never have a
+ * real treatment record) by creating ONE synthetic treatment for that
+ * invoice — reusing the existing payment -> invoice -> treatments ->
+ * doctor_name attribution chain rather than building a second, parallel
+ * one. The next time the statement is computed, this payment picks up the
+ * chosen doctor automatically, the same as any other attributed payment.
+ */
+export async function resolveUnlinkedPayment(
+  invoiceId: string,
+  patientId: string,
+  amount: number,
+  doctorName: string,
+  doctorSharePct: number
+): Promise<void> {
+  const trimmedDoctorName = doctorName.trim()
+  if (!trimmedDoctorName) throw new Error('Pick a doctor first.')
+
+  const { error } = await supabase.from('treatments').insert({
+    patient_id: patientId,
+    invoice_id: invoiceId,
+    is_invoiced: true,
+    treatment_type: 'Other / Manual Charge',
+    status: 'Completed',
+    cost: amount,
+    doctor_name: trimmedDoctorName,
+    doctor_share_pct: doctorSharePct,
+    notes: 'Auto-created to attribute a payment that had no linked treatment (Needs Attention → Resolve).',
+  })
+  if (error) throw error
+
+  logActivity({
+    action: 'create',
+    entityType: 'treatment',
+    entityLabel: 'Other / Manual Charge',
+    patientId,
+    details: `Created a treatment record to attribute an unlinked payment (BDT ${amount.toFixed(2)}) to ${trimmedDoctorName}`,
+  })
 }
 
 export type DoctorStatementView = 'statement' | 'detailed'

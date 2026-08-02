@@ -22,7 +22,9 @@ import {
   exportFinancialStatementCSV,
   generateFinancialStatementPDF,
   bulkAssignDefaultDoctor,
+  resolveUnlinkedPayment,
   type DoctorFinancialSummary,
+  type FlaggedRow,
 } from '@/lib/doctorAnalytics'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 
@@ -432,6 +434,7 @@ export function DoctorAnalyticsSection({
                   <th className="p-2.5">Patient Name</th>
                   <th className="p-2.5 text-right">Amount</th>
                   <th className="p-2.5">Reason</th>
+                  {isAdmin && <th className="p-2.5">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-200/60">
@@ -441,6 +444,13 @@ export function DoctorAnalyticsSection({
                     <td className="p-2.5 font-semibold whitespace-nowrap">{r.patientName}</td>
                     <td className="p-2.5 text-right font-mono font-semibold">{formatBDT(r.amount)}</td>
                     <td className="p-2.5">{r.reason}</td>
+                    {isAdmin && (
+                      <td className="p-2.5">
+                        {r.reasonCode === 'no_linked_treatments' && r.invoiceId && r.patientId && (
+                          <ResolveUnlinkedPaymentAction row={r} uniqueDoctors={uniqueDoctors} onResolved={() => onDataChanged?.()} />
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -710,6 +720,94 @@ export function DoctorAnalyticsSection({
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** Inline resolve control for a single "no linked treatments" flagged
+ * payment — pick a doctor + share %, creates one attributing treatment
+ * (see resolveUnlinkedPayment). Kept as its own component so each row's
+ * open/doctor/% state is independent without a Map in the parent. */
+function ResolveUnlinkedPaymentAction({
+  row,
+  uniqueDoctors,
+  onResolved,
+}: {
+  row: FlaggedRow
+  uniqueDoctors: string[]
+  onResolved: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [doctor, setDoctor] = useState('')
+  const [sharePct, setSharePct] = useState('30')
+  const [saving, setSaving] = useState(false)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[11px] font-semibold text-amber-800 underline hover:text-amber-900"
+      >
+        Resolve
+      </button>
+    )
+  }
+
+  async function handleSave() {
+    if (!doctor.trim() || !row.invoiceId || !row.patientId) return
+    const pct = parseFloat(sharePct)
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      alert('Doctor Share % must be between 0 and 100.')
+      return
+    }
+    setSaving(true)
+    try {
+      await resolveUnlinkedPayment(row.invoiceId, row.patientId, row.amount, doctor, pct)
+      onResolved()
+    } catch (err) {
+      console.error('Failed to resolve unlinked payment:', err)
+      alert('Failed to resolve this payment. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <select
+        value={doctor}
+        onChange={(e) => setDoctor(e.target.value)}
+        className="text-[11px] px-1.5 py-1 border border-amber-300 rounded font-medium bg-white"
+      >
+        <option value="">Doctor...</option>
+        {uniqueDoctors.map((d) => (
+          <option key={d} value={d}>
+            {d}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        min="0"
+        max="100"
+        value={sharePct}
+        onChange={(e) => setSharePct(e.target.value)}
+        title="Doctor Share %"
+        className="w-12 text-[11px] px-1.5 py-1 border border-amber-300 rounded"
+      />
+      <span className="text-[10px] text-amber-700">%</span>
+      <Button
+        size="sm"
+        className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] px-2 py-1 h-auto"
+        disabled={!doctor || saving}
+        onClick={handleSave}
+      >
+        {saving ? '...' : 'Save'}
+      </Button>
+      <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-amber-600 hover:text-amber-800">
+        Cancel
+      </button>
     </div>
   )
 }
