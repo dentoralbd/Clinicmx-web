@@ -22,6 +22,7 @@ import { logActivity } from '@/lib/activityLog'
 
 export interface WorkDoneRow {
   id: string
+  patientId: string
   date: string
   patientName: string
   patientCode?: string
@@ -33,6 +34,7 @@ export interface WorkDoneRow {
 
 export interface CollectionRow {
   id: string // payment id
+  patientId: string
   date: string // payment_date
   patientName: string
   patientCode?: string
@@ -53,6 +55,29 @@ export interface FlaggedRow {
   reason: string
 }
 
+// One row per patient, merging their Work Done + Collections for the
+// "Statement" view — matches the reference clinic's format, where a
+// patient's work rows and their total payment sit together (confirmed by
+// the reference sheet's own arithmetic: a patient's work-row amounts sum
+// to their listed Total Paid). A patient can have only work (done, not
+// yet paid), only payments (paid for work outside this period, or with no
+// linked treatments), or both.
+export interface PatientGroup {
+  patientId: string
+  patientName: string
+  patientCode?: string
+  earliestDate: string // for ordering groups chronologically
+  workRows: WorkDoneRow[]
+  collectionRows: CollectionRow[]
+  workTotal: number
+  totalPaid: number
+  txC: number
+  netA: number
+  doctorSharePct: number // derived from the group's real money (drIncome / netA), not averaged
+  clinicIncome: number
+  drIncome: number
+}
+
 export interface DoctorFinancialSummary {
   doctorName: string
   periodLabel: string
@@ -64,11 +89,16 @@ export interface DoctorFinancialSummary {
   totalDrIncome: number
   workRowCount: number
   collectionRowCount: number
-  workRows: WorkDoneRow[]
-  collectionRows: CollectionRow[]
+  workRows: WorkDoneRow[] // sorted by date ascending
+  collectionRows: CollectionRow[] // sorted by date ascending
+  patientGroups: PatientGroup[] // sorted by each group's earliest date
   flaggedRows: FlaggedRow[]
   flaggedTotal: number
 }
+
+// Work Done only counts chair time actually spent — Planned hasn't
+// happened yet, Cancelled never will. User decision, 2026-08-01.
+const WORK_DONE_STATUSES = new Set(['Completed', 'In Progress'])
 
 // Invoices in these statuses are not real, current, active money and are
 // deliberately excluded from the invoice map — a payment referencing one
@@ -140,14 +170,16 @@ export function calculateDoctorFinancialSummary(
     return labCostMap.get(t.id) || (t.treatment_plan_group_id ? labCostMap.get(t.treatment_plan_group_id) || 0 : 0)
   }
 
-  // ---- Work Done: one row per treatment, no money columns ----
+  // ---- Work Done: one row per treatment actually worked on, no money columns ----
   const workRows: WorkDoneRow[] = []
   treatments.forEach((t) => {
+    if (!WORK_DONE_STATUSES.has(t.status)) return
+
     const docName = (t.doctor_name || '').trim() || 'Dr. Attending'
     if (selectedDoctor !== 'ALL' && docName.toLowerCase() !== selectedDoctor.toLowerCase()) return
 
     // Bucketed by completion date, falling back to creation date for
-    // treatments not yet Completed (no completion date exists for those).
+    // In Progress treatments (no completion date exists for those yet).
     const createdDateStr = t.created_at ? String(t.created_at).substring(0, 10) : ''
     const completedDateStr = t.completed_at ? String(t.completed_at).substring(0, 10) : ''
     const bucketDateStr = completedDateStr || createdDateStr
@@ -158,6 +190,7 @@ export function calculateDoctorFinancialSummary(
 
     workRows.push({
       id: t.id,
+      patientId: t.patient_id || 'unknown',
       date: bucketDateStr,
       patientName: ptInfo.name,
       patientCode: ptInfo.code,
@@ -271,6 +304,7 @@ export function calculateDoctorFinancialSummary(
 
     collectionRows.push({
       id: p.id,
+      patientId: invoice.patientId || 'unknown',
       date: dateStr,
       patientName: ptInfo.name,
       patientCode: ptInfo.code,
@@ -311,6 +345,59 @@ export function calculateDoctorFinancialSummary(
     })
   }
 
+  // Date-ascending — nothing above sorts as it builds (Postgres returns rows
+  // in whatever order it likes), which is what made the statement look
+  // "unorganised".
+  workRows.sort((a, b) => a.date.localeCompare(b.date))
+  collectionRows.sort((a, b) => a.date.localeCompare(b.date))
+
+  // ---- Patient groups (Statement view): merge each patient's Work Done +
+  // Collections into one entry, so a patient who paid multiple times shows
+  // once with a single payout total, not scattered across repeated rows. ----
+  const groupMap = new Map<string, PatientGroup>()
+  function ensureGroup(patientId: string, patientName: string, patientCode?: string): PatientGroup {
+    let g = groupMap.get(patientId)
+    if (!g) {
+      g = {
+        patientId,
+        patientName,
+        patientCode,
+        earliestDate: '',
+        workRows: [],
+        collectionRows: [],
+        workTotal: 0,
+        totalPaid: 0,
+        txC: 0,
+        netA: 0,
+        doctorSharePct: 0,
+        clinicIncome: 0,
+        drIncome: 0,
+      }
+      groupMap.set(patientId, g)
+    }
+    return g
+  }
+  workRows.forEach((r) => {
+    const g = ensureGroup(r.patientId, r.patientName, r.patientCode)
+    g.workRows.push(r)
+    g.workTotal += r.amount
+    if (!g.earliestDate || r.date < g.earliestDate) g.earliestDate = r.date
+  })
+  collectionRows.forEach((r) => {
+    const g = ensureGroup(r.patientId, r.patientName, r.patientCode)
+    g.collectionRows.push(r)
+    g.totalPaid += r.totalPaid
+    g.txC += r.txC
+    g.netA += r.netA
+    g.clinicIncome += r.clinicIncome
+    g.drIncome += r.drIncome
+    if (!g.earliestDate || r.date < g.earliestDate) g.earliestDate = r.date
+  })
+  groupMap.forEach((g) => {
+    g.doctorSharePct = g.netA > 0 ? Math.round((g.drIncome / g.netA) * 10000) / 100 : 0
+  })
+  const patientGroups = Array.from(groupMap.values()).sort((a, b) => a.earliestDate.localeCompare(b.earliestDate))
+
   let totalWorkDone = 0
   workRows.forEach((r) => (totalWorkDone += r.amount))
 
@@ -343,6 +430,7 @@ export function calculateDoctorFinancialSummary(
     collectionRowCount: collectionRows.length,
     workRows,
     collectionRows,
+    patientGroups,
     flaggedRows,
     flaggedTotal,
   }
@@ -407,11 +495,16 @@ export async function bulkAssignDefaultDoctor(
   return { updatedCount: targets.length }
 }
 
+export type DoctorStatementView = 'statement' | 'detailed'
+
 /**
- * Downloads a CSV of the two-part statement: Work Done, Collections, and
- * (when non-empty) Needs Attention.
+ * Downloads a CSV of the statement in the given view: "statement" is one
+ * table merged per patient (Work Done + Collections together, matching the
+ * clinic's reference format); "detailed" is the separate Work Done /
+ * Collections tables (Collections grouped per patient with a subtotal row).
+ * Both append Needs Attention when non-empty.
  */
-export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
+export function exportFinancialStatementCSV(summary: DoctorFinancialSummary, view: DoctorStatementView = 'statement') {
   const csvLines: string[] = []
 
   csvLines.push(`"Total Work Done (Billed)",${summary.totalWorkDone.toFixed(2)}`)
@@ -424,46 +517,111 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
   }
   csvLines.push('')
 
-  csvLines.push('"WORK DONE"')
-  csvLines.push(['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note'].join(','))
-  summary.workRows.forEach((r) => {
+  if (view === 'statement') {
     csvLines.push(
-      [csvCell(r.date), csvCell(r.patientName), csvCell(r.refBy), csvCell(r.sourceOfIncome), r.amount.toFixed(2), csvCell(r.note)].join(',')
+      ['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income'].join(',')
     )
-  })
-  csvLines.push(['"TOTAL"', '""', '""', '""', summary.totalWorkDone.toFixed(2), '""'].join(','))
-  csvLines.push('')
-
-  csvLines.push('"COLLECTIONS"')
-  csvLines.push(['Date', 'Patient Name', 'Ref By', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income'].join(','))
-  summary.collectionRows.forEach((r) => {
+    summary.patientGroups.forEach((g) => {
+      csvLines.push(`"— ${g.patientName}${g.patientCode ? ` (${g.patientCode})` : ''} —"`)
+      g.workRows.forEach((r) => {
+        csvLines.push(
+          [csvCell(r.date), csvCell(r.patientName), csvCell(r.refBy), csvCell(r.sourceOfIncome), r.amount.toFixed(2), csvCell(r.note), '', '', '', '', '', ''].join(',')
+        )
+      })
+      csvLines.push(
+        [
+          '""',
+          '"Patient total"',
+          '""',
+          '""',
+          g.workTotal.toFixed(2),
+          '""',
+          g.totalPaid.toFixed(2),
+          g.txC.toFixed(2),
+          g.netA.toFixed(2),
+          `${g.doctorSharePct}%`,
+          g.clinicIncome.toFixed(2),
+          g.drIncome.toFixed(2),
+        ].join(',')
+      )
+    })
     csvLines.push(
       [
-        csvCell(r.date),
-        csvCell(r.patientName),
-        csvCell(r.refBy),
-        r.totalPaid.toFixed(2),
-        r.txC.toFixed(2),
-        r.netA.toFixed(2),
-        `${r.doctorSharePct}%`,
-        r.clinicIncome.toFixed(2),
-        r.drIncome.toFixed(2),
+        '"GRAND TOTALS"',
+        '""',
+        '""',
+        '""',
+        summary.totalWorkDone.toFixed(2),
+        '""',
+        summary.totalPaid.toFixed(2),
+        summary.totalTxC.toFixed(2),
+        summary.totalNetA.toFixed(2),
+        '""',
+        summary.totalClinicIncome.toFixed(2),
+        summary.totalDrIncome.toFixed(2),
       ].join(',')
     )
-  })
-  csvLines.push(
-    [
-      '"TOTALS"',
-      '""',
-      '""',
-      summary.totalPaid.toFixed(2),
-      summary.totalTxC.toFixed(2),
-      summary.totalNetA.toFixed(2),
-      '""',
-      summary.totalClinicIncome.toFixed(2),
-      summary.totalDrIncome.toFixed(2),
-    ].join(',')
-  )
+  } else {
+    csvLines.push('"WORK DONE"')
+    csvLines.push(['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note'].join(','))
+    summary.workRows.forEach((r) => {
+      csvLines.push(
+        [csvCell(r.date), csvCell(r.patientName), csvCell(r.refBy), csvCell(r.sourceOfIncome), r.amount.toFixed(2), csvCell(r.note)].join(',')
+      )
+    })
+    csvLines.push(['"TOTAL"', '""', '""', '""', summary.totalWorkDone.toFixed(2), '""'].join(','))
+    csvLines.push('')
+
+    csvLines.push('"COLLECTIONS"')
+    csvLines.push(['Date', 'Patient Name', 'Ref By', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income'].join(','))
+    summary.patientGroups
+      .filter((g) => g.collectionRows.length > 0)
+      .forEach((g) => {
+        g.collectionRows.forEach((r) => {
+          csvLines.push(
+            [
+              csvCell(r.date),
+              csvCell(r.patientName),
+              csvCell(r.refBy),
+              r.totalPaid.toFixed(2),
+              r.txC.toFixed(2),
+              r.netA.toFixed(2),
+              `${r.doctorSharePct}%`,
+              r.clinicIncome.toFixed(2),
+              r.drIncome.toFixed(2),
+            ].join(',')
+          )
+        })
+        if (g.collectionRows.length > 1) {
+          csvLines.push(
+            [
+              '""',
+              csvCell(`${g.patientName} subtotal`),
+              '""',
+              g.totalPaid.toFixed(2),
+              g.txC.toFixed(2),
+              g.netA.toFixed(2),
+              `${g.doctorSharePct}%`,
+              g.clinicIncome.toFixed(2),
+              g.drIncome.toFixed(2),
+            ].join(',')
+          )
+        }
+      })
+    csvLines.push(
+      [
+        '"TOTALS"',
+        '""',
+        '""',
+        summary.totalPaid.toFixed(2),
+        summary.totalTxC.toFixed(2),
+        summary.totalNetA.toFixed(2),
+        '""',
+        summary.totalClinicIncome.toFixed(2),
+        summary.totalDrIncome.toFixed(2),
+      ].join(',')
+    )
+  }
 
   if (summary.flaggedRows.length > 0) {
     csvLines.push('')
@@ -488,11 +646,13 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary) {
 }
 
 /**
- * Generates an A4 landscape PDF of the two-part statement.
+ * Generates an A4 landscape PDF of the statement in the given view — see
+ * exportFinancialStatementCSV for what "statement" vs "detailed" means.
  */
 export function generateFinancialStatementPDF(
   summary: DoctorFinancialSummary,
-  doctorProfile: DoctorProfileData | null
+  doctorProfile: DoctorProfileData | null,
+  view: DoctorStatementView = 'statement'
 ): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
   const marginX = 30
@@ -544,74 +704,167 @@ export function generateFinancialStatementPDF(
     }
   }
 
-  // ---- Work Done ----
-  ensureRoom(120)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.text('WORK DONE', marginX, y)
-  y += 8
+  const groupHeaderStyle = { fillColor: [226, 232, 240] as [number, number, number], fontStyle: 'bold' as const, textColor: [15, 23, 42] as [number, number, number] }
+  const subtotalStyle = { fillColor: [241, 245, 249] as [number, number, number], fontStyle: 'bold' as const }
 
-  const workTableRows = summary.workRows.map((r) => [r.date, r.patientName, r.refBy, r.sourceOfIncome, formatBDT(r.amount), r.note || '-'])
-  workTableRows.push(['TOTAL', '', '', '', formatBDT(summary.totalWorkDone), ''])
-  autoTable(doc, {
-    startY: y,
-    head: [['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note']],
-    body: workTableRows,
-    styles: { fontSize: 7.5, cellPadding: 3.5 },
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
-    columnStyles: { 4: { halign: 'right' } },
-    theme: 'striped',
-    margin: { left: marginX, right: marginX },
-  })
-  y = (doc as any).lastAutoTable.finalY + 22
+  if (view === 'statement') {
+    // ---- Statement: one table, merged per patient ----
+    ensureRoom(120)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('STATEMENT', marginX, y)
+    y += 8
 
-  // ---- Collections ----
-  ensureRoom(120)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.text('COLLECTIONS', marginX, y)
-  y += 8
+    const statementRows: any[] = []
+    summary.patientGroups.forEach((g) => {
+      statementRows.push([
+        { content: `${g.patientName}${g.patientCode ? ` (${g.patientCode})` : ''}`, colSpan: 12, styles: groupHeaderStyle },
+      ])
+      g.workRows.forEach((r) => {
+        statementRows.push([r.date, r.patientName, r.refBy, r.sourceOfIncome, formatBDT(r.amount), r.note || '-', '', '', '', '', '', ''])
+      })
+      statementRows.push([
+        '',
+        'Patient total',
+        '',
+        '',
+        formatBDT(g.workTotal),
+        '',
+        formatBDT(g.totalPaid),
+        formatBDT(g.txC),
+        formatBDT(g.netA),
+        `${g.doctorSharePct}%`,
+        formatBDT(g.clinicIncome),
+        formatBDT(g.drIncome),
+      ].map((v) => ({ content: v, styles: subtotalStyle })))
+    })
+    statementRows.push(
+      [
+        'GRAND TOTALS',
+        '',
+        '',
+        '',
+        formatBDT(summary.totalWorkDone),
+        '',
+        formatBDT(summary.totalPaid),
+        formatBDT(summary.totalTxC),
+        formatBDT(summary.totalNetA),
+        '',
+        formatBDT(summary.totalClinicIncome),
+        formatBDT(summary.totalDrIncome),
+      ].map((v) => ({ content: v, styles: { fontStyle: 'bold' as const, fillColor: [30, 41, 59] as [number, number, number], textColor: [255, 255, 255] as [number, number, number] } }))
+    )
 
-  const collectionTableRows = summary.collectionRows.map((r) => [
-    r.date,
-    r.patientName,
-    r.refBy,
-    formatBDT(r.totalPaid),
-    formatBDT(r.txC),
-    formatBDT(r.netA),
-    `${r.doctorSharePct}%`,
-    formatBDT(r.clinicIncome),
-    formatBDT(r.drIncome),
-  ])
-  collectionTableRows.push([
-    'TOTALS',
-    '',
-    '',
-    formatBDT(summary.totalPaid),
-    formatBDT(summary.totalTxC),
-    formatBDT(summary.totalNetA),
-    '',
-    formatBDT(summary.totalClinicIncome),
-    formatBDT(summary.totalDrIncome),
-  ])
-  autoTable(doc, {
-    startY: y,
-    head: [['Date', 'Patient Name', 'Ref By', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income']],
-    body: collectionTableRows,
-    styles: { fontSize: 7.5, cellPadding: 3.5 },
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
-    columnStyles: {
-      3: { halign: 'right' },
-      4: { halign: 'right' },
-      5: { halign: 'right' },
-      6: { halign: 'center' },
-      7: { halign: 'right', fontStyle: 'bold' },
-      8: { halign: 'right', fontStyle: 'bold' },
-    },
-    theme: 'striped',
-    margin: { left: marginX, right: marginX },
-  })
-  y = (doc as any).lastAutoTable.finalY + 22
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income']],
+      body: statementRows,
+      styles: { fontSize: 7, cellPadding: 3 },
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: {
+        4: { halign: 'right' },
+        6: { halign: 'right' },
+        7: { halign: 'right' },
+        8: { halign: 'right' },
+        9: { halign: 'center' },
+        10: { halign: 'right' },
+        11: { halign: 'right' },
+      },
+      theme: 'striped',
+      margin: { left: marginX, right: marginX },
+    })
+    y = (doc as any).lastAutoTable.finalY + 22
+  } else {
+    // ---- Detailed: Work Done, then Collections grouped per patient ----
+    ensureRoom(120)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('WORK DONE', marginX, y)
+    y += 8
+
+    const workTableRows = summary.workRows.map((r) => [r.date, r.patientName, r.refBy, r.sourceOfIncome, formatBDT(r.amount), r.note || '-'])
+    workTableRows.push(['TOTAL', '', '', '', formatBDT(summary.totalWorkDone), ''])
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Patient Name', 'Ref By', 'Source Of Income', 'Amount', 'Note']],
+      body: workTableRows,
+      styles: { fontSize: 7.5, cellPadding: 3.5 },
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: { 4: { halign: 'right' } },
+      theme: 'striped',
+      margin: { left: marginX, right: marginX },
+    })
+    y = (doc as any).lastAutoTable.finalY + 22
+
+    ensureRoom(120)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('COLLECTIONS', marginX, y)
+    y += 8
+
+    const collectionTableRows: any[] = []
+    summary.patientGroups
+      .filter((g) => g.collectionRows.length > 0)
+      .forEach((g) => {
+        g.collectionRows.forEach((r) => {
+          collectionTableRows.push([
+            r.date,
+            r.patientName,
+            r.refBy,
+            formatBDT(r.totalPaid),
+            formatBDT(r.txC),
+            formatBDT(r.netA),
+            `${r.doctorSharePct}%`,
+            formatBDT(r.clinicIncome),
+            formatBDT(r.drIncome),
+          ])
+        })
+        if (g.collectionRows.length > 1) {
+          collectionTableRows.push(
+            [
+              '',
+              `${g.patientName} subtotal`,
+              '',
+              formatBDT(g.totalPaid),
+              formatBDT(g.txC),
+              formatBDT(g.netA),
+              `${g.doctorSharePct}%`,
+              formatBDT(g.clinicIncome),
+              formatBDT(g.drIncome),
+            ].map((v) => ({ content: v, styles: subtotalStyle }))
+          )
+        }
+      })
+    collectionTableRows.push([
+      'TOTALS',
+      '',
+      '',
+      formatBDT(summary.totalPaid),
+      formatBDT(summary.totalTxC),
+      formatBDT(summary.totalNetA),
+      '',
+      formatBDT(summary.totalClinicIncome),
+      formatBDT(summary.totalDrIncome),
+    ])
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Patient Name', 'Ref By', 'Total Paid', 'TxC', 'Net A', '%', 'Clinic Income', 'Dr. Income']],
+      body: collectionTableRows,
+      styles: { fontSize: 7.5, cellPadding: 3.5 },
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: {
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'center' },
+        7: { halign: 'right', fontStyle: 'bold' },
+        8: { halign: 'right', fontStyle: 'bold' },
+      },
+      theme: 'striped',
+      margin: { left: marginX, right: marginX },
+    })
+    y = (doc as any).lastAutoTable.finalY + 22
+  }
 
   // ---- Needs Attention ----
   if (summary.flaggedRows.length > 0) {

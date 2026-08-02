@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import {
   DollarSign,
   FileSpreadsheet,
@@ -11,6 +11,7 @@ import {
   Scissors,
   Lock,
   AlertTriangle,
+  Table2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
@@ -101,6 +102,7 @@ export function DoctorAnalyticsSection({
     uniqueMonths[0] || new Date().toISOString().substring(0, 7)
   )
   const [searchFilter, setSearchFilter] = useState('')
+  const [view, setView] = useState<'statement' | 'detailed'>('statement')
 
   useEffect(() => {
     if (isDoctorOnly) {
@@ -138,8 +140,25 @@ export function DoctorAnalyticsSection({
     )
   }, [summary.collectionRows, searchFilter])
 
+  // Statement view (and Detailed's grouped Collections) filter at the
+  // patient-group level — a group either fully matches or doesn't, so its
+  // subtotal always reflects everything shown under it.
+  const filteredPatientGroups = useMemo(() => {
+    if (!searchFilter.trim()) return summary.patientGroups
+    const q = searchFilter.toLowerCase()
+    return summary.patientGroups.filter(
+      (g) =>
+        g.patientName.toLowerCase().includes(q) ||
+        (g.patientCode && g.patientCode.toLowerCase().includes(q)) ||
+        g.workRows.some(
+          (r) => r.sourceOfIncome.toLowerCase().includes(q) || r.note.toLowerCase().includes(q) || r.refBy.toLowerCase().includes(q)
+        ) ||
+        g.collectionRows.some((r) => r.refBy.toLowerCase().includes(q))
+    )
+  }, [summary.patientGroups, searchFilter])
+
   const handleDownloadPDF = async () => {
-    const doc = generateFinancialStatementPDF(summary, doctorProfile)
+    const doc = generateFinancialStatementPDF(summary, doctorProfile, view)
     const fileName = `Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.pdf`
     await sharePdf(doc, fileName, {
       subject: `Financial Statement — ${summary.doctorName} (${summary.periodLabel})`,
@@ -178,7 +197,7 @@ export function DoctorAnalyticsSection({
   }
 
   const handleDownloadCSV = () => {
-    exportFinancialStatementCSV(summary)
+    exportFinancialStatementCSV(summary, view)
   }
 
   // Fail closed, not open: if we can't pin down which doctor this session
@@ -338,6 +357,32 @@ export function DoctorAnalyticsSection({
         </div>
       </div>
 
+      {/* Statement / Detailed toggle */}
+      <div className="flex items-center gap-2 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setView('statement')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            view === 'statement'
+              ? 'border-teal-600 text-teal-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" /> Statement
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('detailed')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            view === 'detailed'
+              ? 'border-teal-600 text-teal-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Table2 className="w-4 h-4" /> Detailed
+        </button>
+      </div>
+
       {/* Needs Attention */}
       {summary.flaggedRows.length > 0 && (
         <div className="bg-amber-50 rounded-xl border border-amber-200 shadow-sm overflow-hidden">
@@ -404,139 +449,267 @@ export function DoctorAnalyticsSection({
         </div>
       )}
 
-      {/* Work Done */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-          <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-blue-600" />
-            Work Done ({filteredWorkRows.length} records)
-          </h4>
-          <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
-            Ref By: {summary.doctorName} &middot; {summary.periodLabel}
-          </span>
-        </div>
-
-        {filteredWorkRows.length === 0 ? (
-          <div className="text-center py-12 text-xs text-slate-500">✨ No matching treatment records found.</div>
-        ) : (
-          <div className="overflow-auto max-h-[65vh]">
-            <table className="w-full text-xs text-left text-slate-700">
-              <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
-                <tr>
-                  <th className="p-2.5 whitespace-nowrap">Date</th>
-                  <th className="p-2.5">Patient Name</th>
-                  <th className="p-2.5">Ref By</th>
-                  <th className="p-2.5">Source Of Income</th>
-                  <th className="p-2.5 text-right">Amount</th>
-                  <th className="p-2.5">Note</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredWorkRows.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600">{r.date}</td>
-                    <td className="p-2.5 font-bold text-slate-900 whitespace-nowrap">
-                      {r.patientName}
-                      {r.patientCode && (
-                        <span className="ml-1 text-[10px] text-slate-400 font-mono font-normal">({r.patientCode})</span>
-                      )}
-                    </td>
-                    <td className="p-2.5 text-slate-700 whitespace-nowrap">{r.refBy}</td>
-                    <td className="p-2.5 font-medium text-slate-900">{r.sourceOfIncome}</td>
-                    <td className="p-2.5 text-right font-mono font-semibold">{formatBDT(r.amount)}</td>
-                    <td className="p-2.5 text-slate-500 italic max-w-[160px] truncate">{r.note || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-900 text-white font-bold border-t text-xs">
-                <tr>
-                  <td colSpan={4} className="p-3 text-right uppercase text-[11px] tracking-wider text-slate-300">
-                    TOTAL WORK DONE:
-                  </td>
-                  <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalWorkDone)}</td>
-                  <td className="p-3"></td>
-                </tr>
-              </tfoot>
-            </table>
+      {view === 'statement' ? (
+        /* Statement: one table merged per patient — work rows on the left,
+           that patient's real payment total + payout math once on the
+           right. Matches the reference clinic's format. */
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+            <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-teal-600" />
+              Statement ({filteredPatientGroups.length} patients)
+            </h4>
+            <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+              Ref By: {summary.doctorName} &middot; {summary.periodLabel}
+            </span>
           </div>
-        )}
-      </div>
 
-      {/* Collections */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-          <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-teal-600" />
-            Collections ({filteredCollectionRows.length} payments)
-          </h4>
-          <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
-            Ref By: {summary.doctorName} &middot; {summary.periodLabel}
-          </span>
-        </div>
-
-        {filteredCollectionRows.length === 0 ? (
-          <div className="text-center py-12 text-xs text-slate-500">✨ No matching payment records found.</div>
-        ) : (
-          <div className="overflow-auto max-h-[65vh]">
-            <table className="w-full text-xs text-left text-slate-700">
-              <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
-                <tr>
-                  <th className="p-2.5 whitespace-nowrap">Date</th>
-                  <th className="p-2.5">Patient Name</th>
-                  <th className="p-2.5">Ref By</th>
-                  <th className="p-2.5 text-right bg-slate-700">Total Paid</th>
-                  <th className="p-2.5 text-right">TxC</th>
-                  <th className="p-2.5 text-right font-bold text-amber-300">Net A</th>
-                  <th className="p-2.5 text-center">%</th>
-                  <th className="p-2.5 text-right bg-teal-900 text-teal-200">Clinic Income</th>
-                  <th className="p-2.5 text-right bg-teal-950 text-emerald-300 font-bold">Dr. Income</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredCollectionRows.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600">{r.date}</td>
-                    <td className="p-2.5 font-bold text-slate-900 whitespace-nowrap">
-                      {r.patientName}
-                      {r.patientCode && (
-                        <span className="ml-1 text-[10px] text-slate-400 font-mono font-normal">({r.patientCode})</span>
-                      )}
+          {filteredPatientGroups.length === 0 ? (
+            <div className="text-center py-12 text-xs text-slate-500">✨ No matching records found.</div>
+          ) : (
+            <div className="overflow-auto max-h-[65vh]">
+              <table className="w-full text-xs text-left text-slate-700">
+                <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
+                  <tr>
+                    <th className="p-2.5 whitespace-nowrap">Date</th>
+                    <th className="p-2.5">Patient Name</th>
+                    <th className="p-2.5">Ref By</th>
+                    <th className="p-2.5">Source Of Income</th>
+                    <th className="p-2.5 text-right">Amount</th>
+                    <th className="p-2.5">Note</th>
+                    <th className="p-2.5 text-right bg-slate-700">Total Paid</th>
+                    <th className="p-2.5 text-right">TxC</th>
+                    <th className="p-2.5 text-right font-bold text-amber-300">Net A</th>
+                    <th className="p-2.5 text-center">%</th>
+                    <th className="p-2.5 text-right bg-teal-900 text-teal-200">Clinic Income</th>
+                    <th className="p-2.5 text-right bg-teal-950 text-emerald-300 font-bold">Dr. Income</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredPatientGroups.map((g) => (
+                    <Fragment key={g.patientId}>
+                      <tr className="bg-slate-100">
+                        <td colSpan={12} className="p-2 font-bold text-slate-800">
+                          {g.patientName}
+                          {g.patientCode && (
+                            <span className="ml-1 text-[10px] text-slate-400 font-mono font-normal">({g.patientCode})</span>
+                          )}
+                        </td>
+                      </tr>
+                      {g.workRows.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600">{r.date}</td>
+                          <td className="p-2.5 text-slate-900 whitespace-nowrap">{r.patientName}</td>
+                          <td className="p-2.5 text-slate-700 whitespace-nowrap">{r.refBy}</td>
+                          <td className="p-2.5 font-medium text-slate-900">{r.sourceOfIncome}</td>
+                          <td className="p-2.5 text-right font-mono font-semibold">{formatBDT(r.amount)}</td>
+                          <td className="p-2.5 text-slate-500 italic max-w-[140px] truncate">{r.note || '-'}</td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5"></td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-50 font-bold">
+                        <td className="p-2.5"></td>
+                        <td className="p-2.5 text-slate-700" colSpan={3}>
+                          Patient total
+                        </td>
+                        <td className="p-2.5 text-right font-mono">{formatBDT(g.workTotal)}</td>
+                        <td className="p-2.5"></td>
+                        <td className="p-2.5 text-right font-mono text-emerald-700 bg-emerald-50/40">{formatBDT(g.totalPaid)}</td>
+                        <td className="p-2.5 text-right font-mono text-amber-700">{formatBDT(g.txC)}</td>
+                        <td className="p-2.5 text-right font-mono text-slate-900">{formatBDT(g.netA)}</td>
+                        <td className="p-2.5 text-center text-teal-700">{g.doctorSharePct}%</td>
+                        <td className="p-2.5 text-right font-mono text-teal-900 bg-teal-50/50">{formatBDT(g.clinicIncome)}</td>
+                        <td className="p-2.5 text-right font-mono text-emerald-800 bg-emerald-100/60">{formatBDT(g.drIncome)}</td>
+                      </tr>
+                    </Fragment>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-900 text-white font-bold border-t text-xs">
+                  <tr>
+                    <td colSpan={4} className="p-3 text-right uppercase text-[11px] tracking-wider text-slate-300">
+                      GRAND TOTALS:
                     </td>
-                    <td className="p-2.5 text-slate-700 whitespace-nowrap">{r.refBy}</td>
-                    <td className="p-2.5 text-right font-mono text-emerald-700 bg-emerald-50/40 font-semibold">
-                      {formatBDT(r.totalPaid)}
-                    </td>
-                    <td className="p-2.5 text-right font-mono text-amber-700">{formatBDT(r.txC)}</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-slate-900">{formatBDT(r.netA)}</td>
-                    <td className="p-2.5 text-center font-bold text-teal-700">{r.doctorSharePct}%</td>
-                    <td className="p-2.5 text-right font-mono font-semibold text-teal-900 bg-teal-50/50">
-                      {formatBDT(r.clinicIncome)}
-                    </td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-800 bg-emerald-100/60 text-sm">
-                      {formatBDT(r.drIncome)}
+                    <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalWorkDone)}</td>
+                    <td className="p-3"></td>
+                    <td className="p-3 text-right font-mono text-emerald-300 bg-slate-800">{formatBDT(summary.totalPaid)}</td>
+                    <td className="p-3 text-right font-mono text-amber-300">{formatBDT(summary.totalTxC)}</td>
+                    <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalNetA)}</td>
+                    <td className="p-3 text-center">-</td>
+                    <td className="p-3 text-right font-mono text-teal-200 bg-slate-800">{formatBDT(summary.totalClinicIncome)}</td>
+                    <td className="p-3 text-right font-mono text-emerald-300 bg-teal-950 text-sm">
+                      {formatBDT(summary.totalDrIncome)}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-900 text-white font-bold border-t text-xs">
-                <tr>
-                  <td colSpan={3} className="p-3 text-right uppercase text-[11px] tracking-wider text-slate-300">
-                    STATEMENT TOTALS:
-                  </td>
-                  <td className="p-3 text-right font-mono text-emerald-300 bg-slate-800">{formatBDT(summary.totalPaid)}</td>
-                  <td className="p-3 text-right font-mono text-amber-300">{formatBDT(summary.totalTxC)}</td>
-                  <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalNetA)}</td>
-                  <td className="p-3 text-center">-</td>
-                  <td className="p-3 text-right font-mono text-teal-200 bg-slate-800">{formatBDT(summary.totalClinicIncome)}</td>
-                  <td className="p-3 text-right font-mono text-emerald-300 bg-teal-950 text-sm">
-                    {formatBDT(summary.totalDrIncome)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Work Done */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+              <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-600" />
+                Work Done ({filteredWorkRows.length} records)
+              </h4>
+              <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+                Ref By: {summary.doctorName} &middot; {summary.periodLabel}
+              </span>
+            </div>
+
+            {filteredWorkRows.length === 0 ? (
+              <div className="text-center py-12 text-xs text-slate-500">✨ No matching treatment records found.</div>
+            ) : (
+              <div className="overflow-auto max-h-[65vh]">
+                <table className="w-full text-xs text-left text-slate-700">
+                  <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
+                    <tr>
+                      <th className="p-2.5 whitespace-nowrap">Date</th>
+                      <th className="p-2.5">Patient Name</th>
+                      <th className="p-2.5">Ref By</th>
+                      <th className="p-2.5">Source Of Income</th>
+                      <th className="p-2.5 text-right">Amount</th>
+                      <th className="p-2.5">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredWorkRows.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600">{r.date}</td>
+                        <td className="p-2.5 font-bold text-slate-900 whitespace-nowrap">
+                          {r.patientName}
+                          {r.patientCode && (
+                            <span className="ml-1 text-[10px] text-slate-400 font-mono font-normal">({r.patientCode})</span>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-slate-700 whitespace-nowrap">{r.refBy}</td>
+                        <td className="p-2.5 font-medium text-slate-900">{r.sourceOfIncome}</td>
+                        <td className="p-2.5 text-right font-mono font-semibold">{formatBDT(r.amount)}</td>
+                        <td className="p-2.5 text-slate-500 italic max-w-[160px] truncate">{r.note || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-900 text-white font-bold border-t text-xs">
+                    <tr>
+                      <td colSpan={4} className="p-3 text-right uppercase text-[11px] tracking-wider text-slate-300">
+                        TOTAL WORK DONE:
+                      </td>
+                      <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalWorkDone)}</td>
+                      <td className="p-3"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Collections — grouped per patient with a subtotal row */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+              <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-teal-600" />
+                Collections ({filteredCollectionRows.length} payments)
+              </h4>
+              <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+                Ref By: {summary.doctorName} &middot; {summary.periodLabel}
+              </span>
+            </div>
+
+            {filteredCollectionRows.length === 0 ? (
+              <div className="text-center py-12 text-xs text-slate-500">✨ No matching payment records found.</div>
+            ) : (
+              <div className="overflow-auto max-h-[65vh]">
+                <table className="w-full text-xs text-left text-slate-700">
+                  <thead className="bg-slate-800 text-white font-bold border-b sticky top-0 z-10">
+                    <tr>
+                      <th className="p-2.5 whitespace-nowrap">Date</th>
+                      <th className="p-2.5">Patient Name</th>
+                      <th className="p-2.5">Ref By</th>
+                      <th className="p-2.5 text-right bg-slate-700">Total Paid</th>
+                      <th className="p-2.5 text-right">TxC</th>
+                      <th className="p-2.5 text-right font-bold text-amber-300">Net A</th>
+                      <th className="p-2.5 text-center">%</th>
+                      <th className="p-2.5 text-right bg-teal-900 text-teal-200">Clinic Income</th>
+                      <th className="p-2.5 text-right bg-teal-950 text-emerald-300 font-bold">Dr. Income</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredPatientGroups
+                      .filter((g) => g.collectionRows.length > 0)
+                      .map((g) => (
+                        <Fragment key={g.patientId}>
+                          <tr className="bg-slate-100">
+                            <td colSpan={9} className="p-2 font-bold text-slate-800">
+                              {g.patientName}
+                              {g.patientCode && (
+                                <span className="ml-1 text-[10px] text-slate-400 font-mono font-normal">({g.patientCode})</span>
+                              )}
+                            </td>
+                          </tr>
+                          {g.collectionRows.map((r) => (
+                            <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600">{r.date}</td>
+                              <td className="p-2.5 text-slate-900 whitespace-nowrap">{r.patientName}</td>
+                              <td className="p-2.5 text-slate-700 whitespace-nowrap">{r.refBy}</td>
+                              <td className="p-2.5 text-right font-mono text-emerald-700 bg-emerald-50/40 font-semibold">
+                                {formatBDT(r.totalPaid)}
+                              </td>
+                              <td className="p-2.5 text-right font-mono text-amber-700">{formatBDT(r.txC)}</td>
+                              <td className="p-2.5 text-right font-mono font-bold text-slate-900">{formatBDT(r.netA)}</td>
+                              <td className="p-2.5 text-center font-bold text-teal-700">{r.doctorSharePct}%</td>
+                              <td className="p-2.5 text-right font-mono font-semibold text-teal-900 bg-teal-50/50">
+                                {formatBDT(r.clinicIncome)}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-emerald-800 bg-emerald-100/60 text-sm">
+                                {formatBDT(r.drIncome)}
+                              </td>
+                            </tr>
+                          ))}
+                          {g.collectionRows.length > 1 && (
+                            <tr className="bg-slate-50 font-bold">
+                              <td className="p-2.5" colSpan={2}>
+                                {g.patientName} subtotal
+                              </td>
+                              <td className="p-2.5"></td>
+                              <td className="p-2.5 text-right font-mono text-emerald-700">{formatBDT(g.totalPaid)}</td>
+                              <td className="p-2.5 text-right font-mono text-amber-700">{formatBDT(g.txC)}</td>
+                              <td className="p-2.5 text-right font-mono text-slate-900">{formatBDT(g.netA)}</td>
+                              <td className="p-2.5 text-center text-teal-700">{g.doctorSharePct}%</td>
+                              <td className="p-2.5 text-right font-mono text-teal-900">{formatBDT(g.clinicIncome)}</td>
+                              <td className="p-2.5 text-right font-mono text-emerald-800">{formatBDT(g.drIncome)}</td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                  </tbody>
+                  <tfoot className="bg-slate-900 text-white font-bold border-t text-xs">
+                    <tr>
+                      <td colSpan={3} className="p-3 text-right uppercase text-[11px] tracking-wider text-slate-300">
+                        STATEMENT TOTALS:
+                      </td>
+                      <td className="p-3 text-right font-mono text-emerald-300 bg-slate-800">{formatBDT(summary.totalPaid)}</td>
+                      <td className="p-3 text-right font-mono text-amber-300">{formatBDT(summary.totalTxC)}</td>
+                      <td className="p-3 text-right font-mono text-white">{formatBDT(summary.totalNetA)}</td>
+                      <td className="p-3 text-center">-</td>
+                      <td className="p-3 text-right font-mono text-teal-200 bg-slate-800">{formatBDT(summary.totalClinicIncome)}</td>
+                      <td className="p-3 text-right font-mono text-emerald-300 bg-teal-950 text-sm">
+                        {formatBDT(summary.totalDrIncome)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
