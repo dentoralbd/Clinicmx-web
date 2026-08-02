@@ -4,6 +4,77 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-02 — Per-doctor default Doctor Share % on account creation (+ a same-day grant fix)
+Admin → Users → Add/Edit Account gains a "Default Doctor Share %" field, doctor role only
+(`app_users.default_share_pct`, migration 048, nullable — NULL keeps the existing flat 30% clinic
+default). New Treatment Plan now pre-fills Doctor Share % from the selected doctor's own default
+instead of a flat 30% for everyone: applied the moment the Attending Doctor dropdown changes
+(admin/operator picking a doctor), and via an effect for self-locked doctor sessions, which have no
+dropdown to fire an onChange from. Still editable per item, same as before. Shipped alongside the fix
+below since both touch the same Attending Doctor picker.
+**Same-day follow-up fix:** `app_users` uses column-level grants, not a table-wide one (see
+DATABASE.md §3) — 048 added the column but not its `GRANT SELECT`, so the moment the column was
+added to `listAppUsers()`'s/`fetchDoctorsList()`'s select lists, both broke in production with
+`permission denied for table app_users` (not a column-specific message — easy to mistake for an RLS
+regression). Fixed within the hour by 049 (`GRANT SELECT (default_share_pct) ... TO authenticated`).
+Lesson for future `app_users` columns: the grant has to ship in the same migration as the column, not
+follow it.
+
+## 2026-08-02 — Fix Attending Doctor picker showing every admin account as a doctor
+`PatientProfile.tsx`'s `fetchDoctorsList()` queried `app_users` for `role IN ('doctor', 'admin')` and
+added every result's name to the Attending Doctor dropdown — so any admin/test account (e.g. "Clinic
+Admin", a dev/test login) appeared as a selectable "who performed this procedure" answer for anyone,
+not just their own name when self-attributing (which a separate block already handled correctly).
+Found while investigating a related report (see below) — the same picker showed 3–4 names where there
+should have been 1–2 real doctors. Scoped the roster query to `role = 'doctor'` only.
+
+## 2026-08-02 — Root cause: doctor's own account showed BDT 0 in their self-locked Doctor Analytics
+Reported live: logging in as the clinic's doctor showed BDT 0 everywhere in Doctor Analytics, despite
+real payments existing. Root cause confirmed against production data: the self-lock filter matches
+`treatments.doctor_name` against the session's own name by exact (case-insensitive) string —
+`app_users.full_name` for that account was `"gopi"`, but every treatment had `doctor_name = "Dr. Gopi
+Sankar Banik"` (the string the admin bulk-assign tool picked, matching the separate Doctor Profile
+record, not the login account's own name). `"gopi" !== "dr. gopi sankar banik"` → every row filtered
+out. Fixed by renaming the account's `full_name` to match what was already on every treatment — zero
+treatment rows needed to change. Confirms a risk flagged during the 2026-08-01 review
+(`treatments.doctor_name` is free-text, not a FK) actually manifesting; see DATABASE.md's note on the
+`treatments.doctor_name` column for the general risk and how to avoid it recurring.
+
+## 2026-08-02 — Doctor Analytics: Statement/Detailed views, date sorting, per-patient grouping
+Three problems reported against the live Doctor Analytics tab, with a reference statement from
+another clinic attached for comparison: **Work Done included Planned and Cancelled treatments**
+(no status filter existed at all); **Work Done was unsorted** (whatever order Postgres happened to
+return); **Collections repeated the same patient** across scattered, disconnected rows instead of
+grouping their payments together. Fixed:
+- Work Done now filtered to **Completed + In Progress** only, sorted by date ascending.
+- Added a **Statement** view (default) — one table, grouped per patient, work rows and collections
+  merged into a single per-patient block with one payout total on the right, matching how the
+  reference clinic's own sheet actually adds up (confirmed row-by-row: a patient's individual work
+  amounts summed exactly to their listed Total Paid).
+- Kept the original two-section layout as a **Detailed** view, switchable via the same tab pattern
+  Financial Analysis already uses for Doctor/Staff — Collections there is now also grouped per
+  patient with a subtotal row.
+- Both views compute from one shared `patientGroups` structure, so Statement and Detailed can never
+  disagree on a number; CSV/PDF export follows whichever view is active on screen.
+
+## 2026-08-02 — Add per-row "Resolve" action for payments with no linked treatments
+A payment could land in Needs Attention with **no treatment record at all** on its invoice (e.g. a
+manual/legacy payment never tied to any procedure) — previously a dead end, permanently excluded from
+every doctor's total with no way to fix it short of a database edit. Added a typed `reasonCode` to
+`FlaggedRow` (`unknown_invoice` / `no_linked_treatments` / `no_doctor_assigned` / `mixed_doctors` /
+`reconciliation_gap`) and, admin-only, an inline "Resolve" control on `no_linked_treatments` rows:
+pick a doctor + share %, and it creates one synthetic `treatments` row (marked in its notes as
+auto-created) to retroactively attribute the payment through the existing `payment → invoice →
+treatments → doctor_name` chain — deliberately reusing that chain rather than building a second,
+parallel attribution mechanism.
+
+## 2026-08-01 — Fix duplicate Doctor Analytics / Financial Analysis sidebar links for operators
+Reported live via screenshot: an operator granted `can_access_doctor_analytics` saw **two** sidebar
+links — the standalone "Doctor Analytics" entry (meant only for an actual `doctor` role's self-locked
+personal view) and "Financial Analysis" — both leading to the exact same unscoped "All Doctors" view,
+since `DoctorAnalyticsSection`'s self-lock only ever applies to `role === 'doctor'`. The standalone
+link now only renders for that role.
+
 ## 2026-08-01 — Fix PDF downloads silently failing in the Android app
 `Clinicmx-web-apk` (sibling Capacitor project, `D:\Claude\Clinicmx-web-apk` — a bare Android WebView
 wrapper pointed at the live `clinicmx-web.pages.dev` URL, no bundled build step) reported PDFs not

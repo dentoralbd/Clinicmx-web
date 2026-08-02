@@ -128,7 +128,7 @@ Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar li
 
 **Consultation-only patients excluded from new-patient counts, but not from revenue attribution (2026-07-22):** `Analytics.tsx` fetches all patients (unfiltered) so revenue features that need a name — Top Revenue Sources, the Daily Earnings calendar's per-patient breakdown — can still resolve a consultation-only patient's name instead of showing "Unknown Patient" (a bug in the initial cut: the fetch was filtered at the query level, breaking name lookups for anyone who'd paid a consultation fee but not converted). Only the "New Patients" stat tile and the new-registrations/returning-vs-new charts use a separately filtered `fullPatients` list (`patient_type !== 'consultation'`) so walk-ins who haven't converted don't inflate those. Consultation-fee invoices/payments are never filtered, so the fee always counts in Revenue Collected/Outstanding — see §3b.
 
-## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01)
+## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01, Statement/Detailed + Resolve action + per-doctor default % added 2026-08-02)
 
 Sidebar entry replaces admin's old direct "Doctor Analytics" link, at the same position (below
 Analytics). Two tabs, each independently gated: **Doctor Analytics** — admin, or anyone granted
@@ -141,38 +141,74 @@ self-locked to their own work — untouched by any of this.
 
 Replaced an earlier version that computed each treatment's `Total Paid` as its cost × the parent
 invoice's payment ratio — produced fractional, never-actually-paid amounts (e.g. BDT 3,333.33
-against a still-incomplete BDT 4,000 crown). Now two independent logs instead of one table:
+against a still-incomplete BDT 4,000 crown). Now two independent logs (Work Done, Collections)
+feeding one shared `patientGroups` computation, rendered as two switchable views (**Statement** /
+**Detailed** toggle, same tab pattern as the Doctor/Staff toggle one level up) so the two layouts can
+never disagree on a number — both are exports of the same underlying data, not two separate
+calculations:
 
 - **Work Done** — one row per treatment (Date, Patient, Ref By, Source of Income, Amount, Note), no
-  money columns. Answers "what was performed", nothing else. Bucketed by `completed_at` (falling
+  money columns. Answers "what was performed", nothing else. Filtered to **Completed + In Progress**
+  only (Planned/Cancelled excluded — chair time was spent on in-progress work, nothing was spent on
+  work not yet started or abandoned), sorted by date ascending. Bucketed by `completed_at` (falling
   back to `created_at` for treatments not yet Completed — see DATABASE.md).
 - **Collections** — one row per real `payments` row (Date, Patient, Ref By, Total Paid, TxC, Net A,
-  %, Clinic Income, Dr. Income). `Total Paid` is always a real payment amount, never a derived
-  slice. Attribution: `payment → invoice → its linked treatments → doctor_name`. Exactly one
-  distinct doctor across an invoice's treatments → the whole payment is theirs; TxC is that
-  payment's pro-rata share of the invoice's total lab cost; `%` is the cost-weighted average
-  `doctor_share_pct` across the invoice's treatments (default **30%**, migration 044).
+  %, Clinic Income, Dr. Income), sorted by date ascending. `Total Paid` is always a real payment
+  amount, never a derived slice. Attribution: `payment → invoice → its linked treatments →
+  doctor_name`. Exactly one distinct doctor across an invoice's treatments → the whole payment is
+  theirs; TxC is that payment's pro-rata share of the invoice's total lab cost; `%` is the
+  cost-weighted average `doctor_share_pct` across the invoice's treatments (default **30%**,
+  migration 044, or the doctor's own default — see below).
+- **Statement view** (default) — one table, grouped per patient (a reference statement from another
+  clinic drove this design: work rows and payments for the same patient sum to one line, not two
+  disconnected sections). A patient group renders if they have either work rows or collections in
+  the period — a payment with no matching work this month, or work not yet paid, both still show,
+  with the empty side blank. Group `%` is derived from the real money (`drIncome / netA`), not
+  averaged from the underlying rows.
+- **Detailed view** — the original two separate tables (Work Done, then Collections), with
+  Collections now also grouped per patient with a subtotal row instead of listing repeat payments
+  from the same patient as scattered, disconnected rows.
 - **Needs Attention** panel (only shown in the unscoped "All Doctors" admin view — never inside a
   specific/self-locked doctor's view, since these payments don't have one confirmed doctor):
   payments on invoices with **two or more distinct doctors** across their treatments, payments on
   invoices with **no linked treatments**, and standing **reconciliation gaps** (`invoice.paid_amount`
   with no matching `payments` row on file — a legacy fallback in `recordInvoicePayment` can update
   the invoice total without writing a ledger row). Never silently folded into any doctor's total.
+  Each row carries a typed `reasonCode` (`unknown_invoice` / `no_linked_treatments` /
+  `no_doctor_assigned` / `mixed_doctors` / `reconciliation_gap`) driving which of the below applies.
+  - **Resolve action** (admin only, `no_linked_treatments` rows): an inline "Resolve" control picks
+    a doctor + share % and creates one synthetic `treatments` row (`treatment_type: 'Other / Manual
+    Charge'`, `status: 'Completed'`, `cost` = the payment amount) to retroactively attribute the
+    payment through the existing `payment → invoice → treatments → doctor_name` chain, rather than
+    building a second, parallel attribution mechanism. The row is visibly marked in its notes as
+    auto-created for this purpose.
 - **Bulk-assign default doctor** (admin only, inside Needs Attention): picks one doctor, applies to
   every treatment currently missing `doctor_name` in one action. Only fills blanks — never
   overwrites an existing assignment (even a wrong one), never touches the mixed-doctor or
   no-linked-treatment flags above (those need per-invoice judgment). Each affected row is
   individually revertible afterward via the normal edit-history/Admin restore flow, though the bulk
-  action itself has no single undo.
+  action itself has no single undo. **Picks whatever string the admin selects from the dropdown** —
+  if that string doesn't exactly match the doctor's own `app_users.full_name`, their self-locked view
+  will show nothing for the newly-assigned rows (see DATABASE.md's `treatments.doctor_name` risk
+  note); keep the account name and the bulk-assign selection in sync.
 - **Doctor Share % (admin-only field)** and the **doctor picker** in New Treatment Plan / Edit
   Treatment: a logged-in `doctor` role sees the doctor field locked to themselves (can't reassign a
   treatment to a colleague); `operator` sees an open picker with **no default** (never silently
-  attributed to the operator's own name — an earlier bug); `admin` sees the full picker. Doctor
-  Share % itself is hidden from non-admins entirely (`can_set_doctor_share_pct` permission
-  overrides this) — it's an admin-set figure that only feeds the month-end payout calculation above,
-  not something a doctor/operator needs to see per treatment. Field labeled "Attending Doctor".
-- Export: CSV and PDF, both showing Work Done / Collections / Needs Attention as clearly separated
-  sections with their own subtotals — never merged into one table.
+  attributed to the operator's own name — an earlier bug); `admin` sees the full picker, sourced from
+  `app_users` roster (role=doctor only — role=admin/operator accounts are never a valid "who
+  performed this procedure" answer other than the current session's own self-attribution, fixed
+  2026-08-02, was pulling in every admin account as a fake doctor option). Doctor Share % itself is
+  hidden from non-admins entirely (`can_set_doctor_share_pct` permission overrides this) — it's an
+  admin-set figure that only feeds the month-end payout calculation above, not something a
+  doctor/operator needs to see per treatment. Field labeled "Attending Doctor".
+  - **Per-doctor default share % (2026-08-02):** Admin → Users → Add/Edit Account gains a "Default
+    Doctor Share %" field for doctor-role accounts (`app_users.default_share_pct`, migration 048).
+    When set, New Treatment Plan pre-fills that doctor's own default the moment they're picked in the
+    Attending Doctor dropdown (or immediately for a self-locked doctor session, via an effect since
+    there's no dropdown to trigger on) — still editable per item, same as before. Doctors with no
+    default set keep the flat 30% clinic default, unchanged.
+- Export: CSV and PDF, both following whichever view (Statement/Detailed) is currently active on
+  screen, so the downloaded file always matches what was visible when it was generated.
 
 ### 15b-ii. Staff Analytics tab (new 2026-08-01, migration 045)
 
