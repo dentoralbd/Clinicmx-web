@@ -571,10 +571,13 @@ export function PatientProfile() {
     // is_app_admin()). Until that migration runs, non-admins only see
     // names already present on existing treatments below — a newly added
     // doctor with no treatments yet stays invisible to them.
+    // role='doctor' only — admin accounts (including test/dev logins) are
+    // never a valid "procedure done by" choice; the current session's own
+    // name was already added above if it's a doctor/admin self-attribution.
     const { data: users, error: usersError } = await supabase
       .from('app_users')
       .select('full_name, role')
-      .in('role', ['doctor', 'admin'])
+      .eq('role', 'doctor')
     if (usersError) {
       console.warn('Could not load doctor roster from app_users:', usersError)
     } else if (users) {
