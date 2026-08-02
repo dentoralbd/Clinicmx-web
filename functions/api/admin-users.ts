@@ -15,9 +15,9 @@
 // admin-otp.ts mints, already proven out on the backup endpoints.
 //
 // POST /api/admin-users
-//   { action: 'create', role, full_name, identifier, password, permissions }
+//   { action: 'create', role, full_name, identifier, password, permissions, default_share_pct? }
 //     -> { ok: true, id, auth_email }
-//   { action: 'update', id, role, full_name, identifier, permissions }
+//   { action: 'update', id, role, full_name, identifier, permissions, default_share_pct? }
 //     -> { ok: true }
 //   { action: 'set-password', id, password } -> { ok: true }
 //   { action: 'set-active', id, is_active } -> { ok: true }
@@ -77,6 +77,7 @@ interface Body {
   password?: string
   permissions?: unknown
   is_active?: boolean
+  default_share_pct?: number | null
 }
 
 interface AppUserRow {
@@ -136,6 +137,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           permissions: body.permissions,
           auth_user_id: created.user.id,
           auth_email: email,
+          default_share_pct: body.default_share_pct ?? null,
         })
         .select('id')
         .single()
@@ -185,6 +187,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           identifier,
           permissions: body.permissions,
           auth_email: identityChanged ? email : existing.auth_email,
+          default_share_pct: body.default_share_pct ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', body.id)

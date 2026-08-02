@@ -24,6 +24,7 @@ export interface AppUserRecord {
   last_login_at: string | null
   auth_user_id: string | null
   auth_email: string | null
+  default_share_pct: number | null
 }
 
 const ADMIN_TOKEN_HEADER = 'X-ClinicMx-Auth'
@@ -74,6 +75,7 @@ function mapRow(row: {
   last_login_at: string | null
   auth_user_id: string | null
   auth_email: string | null
+  default_share_pct: number | null
 }): AppUserRecord {
   const role = row.role === 'operator' ? 'operator' : 'doctor'
   return {
@@ -93,7 +95,7 @@ function friendlyError(error: { code?: string; message: string }) {
 // (`permission denied for column password_hash`), and even before that
 // there's no reason to ever fetch a hash to the browser again.
 const APP_USER_COLUMNS =
-  'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email'
+  'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email, default_share_pct'
 
 export async function listAppUsers(): Promise<AppUserRecord[]> {
   const { data, error } = await supabase
@@ -131,6 +133,7 @@ export interface CreateAppUserInput {
   identifier: string
   password: string
   permissions: AppPermissions
+  default_share_pct?: number | null
 }
 
 export async function createAppUser(input: CreateAppUserInput) {
@@ -141,6 +144,7 @@ export async function createAppUser(input: CreateAppUserInput) {
     identifier: input.identifier,
     password: input.password,
     permissions: input.permissions,
+    default_share_pct: input.default_share_pct ?? null,
   })
   logActivity({
     action: 'create',
@@ -155,6 +159,7 @@ export interface UpdateAppUserInput {
   full_name: string
   identifier: string
   permissions: AppPermissions
+  default_share_pct?: number | null
 }
 
 export async function updateAppUser(id: string, input: UpdateAppUserInput) {
@@ -165,6 +170,7 @@ export async function updateAppUser(id: string, input: UpdateAppUserInput) {
     full_name: input.full_name.trim(),
     identifier: input.identifier,
     permissions: input.permissions,
+    default_share_pct: input.default_share_pct ?? null,
   })
   logActivity({
     action: 'edit',

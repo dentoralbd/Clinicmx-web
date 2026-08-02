@@ -55,6 +55,7 @@ interface UserFormState {
   password: string
   confirmPassword: string
   permissions: AppPermissions
+  default_share_pct: string
 }
 
 function emptyForm(role: AccountRole = 'doctor'): UserFormState {
@@ -65,6 +66,7 @@ function emptyForm(role: AccountRole = 'doctor'): UserFormState {
     password: '',
     confirmPassword: '',
     permissions: structuredClone(DEFAULT_PERMISSIONS[role]),
+    default_share_pct: '',
   }
 }
 
@@ -101,6 +103,8 @@ export function UsersTab() {
     mutationFn: async () => {
       if (!form.full_name.trim()) throw new Error('Name is required.')
       if (!form.identifier.trim()) throw new Error('Email or phone number is required.')
+      const defaultSharePct =
+        form.role === 'doctor' && form.default_share_pct.trim() !== '' ? Number(form.default_share_pct) : null
       if (modal === 'create') {
         if (form.password.length < 4) throw new Error('Password must be at least 4 characters.')
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match.')
@@ -110,6 +114,7 @@ export function UsersTab() {
           identifier: form.identifier,
           password: form.password,
           permissions: form.permissions,
+          default_share_pct: defaultSharePct,
         })
       } else if (modal === 'edit' && selected) {
         await updateAppUser(selected.id, {
@@ -117,6 +122,7 @@ export function UsersTab() {
           full_name: form.full_name,
           identifier: form.identifier,
           permissions: form.permissions,
+          default_share_pct: defaultSharePct,
         })
       }
     },
@@ -178,6 +184,7 @@ export function UsersTab() {
       password: '',
       confirmPassword: '',
       permissions: structuredClone(user.permissions),
+      default_share_pct: user.default_share_pct != null ? String(user.default_share_pct) : '',
     })
     setFormError('')
     setModal('edit')
@@ -365,6 +372,26 @@ export function UsersTab() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                 />
               </div>
+
+              {form.role === 'doctor' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Default Doctor Share %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={form.default_share_pct}
+                    onChange={(e) => setForm({ ...form, default_share_pct: e.target.value })}
+                    placeholder="30 (clinic default)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Pre-fills Doctor Share % whenever this doctor is picked on a New Treatment Plan — still
+                    editable per item there. Leave blank to use the clinic default (30%).
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium mb-1">Email or Phone Number *</label>

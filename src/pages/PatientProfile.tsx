@@ -541,6 +541,10 @@ export function PatientProfile() {
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
   const [doctorsList, setDoctorsList] = useState<string[]>([])
+  // Doctor full_name -> their account's default Doctor Share % (Admin -> Users).
+  // Only role='doctor' accounts with a value set are present; everyone else
+  // falls back to the 30% clinic default wherever this is read.
+  const [doctorSharePctMap, setDoctorSharePctMap] = useState<Record<string, number>>({})
 
   useEffect(() => {
     if (id) {
@@ -576,15 +580,21 @@ export function PatientProfile() {
     // name was already added above if it's a doctor/admin self-attribution.
     const { data: users, error: usersError } = await supabase
       .from('app_users')
-      .select('full_name, role')
+      .select('full_name, role, default_share_pct')
       .eq('role', 'doctor')
+    const sharePctMap: Record<string, number> = {}
     if (usersError) {
       console.warn('Could not load doctor roster from app_users:', usersError)
     } else if (users) {
       users.forEach((u: any) => {
-        if (u.full_name && u.full_name.trim()) set.add(u.full_name.trim())
+        if (u.full_name && u.full_name.trim()) {
+          const name = u.full_name.trim()
+          set.add(name)
+          if (u.default_share_pct != null) sharePctMap[name] = Number(u.default_share_pct)
+        }
       })
     }
+    setDoctorSharePctMap(sharePctMap)
 
     const { data: txs, error: txsError } = await supabase.from('treatments').select('doctor_name')
     if (txsError) {
@@ -805,11 +815,12 @@ export function PatientProfile() {
 
   function addTreatmentPlanItem() {
     const defaultDoc = resolveDefaultDoctorName(doctorProfile)
+    const defaultPct = defaultDoc && doctorSharePctMap[defaultDoc] != null ? String(doctorSharePctMap[defaultDoc]) : '30'
     setTreatmentPlanForm({
       ...treatmentPlanForm,
       items: [
         ...treatmentPlanForm.items,
-        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: defaultDoc, doctor_share_pct: '30' },
+        { treatment_type: '', teeth: [], description: '', status: 'Planned', cost: '', notes: '', doctor_name: defaultDoc, doctor_share_pct: defaultPct },
       ],
     })
   }
@@ -4320,6 +4331,7 @@ export function PatientProfile() {
           dentitionType={patientDentition}
           existingPlanned={plannedTreatments}
           doctorsList={doctorsList}
+          doctorSharePctMap={doctorSharePctMap}
           defaultDoctorName={resolveDefaultDoctorName(doctorProfile)}
           onSubmit={handleTreatmentPlanSubmit}
           onClose={() => setShowTreatmentPlanForm(false)}
@@ -6068,11 +6080,16 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
   )
 }
 
-function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlanned, doctorsList, defaultDoctorName, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
+function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlanned, doctorsList, doctorSharePctMap, defaultDoctorName, onSubmit, onClose, onAddItem, onRemoveItem }: any) {
   function updateItem(index: number, patch: Record<string, any>) {
     const newItems = [...formData.items]
     newItems[index] = { ...newItems[index], ...patch }
     setFormData({ ...formData, items: newItems })
+  }
+
+  function sharePctFor(doctorName: string): string {
+    const pct = doctorSharePctMap?.[doctorName]
+    return pct != null ? String(pct) : '30'
   }
 
   const plannedList = (existingPlanned as any[]) || []
@@ -6088,6 +6105,28 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
   // whole body of work — it's an admin-set figure, not something a doctor
   // or operator needs to see or touch per treatment plan.
   const canSetSharePct = canSetDoctorSharePct()
+
+  // Self-locked doctors never touch the Attending Doctor field (there's no
+  // select to fire an onChange from), so their account's default % has to be
+  // applied here instead. Only touches items that are still untouched
+  // (blank doctor_name, still at the generic '30' default) so a manual edit
+  // is never clobbered.
+  useEffect(() => {
+    if (!isDoctorLocked || !defaultDoctorName) return
+    const pct = sharePctFor(defaultDoctorName)
+    if (pct === '30') return
+    setFormData((prev: any) => {
+      let changed = false
+      const items = prev.items.map((it: any) => {
+        if (!it.doctor_name && it.doctor_share_pct === '30') {
+          changed = true
+          return { ...it, doctor_share_pct: pct }
+        }
+        return it
+      })
+      return changed ? { ...prev, items } : prev
+    })
+  }, [isDoctorLocked, defaultDoctorName, doctorSharePctMap])
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -6175,7 +6214,7 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
                     ) : (
                       <select
                         value={item.doctor_name ?? defaultDoctorName ?? ''}
-                        onChange={(e) => updateItem(index, { doctor_name: e.target.value })}
+                        onChange={(e) => updateItem(index, { doctor_name: e.target.value, doctor_share_pct: sharePctFor(e.target.value) })}
                         className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary bg-white"
                       >
                         <option value="">Select Doctor...</option>

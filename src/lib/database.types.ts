@@ -27,6 +27,9 @@ export interface Database {
           // Added by migration 038 — links to a real Supabase Auth user.
           auth_user_id: string | null
           auth_email: string | null
+          // Added by migration 048 — doctor-specific default for
+          // treatments.doctor_share_pct; NULL falls back to the 30% global default.
+          default_share_pct: number | null
         }
         Insert: {
           id?: string
@@ -42,6 +45,7 @@ export interface Database {
           last_login_at?: string | null
           auth_user_id?: string | null
           auth_email?: string | null
+          default_share_pct?: number | null
         }
         Update: {
           id?: string
@@ -57,6 +61,7 @@ export interface Database {
           last_login_at?: string | null
           auth_user_id?: string | null
           auth_email?: string | null
+          default_share_pct?: number | null
         }
         Relationships: []
       }
