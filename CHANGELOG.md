@@ -38,7 +38,10 @@ record, not the login account's own name). `"gopi" !== "dr. gopi sankar banik"` 
 out. Fixed by renaming the account's `full_name` to match what was already on every treatment — zero
 treatment rows needed to change. Confirms a risk flagged during the 2026-08-01 review
 (`treatments.doctor_name` is free-text, not a FK) actually manifesting; see DATABASE.md's note on the
-`treatments.doctor_name` column for the general risk and how to avoid it recurring.
+`treatments.doctor_name` column for the general risk and how to avoid it recurring. **Caveat that
+tripped verification:** the doctor's session caches `full_name` at login time — after the rename, the
+account had to log out and log back in before Doctor Analytics reflected it; simply reloading the
+page under the still-open old session kept showing BDT 0. Verified live, resolved.
 
 ## 2026-08-02 — Doctor Analytics: Statement/Detailed views, date sorting, per-patient grouping
 Three problems reported against the live Doctor Analytics tab, with a reference statement from
