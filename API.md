@@ -32,22 +32,36 @@ Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev 
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/upload-backup` | POST | Receives a device-backup JSON from the `/backup` page, uploads into Drive `ClinicMx Backups/device-backups`. **Requires admin auth (see below).** |
-| `/api/list-backups` | GET | Lists backups in Drive for the restore-from-Drive picker. **Requires admin auth (see below).** |
-| `/api/download-backup` | GET | Streams a chosen Drive backup back for restore. **Requires admin auth (see below).** |
+| `/api/upload-backup` | POST | Receives a device-backup JSON from the `/backup` page, uploads into Drive `ClinicMx Backups/device-backups`. **Requires a signed-in staff session.** |
+| `/api/list-backups` | GET | Lists backups (filenames/dates/sizes only, no content) in Drive — feeds the Dashboard freshness tile and the restore-from-Drive picker. **Requires a signed-in staff session.** |
+| `/api/download-backup` | GET | Streams a chosen Drive backup's actual **content** back for restore. **Requires admin auth.** |
 | `/api/admin-otp` | POST | Admin login second factor: `action:'request'` (PIN + optional trusted-device token → Telegram OTP or `trusted`/`unconfigured`), `action:'verify'` (code or recovery code → 7-day signed device token) |
 
-**Admin auth on the backup endpoints (added 2026-07-25, Phase 1 of `SECURITY-HARDENING.md`):**
-until this change, all three were unauthenticated at the HTTP layer and reachable by anyone who
-could reach the deployed site — confirmed live (`GET /api/list-backups` returned real backup
-filenames/Drive IDs with no credentials). They now require the header
-`X-ClinicMx-Auth: <trusted-device token>` — the same 7-day HMAC token `admin-otp.ts` mints on a
-successful admin login, verified by `requireAdminToken()` in `_authLib.ts`. A missing/invalid/
-expired token gets a 401. Client sends it automatically (`src/lib/deviceBackup.ts`,
-`adminAuthHeaders()`) using the token `adminOtp.ts` already stores in
-`localStorage.clinicmx_admin_device`. To avoid the token silently expiring mid-week and breaking
-backups, `admin-otp.ts`'s `trusted: true` response now also mints and returns a **fresh** token,
-which the client re-saves — so every admin login slides the 7-day window forward.
+**Auth on the backup endpoints (added 2026-07-25, Phase 1 of `SECURITY-HARDENING.md`; revised
+2026-08-03):** until 2026-07-25 all three were unauthenticated at the HTTP layer and reachable by
+anyone who could reach the deployed site — confirmed live (`GET /api/list-backups` returned real
+backup filenames/Drive IDs with no credentials). The initial fix gated all three on
+`X-ClinicMx-Auth: <trusted-device token>` (admin-only, `requireAdminToken()`).
+
+**2026-08-03, opening Backup & Restore to operator accounts:** all three briefly swapped to
+`requireStaffSession()` in `_authLib.ts` — accepts a plain `Authorization: Bearer <token>` header
+carrying **any** signed-in staff member's Supabase Auth access token (admin, doctor, or operator;
+verified against Supabase's own `/auth/v1/user`), the same pattern already used by
+`dentoral-bridge.ts`. Same day, on reflection, `download-backup.ts` was **narrowed back to
+`requireAdminToken`**: it's the one endpoint that returns actual backup content (a full database
+dump), and the UI decision landed on Upload-only for operator ("Download backup" and "Restore from
+a backup file" stayed admin-only in `BackupRestore.tsx`) — the API now matches that UI split.
+`upload-backup.ts` and `list-backups.ts` stayed on `requireStaffSession`: upload is exactly what
+operator needs, and list-backups only returns filenames/dates (no content) and is what the
+operator's own Dashboard freshness tile depends on.
+
+Admin already holds a real Supabase Auth session after PIN+2FA (minted via
+`mintAdminSupabaseTokenHash`/redeemed client-side, `adminOtp.ts`), so none of this required any
+change to the admin login flow — only which check each endpoint performs, and which header the
+client sends it. Client-side: `src/lib/deviceBackup.ts`'s `staffAuthHeaders()` (Supabase session,
+for upload/list) vs. `adminAuthHeaders()` (the `X-ClinicMx-Auth` trusted-device token, for
+download) pick the right one per call. `requireAdminToken`/`X-ClinicMx-Auth` also still gates
+`admin-users.ts` (Admin → Users management, genuinely admin-only) — unaffected throughout.
 
 **Admin 2FA endpoint** (`admin-otp.ts`, helpers in `_authLib.ts`, delivery channels in `_otpChannels.ts` — Telegram now, Gmail slot reserved): needs its own env family (encrypted, Cloudflare dashboard): `ADMIN_PIN`, `ADMIN_AUTH_SECRET` (HMAC key for device tokens — also what gates the backup endpoints above), `ADMIN_RECOVERY_CODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, optional `OTP_CHANNEL` (default `telegram`) — plus a **KV namespace bound as `ADMIN_AUTH`** (OTP hashes, TTL 300s; per-IP failure/send counters, TTL 1h). Missing config → `{unconfigured:true}`; in production this now **hard-fails** the login (see `CLINICMX-GPT.md` §3) rather than silently falling back to PIN-only — confirmed live that all of these vars are actually set, so a future `unconfigured` response in production means something broke and should be loud. Local dev (plain `npm run dev`, no Functions layer) still gets PIN-only, gated on `import.meta.env.DEV`. Local Functions testing: same vars in `.dev.vars` + `npx wrangler pages dev dist --kv ADMIN_AUTH`. Client counterpart: `src/lib/adminOtp.ts` (device token in `localStorage.clinicmx_admin_device`).
 
@@ -55,7 +69,7 @@ which the client re-saves — so every admin login slides the 7-day window forwa
 
 Node scripts run by GitHub Actions (nightly, on `gsbanikudc-byte/Clinicmx-web` only) and runnable locally via `.env.backup`:
 
-- `backup.mjs` — dumps all 23 tables (service-role key; needed pre-025 for RLS-restricted rows) to zipped JSON + mirrors the `patient-files` bucket → Google Drive. Daily/weekly/monthly schedules, tiered retention, verification/anomaly detection, compression+encryption.
+- `backup.mjs` — dumps all 29 tables (service-role key; needed pre-025 for RLS-restricted rows) to zipped JSON + mirrors the `patient-files` bucket → Google Drive. Daily/weekly/monthly schedules, tiered retention, verification/anomaly detection, compression+encryption.
 - `restore.mjs` — dry-run by default; `--confirm` writes.
 - `authorize.mjs` — one-time OAuth flow to mint the refresh token. `lib.mjs` — shared helpers.
 - Full usage in `scripts/backup/README.md`. **Any change here must be pushed to both remotes.**

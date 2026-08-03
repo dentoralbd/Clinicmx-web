@@ -13,10 +13,12 @@
 // Encrypted uploads are validated by their CMXENC1 magic bytes (the server
 // cannot decrypt them by design).
 //
-// Security posture: gated by requireAdminToken (a valid trusted-device
-// token, same one minted by admin-otp.ts) — added 2026-07-25, see
-// SECURITY-HARDENING.md Phase 1. Kept as defense in depth even so: strict
-// filename/prefix validation, a size cap, and writes confined to the
+// Security posture: gated by requireStaffSession (any signed-in staff
+// member's Supabase Auth session) since 2026-08-03 — was requireAdminToken
+// (admin-only trusted-device token, added 2026-07-25, see
+// SECURITY-HARDENING.md Phase 1) until Backup & Restore was opened to
+// operator accounts, matching admin. Kept as defense in depth even so:
+// strict filename/prefix validation, a size cap, and writes confined to the
 // device-backups subfolder.
 
 import {
@@ -31,9 +33,9 @@ import {
   getWebViewLink,
   driveDelete,
 } from './_lib'
-import { requireAdminToken } from './_authLib'
+import { requireStaffSession } from './_authLib'
 
-type AuthedEnv = Env & { ADMIN_AUTH_SECRET?: string }
+type AuthedEnv = Env & { SUPABASE_URL?: string; SUPABASE_ANON_KEY?: string }
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024
 const FILENAME_PATTERN =
@@ -192,7 +194,7 @@ async function readAndValidate(request: Request): Promise<ValidatedUpload> {
 export const onRequestPost = async (context: { request: Request; env: AuthedEnv }): Promise<Response> => {
   const { request, env } = context
 
-  const authError = await requireAdminToken(request, env)
+  const authError = await requireStaffSession(request, env)
   if (authError) return authError
 
   if (!hasCredentials(env)) {

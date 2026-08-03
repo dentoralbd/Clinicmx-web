@@ -14,22 +14,37 @@ import { markBackupDone, markRestoreDrillDone, type BackupCategory } from './bac
 import { sha256Hex } from './backupCrypto'
 import { getAdminDeviceToken } from './adminOtp'
 
+/** Auth header for upload-backup.ts and list-backups.ts, gated by
+ * requireStaffSession server-side since 2026-08-03 (any signed-in staff
+ * member — was admin-only via a trusted-device token until Backup & Restore
+ * opened to operator accounts for Upload + the Dashboard freshness tile).
+ * Sends this device's own Supabase Auth session, the same one supabase-js
+ * already persists. Empty object when there's no session — the server then
+ * answers 401, which callers below turn into a specific re-login message. */
+async function staffAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
+}
+
 // Header name mirrors functions/api/_authLib.ts's ADMIN_TOKEN_HEADER — kept
 // as a literal here (rather than importing across the app/functions
 // boundary) since functions/ isn't part of the app's TS project.
 const ADMIN_TOKEN_HEADER = 'X-ClinicMx-Auth'
 
-/** Auth header for the three backup endpoints (list/download/upload-backup.ts),
- * all gated on the admin trusted-device token since Phase 1 hardening
- * (2026-07-25). Empty object when no token is held — the server then
- * answers 401, which callers below turn into a specific re-login message. */
+/** Auth header for download-backup.ts specifically — narrowed back to
+ * admin-only 2026-08-03 (briefly widened to requireStaffSession the same
+ * day, then reverted: it returns actual backup content, and Download/
+ * Restore are admin-only in the UI — see download-backup.ts's header
+ * comment). Empty object when no admin device token is held; operators
+ * never reach the code paths that use this (Restore UI is hidden for
+ * them), so a 401 here just means "verification skipped," never a
+ * user-visible failure. */
 function adminAuthHeaders(): Record<string, string> {
   const token = getAdminDeviceToken()
   return token ? { [ADMIN_TOKEN_HEADER]: token } : {}
 }
 
-const DEVICE_TRUST_MESSAGE =
-  'Your device trust expired — log out and log in as admin again to refresh it.'
+const DEVICE_TRUST_MESSAGE = 'Your session expired — log out and log in again.'
 
 /**
  * All backed-up tables in foreign-key dependency order (parents first), same
@@ -420,7 +435,7 @@ export async function uploadSerializedBackup(
   try {
     response = await fetch(`/api/upload-backup?${params.toString()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream', ...adminAuthHeaders() },
+      headers: { 'Content-Type': 'application/octet-stream', ...(await staffAuthHeaders()) },
       body: serialized.bytes as unknown as BodyInit,
     })
   } catch {
@@ -485,7 +500,7 @@ export interface DriveBackupFile {
 export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
   let response: Response
   try {
-    response = await fetch('/api/list-backups', { headers: adminAuthHeaders() })
+    response = await fetch('/api/list-backups', { headers: await staffAuthHeaders() })
   } catch {
     throw new Error('Could not reach Google Drive. Check your internet connection.')
   }

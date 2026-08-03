@@ -1,8 +1,14 @@
 // Cloudflare Pages Function: fetches one device backup's content by Drive
 // file id, for the "Restore from Google Drive" flow.
 //
-// Gated by requireAdminToken (a valid trusted-device token, same one minted
-// by admin-otp.ts) — added 2026-07-25, see SECURITY-HARDENING.md Phase 1.
+// Gated by requireAdminToken (admin-only trusted-device token) — back to
+// admin-only as of 2026-08-03. Briefly widened to requireStaffSession the
+// same day when Backup & Restore opened to operator accounts, then narrowed
+// back: this endpoint returns actual backup CONTENT (a full database dump),
+// and "Restore from a backup file"/"Download backup" are admin-only in the
+// UI (BackupRestore.tsx) — the API should match. Contrast list-backups.ts,
+// which stays open to any staff session: it only returns filenames/dates
+// (no content) and feeds the operator's own Dashboard freshness tile.
 //
 // SECURITY-CRITICAL (defense in depth, kept even though the endpoint is now
 // authenticated): the OAuth token it uses (drive.file scope) also has access

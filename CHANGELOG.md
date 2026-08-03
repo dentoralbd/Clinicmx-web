@@ -4,6 +4,58 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-03 — Narrow operator's Backup & Restore access to Upload only, in the API too
+Follow-up to opening Backup & Restore to operators (below): on reflection, only "Upload to Google
+Drive" should be available to operator — "Download backup" (a full local data export) and the
+entire "Restore from a backup file" card (can overwrite live production data) are now admin-only
+again, gated in `BackupRestore.tsx` by `appRole === 'admin'`. Encryption/passphrase settings and
+the Daily/Weekly/Monthly schedule config remain available to both, unchanged.
+
+Initially this was UI-only, with `download-backup.ts`/`list-backups.ts` still accepting any staff
+session underneath — closed that gap same day: `download-backup.ts` (the endpoint that returns
+actual backup *content*) is back to `requireAdminToken`, matching the UI. `list-backups.ts` stays
+open to any staff session deliberately — it only returns filenames/dates, no content, and it's
+what the operator's own Dashboard freshness tile depends on; locking it down would have silently
+broken that tile (permanent "Drive unreachable") without meaningfully improving security. Upload's
+own integrity-verification fallback (re-downloading to compare checksums) now uses the admin token
+too, so for an operator it just quietly reports "unverified" instead of failing — harmless, since
+Drive's upload response already includes the checksum directly in the common case and that fallback
+essentially never fires.
+
+## 2026-08-03 — Open Backup & Restore to operator accounts (was admin-only)
+User request: operators should see and use Backup & Restore exactly like admin, including the
+Dashboard freshness tile and "backup uploaded" notifications. Three layers of gate, all opened:
+(1) UI/routing — the Dashboard tile condition, the `BackupRestore.tsx` page-level redirect,
+and the Sidebar nav link (now shown to operator under Settings alongside Operator Zone) all
+changed from `role === 'admin'` to `role === 'admin' || role === 'operator'`; RLS on
+`backup_settings`/`app_notifications` already permitted any active app_user, no change needed
+there. (2) **Backend auth — the real work**: `list-backups.ts`/`download-backup.ts`/
+`upload-backup.ts` were gated on `requireAdminToken` (an admin-only trusted-device token minted
+only via PIN+Telegram-2FA — hardened 2026-07-25 after these endpoints were briefly reachable
+with zero credentials in production), which operators had no path to obtain. Swapped all three to
+`requireStaffSession` (existing pattern from `dentoral-bridge.ts`) — accepts any signed-in staff
+member's ordinary Supabase Auth session via `Authorization: Bearer <token>`. Admin already holds
+such a session post-login, so admin's behavior is unchanged; operators can now genuinely Upload to
+Drive, Restore from Drive, and see the freshness dot, not just view the page. `admin-users.ts`
+(Admin → Users) still uses the old admin-only token — untouched, still admin-only. (3)
+**Notifications**: `BackupReminderBanner`'s admin-only render gate and its five
+`audience: 'admin'` notification posts (including the "backup uploaded" one) now run/post for
+operator too; audience was widened to everyone (omitted → `null`) rather than admin+operator only,
+since the schema only supports a single role or "everyone" — doctor accounts will now see backup
+notifications despite not having page access, an accepted minor inconsistency.
+
+## 2026-08-03 — Fix cross-device restore rejecting a correct backup passphrase
+Reported: an encrypted backup's passphrase worked to restore on the device that created it, but not
+on other devices. The encryption itself (`src/lib/backupCrypto.ts`, PBKDF2 + AES-GCM) is fully
+portable — the salt/IV travel inside the backup file, nothing device-specific is mixed into key
+derivation — so a correct passphrase should always work anywhere. The actual bug: the passphrase is
+`.trim()`ed when it's *set* (`BackupRestore.tsx`, Save) but wasn't trimmed when typed into the
+restore-time "Unlock" prompt, so a passphrase carrying a stray leading/trailing space or newline
+(easy to pick up when writing it down, pasting from notes, or retyping on a second device) would
+silently fail to decrypt an otherwise-correct file. Fixed by trimming on the restore side too. Also
+added an explicit line to the encryption toggle's description clarifying the passphrase is
+device-local and must be typed in again (not automatically available) on every other device.
+
 ## 2026-08-03 — Fix tables and a column silently missing from the two backup mechanisms
 Audit (prompted by a "does backup cover the new features" question) found the same failure mode
 that hit `staff`/`staff_salary_payments` on 2026-08-01 had recurred: `backup_settings` (031) and

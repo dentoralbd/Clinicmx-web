@@ -156,8 +156,10 @@ export function BackupRestore() {
 
   useEffect(refreshLastBackupAt, [])
 
-  // After all hooks (Rules of Hooks) — same in-page admin gating as /admin.
-  if (getAppRole() !== 'admin') return <Navigate to="/dashboard" replace />
+  // After all hooks (Rules of Hooks) — opened to operator 2026-08-03 (was
+  // admin-only, matching /admin). Doctor accounts still redirect.
+  const appRole = getAppRole()
+  if (appRole !== 'admin' && appRole !== 'operator') return <Navigate to="/dashboard" replace />
 
   const busy =
     backingUp ||
@@ -377,21 +379,23 @@ export function BackupRestore() {
               </>
             )}
           </Button>
-          <Button variant="outline" onClick={handleDownloadBackup} disabled={busy}>
-            {backingUp ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                {backupProgress
-                  ? `Fetching ${backupProgress.table}… ${backupProgress.index}/${backupProgress.total}`
-                  : 'Preparing…'}
-              </>
-            ) : (
-              <>
-                <HardDriveDownload className="w-4 h-4 mr-2" />
-                Download backup
-              </>
-            )}
-          </Button>
+          {appRole === 'admin' && (
+            <Button variant="outline" onClick={handleDownloadBackup} disabled={busy}>
+              {backingUp ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {backupProgress
+                    ? `Fetching ${backupProgress.table}… ${backupProgress.index}/${backupProgress.total}`
+                    : 'Preparing…'}
+                </>
+              ) : (
+                <>
+                  <HardDriveDownload className="w-4 h-4 mr-2" />
+                  Download backup
+                </>
+              )}
+            </Button>
+          )}
           <span className="text-sm text-text-secondary">
             Last backup (any device):{' '}
             {lastBackupError
@@ -430,7 +434,9 @@ export function BackupRestore() {
               <span className="font-medium text-amber-700">
                 If you lose the passphrase, encrypted backups cannot be recovered by anyone — write it down
                 somewhere safe.
-              </span>
+              </span>{' '}
+              The passphrase is never synced between devices — to restore one of these backups on a
+              different device, type this exact passphrase there when prompted.
             </span>
           </label>
           {hasPassphrase && encryptEnabled && !showPassphraseEditor && (
@@ -519,7 +525,8 @@ export function BackupRestore() {
         )}
       </div>
 
-      {/* Card 2 — Restore */}
+      {/* Card 2 — Restore (admin-only: can overwrite live production data) */}
+      {appRole === 'admin' && (
       <div className={cardClass}>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-1">
           <FileUp className="w-5 h-5 text-primary" />
@@ -557,8 +564,8 @@ export function BackupRestore() {
             />
             <div className="flex gap-2">
               <Button
-                onClick={() => handleFileChosen(pendingFileRef.current, restorePassphrase)}
-                disabled={!restorePassphrase}
+                onClick={() => handleFileChosen(pendingFileRef.current, restorePassphrase.trim())}
+                disabled={!restorePassphrase.trim()}
               >
                 Unlock
               </Button>
@@ -883,6 +890,7 @@ export function BackupRestore() {
           </div>
         )}
       </div>
+      )}
 
       {/* Card 3 — Reminders */}
       <div className={cardClass}>

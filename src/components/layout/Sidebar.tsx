@@ -282,23 +282,41 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                   )}
                 </NavLink>
               </div>
-            ) : hasZoneAccess ? (
+            ) : hasZoneAccess || appRole === 'operator' ? (
               <div>
                 <SectionLabel>Settings</SectionLabel>
-                <NavLink
-                  to="/doctor-profile"
-                  onClick={onNavClick}
-                  className={navLinkClass}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span className={iconChipClass(isActive)}>
-                        <UserCircle className="w-5 h-5" />
-                      </span>
-                      <span>{zoneLabel}</span>
-                    </>
-                  )}
-                </NavLink>
+                {hasZoneAccess && (
+                  <NavLink
+                    to="/doctor-profile"
+                    onClick={onNavClick}
+                    className={navLinkClass}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span className={iconChipClass(isActive)}>
+                          <UserCircle className="w-5 h-5" />
+                        </span>
+                        <span>{zoneLabel}</span>
+                      </>
+                    )}
+                  </NavLink>
+                )}
+                {appRole === 'operator' && (
+                  <NavLink
+                    to="/backup"
+                    onClick={onNavClick}
+                    className={navLinkClass}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span className={iconChipClass(isActive)}>
+                          <DatabaseBackup className="w-5 h-5" />
+                        </span>
+                        <span>Backup &amp; Restore</span>
+                      </>
+                    )}
+                  </NavLink>
+                )}
                 {appRole === 'doctor' && (
                   <NavLink
                     to="/doctor-analytics"

@@ -291,7 +291,9 @@ export function Dashboard() {
 
       <TreatmentFollowUpCard />
 
-      {getAppRole() === 'admin' && <BackupHealthTile onClick={() => navigate('/backup')} />}
+      {(getAppRole() === 'admin' || getAppRole() === 'operator') && (
+        <BackupHealthTile onClick={() => navigate('/backup')} />
+      )}
     </div>
   )
 }

@@ -30,20 +30,22 @@ interface OverdueBanner {
 }
 
 /**
- * Global admin-only banner + auto-upload runner for backup schedules.
- * Checks on mount (covers "missed while app was closed") and every minute
- * while open. For each overdue category: if "smart upload" is enabled it
- * silently backs up to Drive and posts a notification of the outcome; if
- * not, it shows this banner (and a browser notification) asking for a
- * manual backup. Each scheduled instant is only ever acted on once.
+ * Global banner + auto-upload runner for backup schedules, for admin and
+ * operator accounts (opened to operator 2026-08-03, matching admin — was
+ * admin-only). Checks on mount (covers "missed while app was closed") and
+ * every minute while open. For each overdue category: if "smart upload" is
+ * enabled it silently backs up to Drive and posts a notification of the
+ * outcome; if not, it shows this banner (and a browser notification) asking
+ * for a manual backup. Each scheduled instant is only ever acted on once.
  */
 export function BackupReminderBanner() {
   const [banners, setBanners] = useState<OverdueBanner[]>([])
-  const isAdmin = getAppRole() === 'admin'
+  const appRole = getAppRole()
+  const canManageBackups = appRole === 'admin' || appRole === 'operator'
   const checking = useRef(false)
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!canManageBackups) return
 
     const check = async () => {
       if (checking.current) return
@@ -85,7 +87,6 @@ export function BackupReminderBanner() {
                     title: 'Backup data shrank unexpectedly',
                     message: `Core records dropped since the last backup (${detail}). If you didn't delete these on purpose, investigate now — older backups are in Drive.`,
                     linkTo: '/backup',
-                    audience: 'admin',
                   })
                   fireBrowserNotification(
                     'ClinicMx: data shrank unexpectedly',
@@ -102,7 +103,6 @@ export function BackupReminderBanner() {
                   ? `Automatically backed up to Google Drive as ${result.name} (integrity verified).`
                   : `Automatically backed up to Google Drive as ${result.name}, but integrity could not be verified — consider re-uploading manually.`,
                 linkTo: '/backup',
-                audience: 'admin',
               })
             } catch (error) {
               addNotification({
@@ -112,7 +112,6 @@ export function BackupReminderBanner() {
                     ? error.message
                     : 'Unknown error — back up manually from Backup & Restore.',
                 linkTo: '/backup',
-                audience: 'admin',
               })
               fireBrowserNotification(
                 `${CATEGORY_LABEL[category]} backup failed`,
@@ -129,7 +128,6 @@ export function BackupReminderBanner() {
                 title: `${CATEGORY_LABEL[category]} backup overdue`,
                 message: `No backup since the scheduled time (${format(instant, 'MMM d, HH:mm')}).`,
                 linkTo: '/backup',
-                audience: 'admin',
               },
               instant.toISOString()
             )
@@ -149,7 +147,6 @@ export function BackupReminderBanner() {
             message:
               "It's been a while since you tested a restore. Open Backup & Restore and run a dry-run — it writes nothing, but proves your backups actually work.",
             linkTo: '/backup',
-            audience: 'admin',
           })
         }
 
@@ -162,9 +159,9 @@ export function BackupReminderBanner() {
     check()
     const interval = setInterval(check, 60_000)
     return () => clearInterval(interval)
-  }, [isAdmin])
+  }, [canManageBackups])
 
-  if (!isAdmin || banners.length === 0) return null
+  if (!canManageBackups || banners.length === 0) return null
 
   return (
     <div className="flex flex-col">

@@ -3,14 +3,20 @@
 // Read-only counterpart to upload-backup.ts — same credentials, same folder.
 
 import { type Env, json, hasCredentials, getAccessToken, ensureSubfolder, driveList } from './_lib'
-import { requireAdminToken } from './_authLib'
+import { requireStaffSession } from './_authLib'
 
-type AuthedEnv = Env & { ADMIN_AUTH_SECRET?: string }
+type AuthedEnv = Env & { SUPABASE_URL?: string; SUPABASE_ANON_KEY?: string }
 
 export const onRequestGet = async (context: { request: Request; env: AuthedEnv }): Promise<Response> => {
   const { request, env } = context
 
-  const authError = await requireAdminToken(request, env)
+  // 2026-08-03: any signed-in staff member (was admin-only) — Backup &
+  // Restore opened to operator accounts, matching admin. Kept open even
+  // after download-backup.ts/the Restore UI went back to admin-only same
+  // day: this endpoint only returns filenames/dates, no backup content, and
+  // it's what feeds the operator's own Dashboard freshness tile. See
+  // _authLib.ts's requireStaffSession doc comment for why this is safe.
+  const authError = await requireStaffSession(request, env)
   if (authError) return authError
 
   if (!hasCredentials(env)) {
