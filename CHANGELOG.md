@@ -4,6 +4,15 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-03 — Reorder the post-visit prompts: appointment first, then payment WhatsApp
+After a visit with a payment, the flow used to show the WhatsApp payment thank-you prompt first,
+then chain into "Schedule next appointment?" once that closed. Reordered so the appointment prompt
+shows first (patient's still in the chair) and the payment thank-you follows once that step
+concludes (Later, or after the appointment modal closes/saves) — no change to the qualification
+logic, message content, or any of the underlying data (`src/pages/PatientProfile.tsx`: `nextApptPrompt`
+is now always set after a visit save, and the payment thank-you prompt's render condition waits for
+`!nextApptPrompt && !showAppointmentForm`).
+
 ## 2026-08-03 — Narrow operator's Backup & Restore access to Upload only, in the API too
 Follow-up to opening Backup & Restore to operators (below): on reflection, only "Upload to Google
 Drive" should be available to operator — "Download backup" (a full local data export) and the

@@ -1147,7 +1147,6 @@ export function PatientProfile() {
         })
       }
 
-      let willShowPaymentThanks = false
       const billableTreatments = [...updatedPlanTreatments, ...insertedTreatments]
       if (paymentAmount > 0) {
         // New unbilled treatments get a new invoice first; any remainder pays
@@ -1177,7 +1176,6 @@ export function PatientProfile() {
           await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
         }
         if (patient?.phone) {
-          willShowPaymentThanks = true
           setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount, totalPaid: touchedTotalPaid })
         }
       }
@@ -1194,7 +1192,7 @@ export function PatientProfile() {
       setVisitPlannedSelections({})
       setVisitPayment({ amount: '', method: 'Cash' })
       loadPatientData()
-      if (!willShowPaymentThanks) setNextApptPrompt(true)
+      setNextApptPrompt(true)
     } catch (error) {
       console.error('Error saving visit:', error)
       alert(`Failed to save visit: ${getFriendlySupabaseErrorMessage(error)}`)
@@ -4147,13 +4145,16 @@ export function PatientProfile() {
         />
       )}
 
-      {visitPaymentThanks && (
+      {/* Appointment prompt takes priority over the payment thank-you — the
+          patient is still in the chair, so book the follow-up first, then
+          send the WhatsApp confirmation once that step is done. */}
+      {visitPaymentThanks && !nextApptPrompt && !showAppointmentForm && (
         <PaymentThanksPrompt
           firstName={visitPaymentThanks.firstName}
           phone={visitPaymentThanks.phone}
           amount={visitPaymentThanks.amount}
           totalPaid={visitPaymentThanks.totalPaid}
-          onClose={() => { setVisitPaymentThanks(null); setNextApptPrompt(true) }}
+          onClose={() => setVisitPaymentThanks(null)}
         />
       )}
 
