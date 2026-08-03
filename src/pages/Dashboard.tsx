@@ -14,6 +14,7 @@ import {
 } from '@/lib/backupReminders'
 import { getDriveBackupStatus, type DriveBackupStatus } from '@/lib/deviceBackup'
 import { countPendingIpRequests } from '@/lib/ipAccess'
+import { TreatmentFollowUpCard } from '@/components/TreatmentFollowUpCard'
 
 interface Stats {
   totalPatients: number
@@ -287,6 +288,8 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      <TreatmentFollowUpCard />
 
       {getAppRole() === 'admin' && <BackupHealthTile onClick={() => navigate('/backup')} />}
     </div>

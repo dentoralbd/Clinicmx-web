@@ -19,6 +19,10 @@ export function buildRescheduleMessage(firstName: string, dateStr: string, timeS
   return `Hello ${firstName}, your appointment with ${CLINIC_NAME} has been rescheduled to ${dateStr} at ${timeStr}. Please call us if you have any questions. Thank you!`
 }
 
+export function buildTreatmentFollowUpMessage(firstName: string): string {
+  return `Hello ${firstName}, we hope you are keeping well. Our records show your dental treatment at ${CLINIC_NAME} is not yet complete. Whenever it suits you, please call us to book your next visit so we can finish your treatment. Take care!`
+}
+
 /**
  * Opens WhatsApp with a prefilled message to the given (stored-format) phone
  * number. Must be called synchronously inside a click handler — browsers

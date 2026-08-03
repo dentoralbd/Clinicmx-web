@@ -82,6 +82,7 @@ export interface Database {
           patient_type: string
           created_at: string
           updated_at: string
+          followup_reminder_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -99,6 +100,7 @@ export interface Database {
           patient_type?: string
           created_at?: string
           updated_at?: string
+          followup_reminder_sent_at?: string | null
         }
         Update: {
           id?: string
@@ -116,6 +118,7 @@ export interface Database {
           patient_type?: string
           created_at?: string
           updated_at?: string
+          followup_reminder_sent_at?: string | null
         }
         Relationships: []
       }

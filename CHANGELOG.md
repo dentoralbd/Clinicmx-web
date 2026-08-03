@@ -4,6 +4,18 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-03 — Post-visit appointment prompt + Dashboard treatment follow-up reminders
+Two additions to the one-tap WhatsApp work: (1) after saving a New Visit, once the payment
+thank-you prompt (if any) is dismissed, a "Schedule next appointment?" dialog offers to book the
+patient's next visit immediately via the existing `AppointmentModal` pre-filled for that patient —
+staff no longer have to leave Patient Profile to book the follow-up. (2) A new Dashboard card
+(`TreatmentFollowUpCard.tsx`, above the Backup health tile) surfaces patients with an incomplete
+treatment plan who haven't visited in 2+ months and have no upcoming appointment, with a one-tap
+cordial `wa.me` nudge; sending snoozes that patient for 30 days (`patients.followup_reminder_sent_at`,
+migration 050). Same day: widened the appointment reminder window from 6h to 12h, corrected the
+clinic name/message wording after live testing, added a one-tap WhatsApp reschedule notice, and
+added the invoice running-total line to the payment thank-you message.
+
 ## 2026-08-02 — Per-doctor default Doctor Share % on account creation (+ a same-day grant fix)
 Admin → Users → Add/Edit Account gains a "Default Doctor Share %" field, doctor role only
 (`app_users.default_share_pct`, migration 048, nullable — NULL keeps the existing flat 30% clinic

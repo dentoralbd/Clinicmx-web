@@ -504,6 +504,7 @@ export function PatientProfile() {
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
   const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
+  const [nextApptPrompt, setNextApptPrompt] = useState(false)
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
   // Treatment plan cost confirmation: prescription submit is gated behind this
   // dialog whenever the prescription has plan entries; the doctor enters costs or defers.
@@ -1146,6 +1147,7 @@ export function PatientProfile() {
         })
       }
 
+      let willShowPaymentThanks = false
       const billableTreatments = [...updatedPlanTreatments, ...insertedTreatments]
       if (paymentAmount > 0) {
         // New unbilled treatments get a new invoice first; any remainder pays
@@ -1175,6 +1177,7 @@ export function PatientProfile() {
           await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
         }
         if (patient?.phone) {
+          willShowPaymentThanks = true
           setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount, totalPaid: touchedTotalPaid })
         }
       }
@@ -1191,6 +1194,7 @@ export function PatientProfile() {
       setVisitPlannedSelections({})
       setVisitPayment({ amount: '', method: 'Cash' })
       loadPatientData()
+      if (!willShowPaymentThanks) setNextApptPrompt(true)
     } catch (error) {
       console.error('Error saving visit:', error)
       alert(`Failed to save visit: ${getFriendlySupabaseErrorMessage(error)}`)
@@ -4149,8 +4153,28 @@ export function PatientProfile() {
           phone={visitPaymentThanks.phone}
           amount={visitPaymentThanks.amount}
           totalPaid={visitPaymentThanks.totalPaid}
-          onClose={() => setVisitPaymentThanks(null)}
+          onClose={() => { setVisitPaymentThanks(null); setNextApptPrompt(true) }}
         />
+      )}
+
+      {nextApptPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h2 className="font-display text-lg font-bold">Schedule next appointment?</h2>
+            <p className="text-sm text-text-secondary mt-2">
+              {patient ? `${patient.first_name} ${patient.last_name} • ` : ''}
+              Book the next visit now, or do it later from the Appointments page.
+            </p>
+            <div className="flex gap-3 pt-5">
+              <Button className="flex-1" onClick={() => { setNextApptPrompt(false); setShowAppointmentForm(true) }}>
+                Schedule Now
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setNextApptPrompt(false)}>
+                Later
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {editingVisit && (
