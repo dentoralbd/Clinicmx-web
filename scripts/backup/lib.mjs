@@ -8,9 +8,16 @@ import { google } from 'googleapis';
 
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-// All 27 tables as of migration 047 (originally "25 as of migration 030" —
-// staff + staff_salary_payments added 2026-08-01, migration 045). Ordered
-// parents-before-children so a full restore satisfies foreign keys
+// All 31 tables as of migration 050 (originally "25 as of migration 030" —
+// staff + staff_salary_payments added 2026-08-01, migration 045;
+// backup_settings/app_notifications/appointment_schedule_windows/
+// appointment_schedule_date_overrides had all been live for a while (031,
+// 032, 041) but were never added here until 2026-08-03 — the in-app backup
+// (src/lib/deviceBackup.ts) already had the schedule-window pair right,
+// this script alone was missing them. NOTE: appointment_settings, migration
+// 040, was superseded and DROPPED by migration 041 the same day it landed
+// — don't add it here, the table no longer exists).
+// Ordered parents-before-children so a full restore satisfies foreign keys
 // (patients → appointments → invoices → payments...).
 export const TABLES_IN_DEPENDENCY_ORDER = [
   'patients',
@@ -20,6 +27,9 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'invoice_templates',
   'payment_methods',
   'invoice_settings',
+  'backup_settings', // singleton config row (migration 031)
+  'appointment_schedule_windows', // migration 041
+  'appointment_schedule_date_overrides', // migration 041
   'doctor_profiles',
   'app_users',
   'authorized_ips', // after app_users: authorized_ips.user_id (migration 027)
@@ -28,6 +38,7 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'delete_history',
   'edit_history',
   'activity_log',
+  'app_notifications', // shared notification center (migration 032)
   'appointments',
   'patient_visits',
   'patient_files',

@@ -45,6 +45,7 @@ export const BACKUP_TABLES = [
   'invoice_templates',
   'payment_methods',
   'invoice_settings',
+  'backup_settings', // singleton config row (migration 031) — was missing from this list until 2026-08-03
   'appointment_schedule_windows',
   'appointment_schedule_date_overrides',
   'app_users',
@@ -54,6 +55,7 @@ export const BACKUP_TABLES = [
   'delete_history',
   'edit_history',
   'activity_log',
+  'app_notifications', // shared notification center (migration 032) — was missing from this list until 2026-08-03
   'appointments',
   'patient_visits',
   'patient_files',
@@ -111,7 +113,7 @@ export type BackupProgress = { table: string; index: number; total: number }
  */
 const TABLE_SELECT_COLUMNS: Record<string, string> = {
   app_users:
-    'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email',
+    'id, created_at, updated_at, role, full_name, identifier, is_active, permissions, last_login_at, auth_user_id, auth_email, default_share_pct',
 }
 
 function selectColumnsFor(table: string): string {

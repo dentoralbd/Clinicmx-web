@@ -4,6 +4,22 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-03 — Fix tables and a column silently missing from the two backup mechanisms
+Audit (prompted by a "does backup cover the new features" question) found the same failure mode
+that hit `staff`/`staff_salary_payments` on 2026-08-01 had recurred: `backup_settings` (031) and
+`app_notifications` (032) had never been added to either backup's table list despite being live for
+weeks/months, and `app_users.default_share_pct` (048) was silently dropped from the in-app device
+backup specifically, because that table needs a hand-maintained column list (RLS lockdown blocks
+`select('*')` on it) that was never updated after the column shipped. The local script
+(`scripts/backup/lib.mjs`) had a further gap the in-app backup didn't: `appointment_schedule_windows`/
+`appointment_schedule_date_overrides` (041, the live slot-scheduling tables) were missing from it
+alone. Fixed everything in both `src/lib/deviceBackup.ts` and `scripts/backup/lib.mjs`. A separately
+suspected gap, `appointment_settings` (040), turned out to be a false alarm caught before shipping —
+that table was superseded and dropped by migration 041 the same day, so its absence from both lists is
+correct; verified live (querying it 404s in production). New columns on already-backed-up tables (e.g.
+this week's `appointments.reminder_sent_at`, `patients.followup_reminder_sent_at`) were never at risk
+— every other table uses `select('*')` and picks up new columns automatically.
+
 ## 2026-08-03 — Post-visit appointment prompt + Dashboard treatment follow-up reminders
 Two additions to the one-tap WhatsApp work: (1) after saving a New Visit, once the payment
 thank-you prompt (if any) is dismissed, a "Schedule next appointment?" dialog offers to book the
