@@ -583,15 +583,21 @@ export function Billing() {
   const allVisibleSelected = filteredInvoices.length > 0 && filteredInvoices.every((invoice) => selectedInvoices.includes(invoice.id))
 
   return (
-    <div className="space-y-6 page-fade-in">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold">Billing</h1>
-          <p className="text-text-secondary mt-1">Invoices, payments, templates, and reports</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Financial & Billing</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {activeInvoices.length} Active Invoices
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Manage patient invoices, installment tracking, financial reports, and clinic revenue.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setShowBasicModal(true)}>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button onClick={() => setShowBasicModal(true)} className="rounded-xl shadow-elevation-md px-5 py-2.5">
             <Plus className="w-4 h-4 mr-2" />
             New Invoice
           </Button>
@@ -603,13 +609,13 @@ export function Billing() {
                   e.stopPropagation()
                   setShowPendingPatients((v) => !v)
                 }}
-                className="border-amber-300 text-amber-900 hover:bg-amber-50"
+                className="border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100 rounded-xl text-xs font-bold"
               >
-                <Clock className="w-4 h-4 mr-1" />
+                <Clock className="w-4 h-4 mr-1.5" />
                 Unbilled Treatments ({pendingPatients.length})
               </Button>
               {showPendingPatients && (
-                <div className="absolute left-0 top-full mt-1 bg-white border border-amber-200 rounded-lg shadow-lg z-20 min-w-64 p-3">
+                <div className="absolute left-0 top-full mt-2 bg-white rounded-2xl shadow-elevation-high z-20 min-w-64 p-3 border border-amber-200/80">
                   <div className="flex flex-wrap gap-2">
                     {pendingPatients.map(({ patient_id, name, count }) => (
                       <button
@@ -620,7 +626,7 @@ export function Billing() {
                           setShowBasicModal(true)
                           setShowPendingPatients(false)
                         }}
-                        className="px-2.5 py-1 bg-amber-50 border border-amber-300 rounded-full text-xs font-medium text-amber-900 hover:bg-amber-100 transition-colors"
+                        className="px-3 py-1.5 bg-amber-50 border border-amber-300/80 rounded-xl text-xs font-semibold text-amber-950 hover:bg-amber-100 transition-colors shadow-sm"
                       >
                         {name} ({count})
                       </button>
@@ -638,63 +644,64 @@ export function Billing() {
                 setShowMoreMenu((v) => !v)
               }}
               aria-label="More actions"
+              className="rounded-xl text-xs font-semibold"
             >
               <MoreVertical className="w-4 h-4 mr-1" />
-              More
-              <ChevronDown className="w-4 h-4 ml-1" />
+              More Actions
+              <ChevronDown className="w-3.5 h-3.5 ml-1" />
             </Button>
             {showMoreMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44">
+              <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-elevation-high z-20 min-w-48 py-1.5 border border-primary/10">
                 <button
-                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   onClick={() => {
                     setShowTemplateSelector(true)
                     setShowMoreMenu(false)
                   }}
                 >
-                  <FileText className="w-4 h-4 mr-2" />
-                  From Template
+                  <FileText className="w-4 h-4 mr-2.5 text-primary" />
+                  From Invoice Template
                 </button>
                 <button
-                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   onClick={() => {
                     setShowReports((prev) => !prev)
                     setShowMoreMenu(false)
                   }}
                 >
-                  <BarChart3 className="w-4 h-4 mr-2" />
-                  Reports
+                  <BarChart3 className="w-4 h-4 mr-2.5 text-primary" />
+                  Financial Reports
                 </button>
                 <button
-                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   onClick={() => {
                     setShowSettings(true)
                     setShowMoreMenu(false)
                   }}
                 >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
+                  <Settings className="w-4 h-4 mr-2.5 text-primary" />
+                  Invoice Settings
                 </button>
-                <div className="border-t border-gray-100" />
+                <div className="border-t border-gray-100 my-1" />
                 <button
-                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   onClick={() => {
                     exportInvoices()
                     setShowMoreMenu(false)
                   }}
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export CSV
+                  <FileSpreadsheet className="w-4 h-4 mr-2.5 text-emerald-600" />
+                  Export to CSV
                 </button>
                 <button
-                  className="w-full flex items-center text-left px-4 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   onClick={() => {
                     startListPrint()
                     setShowMoreMenu(false)
                   }}
                 >
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print List
+                  <Printer className="w-4 h-4 mr-2.5 text-blue-600" />
+                  Print Invoices List
                 </button>
               </div>
             )}
@@ -704,22 +711,24 @@ export function Billing() {
 
       {showReports && <FinancialReportsPanel invoices={invoices} />}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <SummaryCard title="Total Billed" value={formatBDT(stats.total)} icon={<DollarSign className="w-6 h-6" />} color="blue" />
-        <SummaryCard title="Paid" value={formatBDT(stats.paid)} icon={<CheckCircle className="w-6 h-6" />} color="green" />
-        <SummaryCard title="Pending" value={formatBDT(stats.pending)} icon={<Clock className="w-6 h-6" />} color="orange" />
+        <SummaryCard title="Total Collected" value={formatBDT(stats.paid)} icon={<CheckCircle className="w-6 h-6" />} color="green" />
+        <SummaryCard title="Pending Balance" value={formatBDT(stats.pending)} icon={<Clock className="w-6 h-6" />} color="orange" />
       </div>
 
-      <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <Search className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      {/* Filter & Search Panel */}
+      <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 space-y-4 bg-surface-subtle/50">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-64" onClick={(e) => e.stopPropagation()}>
+              <Search className="w-4 h-4 text-text-muted absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={patientSearch}
-                placeholder="Search patient by name, phone, or ID..."
-                className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm w-72 max-w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                placeholder="Search patient by name, phone, or invoice code..."
+                className="pl-11 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-medium w-full text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all shadow-sm"
                 onChange={(e) => {
                   setPatientSearch(e.target.value)
                   setShowPatientSuggestions(true)
@@ -727,23 +736,23 @@ export function Billing() {
                 onFocus={() => setShowPatientSuggestions(true)}
               />
               {showPatientSuggestions && patientSearch.trim() !== '' && (
-                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-72 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 top-full mt-2 bg-white border border-primary/10 rounded-2xl shadow-elevation-high z-20 w-full max-h-64 overflow-y-auto p-1.5">
                   {patientSuggestions.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-text-secondary">No matching patients</div>
+                    <div className="px-4 py-3 text-xs text-text-secondary">No matching patient invoices</div>
                   ) : (
                     patientSuggestions.map((patient) => (
                       <button
                         key={patient.id}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                        className="w-full text-left px-3 py-2 hover:bg-primary-surface rounded-xl transition-colors"
                         onClick={() => {
                           setPatientFilter({ id: patient.id, name: patient.name })
                           setPatientSearch('')
                           setShowPatientSuggestions(false)
                         }}
                       >
-                        <div className="text-sm font-medium text-text-primary">{patient.name}</div>
-                        <div className="text-xs text-text-secondary">
-                          {[patient.patient_code, patient.phone].filter(Boolean).join(' • ') || 'No code / phone'}
+                        <div className="text-xs font-bold text-text-primary">{patient.name}</div>
+                        <div className="text-[11px] text-text-secondary font-mono">
+                          {[patient.patient_code, patient.phone].filter(Boolean).join(' • ') || 'No code'}
                         </div>
                       </button>
                     ))
@@ -751,28 +760,29 @@ export function Billing() {
                 </div>
               )}
             </div>
+
             {patientFilter && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                {patientFilter.name}
-                <button onClick={() => setPatientFilter(null)} aria-label="Clear patient filter" className="hover:opacity-70">
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-bold shadow-sm">
+                <span>Filter: {patientFilter.name}</span>
+                <button onClick={() => setPatientFilter(null)} aria-label="Clear patient filter" className="hover:opacity-70 p-0.5">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </span>
             )}
           </div>
           {recentPatients.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
-                <History className="w-3.5 h-3.5" /> Recent:
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-200/60">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <History className="w-3.5 h-3.5 text-primary" /> Quick Patient Filter:
               </span>
               {recentPatients.map((patient) => (
                 <button
                   key={patient.id}
                   onClick={() => setPatientFilter({ id: patient.id, name: patient.name })}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${
                     patientFilter?.id === patient.id
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-gray-100 text-text-primary border-gray-200 hover:bg-gray-200'
+                      ? 'bg-primary text-white border-primary shadow-sm'
+                      : 'bg-white text-text-primary border-gray-200/80 hover:bg-gray-50'
                   }`}
                 >
                   {patient.name}
@@ -782,34 +792,42 @@ export function Billing() {
           )}
         </div>
 
-        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-2 justify-between">
-          <div className="flex gap-2">
+        {/* Status Filter Tabs & Bulk Actions */}
+        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3 justify-between bg-white">
+          <div className="flex gap-1.5 bg-surface-subtle p-1 rounded-xl border border-gray-200/60">
             {['all', 'Due', 'Pending', 'Partial', 'Paid'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === status ? 'bg-primary text-white' : 'bg-gray-100 text-text-primary hover:bg-gray-200'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  filter === status
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
-                {status === 'all' ? 'All' : status}
+                {status === 'all' ? 'All Invoices' : status}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-text-secondary flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={allVisibleSelected}
                 onChange={(e) => {
                   setSelectedInvoices(e.target.checked ? filteredInvoices.map((invoice) => invoice.id) : [])
                 }}
+                className="rounded text-primary focus:ring-primary"
               />
-              Select all
+              Select All
             </label>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Pending')} disabled={selectedInvoices.length === 0}>Mark Pending</Button>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Paid')} disabled={selectedInvoices.length === 0}>Mark Paid</Button>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Pending')} disabled={selectedInvoices.length === 0} className="rounded-xl text-xs">
+              Mark Pending
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatus('Paid')} disabled={selectedInvoices.length === 0} className="rounded-xl text-xs">
+              Mark Paid
+            </Button>
           </div>
         </div>
 
@@ -1044,21 +1062,19 @@ export function Billing() {
 
 function SummaryCard({ title, value, icon, color }: { title: string; value: string; icon: React.ReactNode; color: 'blue' | 'green' | 'orange' }) {
   const colorMap: Record<'blue' | 'green' | 'orange', string> = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    orange: 'bg-orange-50 text-orange-600',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    orange: 'bg-amber-50 text-amber-700 border-amber-200',
   }
 
   return (
-    <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-text-secondary text-sm">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
-        </div>
-        <div className={`w-12 h-12 rounded-lg ${colorMap[color]} flex items-center justify-center`}>
-          {icon}
-        </div>
+    <div className="glass-card bg-white/90 rounded-3xl p-6 border border-primary/10 shadow-elevation-low flex items-center justify-between transition-all hover:shadow-elevation-md">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{title}</p>
+        <p className="text-2xl font-bold font-display text-text-primary mt-1">{value}</p>
+      </div>
+      <div className={`w-12 h-12 rounded-2xl ${colorMap[color]} border flex items-center justify-center shadow-sm shrink-0`}>
+        {icon}
       </div>
     </div>
   )
