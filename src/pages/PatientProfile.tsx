@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -2937,79 +2937,103 @@ export function PatientProfile() {
       }
     })
 
+    const treatmentDotClass = (status: string) =>
+      status === 'Completed' ? 'bg-emerald-500' :
+      status === 'In Progress' ? 'bg-blue-500' :
+      status === 'Cancelled' ? 'bg-gray-300' :
+      'bg-amber-400'
+
     const renderTreatmentRow = (treatment: any, child = false) => {
       const isLinked = isTreatmentLinked(treatment)
+      const originId = getTreatmentOriginId(treatment)
+      const extraTeeth = !child && originId ? (planGroupTeeth.get(originId) || []) : []
       return (
-        <tr key={treatment.id} className={child ? 'bg-blue-50/50 border-l-2 border-blue-200' : undefined}>
-          <td className={`px-4 py-3 text-sm ${child ? 'pl-8 text-text-secondary' : ''}`}>{formatDateValue(treatment.created_at)}</td>
-          <td className="px-4 py-3">
-            <div className={`flex items-center gap-2 ${child ? 'font-normal text-text-secondary' : 'font-medium'}`}>
-              {child && <span className="text-blue-300">&#8627;</span>}
-              {treatment.treatment_type}
-              {!child && getTreatmentOriginId(treatment) && (planGroupCounts.get(getTreatmentOriginId(treatment)!) || 0) > 1 && (
-                <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                  Plan &middot; {planGroupCounts.get(getTreatmentOriginId(treatment)!)} items
+        <div key={treatment.id} className={`relative ${child ? 'ml-7 mt-2' : 'mb-4'}`}>
+          <span className={`absolute -left-[27px] top-4 w-3 h-3 rounded-full ring-4 ring-white ${treatmentDotClass(treatment.status)}`} />
+          <div className={`rounded-2xl border p-4 ${child ? 'bg-primary-surface/50 border-primary/10' : 'bg-white border-gray-200 shadow-elevation-low'}`}>
+            <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {child && <span className="text-primary/40">&#8627;</span>}
+                  <span className={child ? 'font-medium text-text-secondary text-sm' : 'font-semibold text-text-primary'}>
+                    {treatment.treatment_type}
+                  </span>
+                  {!child && originId && (planGroupCounts.get(originId) || 0) > 1 && (
+                    <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                      Plan &middot; {planGroupCounts.get(originId)} items
+                    </span>
+                  )}
+                </div>
+                {treatment.description && <div className="text-sm text-text-secondary mt-0.5">{treatment.description}</div>}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-text-secondary">{formatDateValue(treatment.created_at)}</span>
+                  {treatment.tooth_number != null ? (
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                      {treatment.tooth_number}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">No tooth</span>
+                  )}
+                  {extraTeeth.length > 1 &&
+                    extraTeeth.filter((t) => t !== treatment.tooth_number).map((t) => (
+                      <span key={t} className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-xs font-bold">
+                        {t}
+                      </span>
+                    ))}
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <span className="text-sm font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  {formatCurrency(treatment.cost || 0)}
                 </span>
-              )}
+                <select
+                  value={treatment.status}
+                  onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
+                  className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
+                    treatment.status === 'Completed' ? 'pill-success' :
+                    treatment.status === 'In Progress' ? 'pill-warning' :
+                    treatment.status === 'Cancelled' ? 'pill-error' :
+                    'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  <option value="Planned">Planned</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </div>
             </div>
-            {treatment.description && <div className="text-sm text-text-secondary">{treatment.description}</div>}
-          </td>
-          <td className="px-4 py-3 text-sm">
-            {treatment.tooth_number || 'N/A'}
-            {!child && treatment.tooth_number != null && getTreatmentOriginId(treatment) && (planGroupTeeth.get(getTreatmentOriginId(treatment)!) || []).length > 1 && (
-              <span className="text-xs text-gray-400"> ({(planGroupTeeth.get(getTreatmentOriginId(treatment)!) || []).join(', ')})</span>
-            )}
-          </td>
-          <td className="px-4 py-3">
-            <select
-              value={treatment.status}
-              onChange={(e) => updateTreatmentStatus(treatment.id, e.target.value)}
-              className={`px-2 py-1 text-xs rounded-full border-0 cursor-pointer ${
-                treatment.status === 'Completed' ? 'pill-success' :
-                treatment.status === 'In Progress' ? 'pill-warning' :
-                treatment.status === 'Cancelled' ? 'pill-error' :
-                'bg-gray-100 text-gray-800'
-              }`}
-            >
-              <option value="Planned">Planned</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </td>
-          <td className="px-4 py-3 text-sm">{formatCurrency(treatment.cost || 0)}</td>
-          <td className="px-4 py-3 text-sm">
-            {isLinked ? (
-              <span className="pill-success text-xs">Invoiced</span>
-            ) : treatment.status === 'Cancelled' ? (
-              <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Not billable</span>
-            ) : (
-              <span className="pill-warning text-xs">Ready to bill</span>
-            )}
-          </td>
-          <td className="px-4 py-3 text-right">
-            <div className="flex items-center justify-end gap-1">
-              <button
-                type="button"
-                onClick={() => setEditingTreatment(treatment)}
-                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                title="Edit"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              {canDelete() && (
+            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+              {isLinked ? (
+                <span className="pill-success text-xs">Invoiced</span>
+              ) : treatment.status === 'Cancelled' ? (
+                <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Not billable</span>
+              ) : (
+                <span className="pill-warning text-xs">Ready to bill</span>
+              )}
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => deleteTreatmentRow(treatment)}
-                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                  title="Delete"
+                  onClick={() => setEditingTreatment(treatment)}
+                  className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
+                  title="Edit"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Pencil className="w-4 h-4" />
                 </button>
-              )}
+                {canDelete() && (
+                  <button
+                    type="button"
+                    onClick={() => deleteTreatmentRow(treatment)}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
-          </td>
-        </tr>
+          </div>
+        </div>
       )
     }
 
@@ -3025,72 +3049,87 @@ export function PatientProfile() {
       const totalCost = members.reduce((sum, m) => sum + (m.cost || 0), 0)
       const linkedCount = members.filter(isTreatmentLinked).length
       return (
-        <Fragment key={`group-${key}`}>
-          <tr className="cursor-pointer hover:bg-gray-50" onClick={() => togglePlanGroup(key)}>
-            <td className="px-4 py-3 text-sm">{formatDateValue(first.created_at)}</td>
-            <td className="px-4 py-3">
-              <div className="font-medium flex items-center gap-2">
-                {first.treatment_type}
-                <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                  Plan &middot; {members.length} items
-                </span>
-                {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-              </div>
-              {first.description && <div className="text-sm text-text-secondary">{first.description}</div>}
-            </td>
-            <td className="px-4 py-3 text-sm">{teeth.length > 0 ? teeth.join(', ') : 'N/A'}</td>
-            <td className="px-4 py-3">
-              <div className="flex flex-wrap gap-1 mb-1">
-                {Array.from(statusCounts.entries()).map(([status, count]) => (
-                  <span key={status} className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${statusBadgeClass(status)}`}>
-                    {count} {status}
+        <div key={`group-${key}`} className="relative mb-4">
+          <span className="absolute -left-[27px] top-4 w-3 h-3 rounded-full ring-4 ring-white bg-blue-500" />
+          <div
+            className="rounded-2xl border border-gray-200 bg-white shadow-elevation-low p-4 cursor-pointer"
+            onClick={() => togglePlanGroup(key)}
+          >
+            <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-text-primary">{first.treatment_type}</span>
+                  <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                    Plan &middot; {members.length} items
                   </span>
-                ))}
+                  {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                </div>
+                {first.description && <div className="text-sm text-text-secondary mt-0.5">{first.description}</div>}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-text-secondary">{formatDateValue(first.created_at)}</span>
+                  {teeth.length > 0 ? (
+                    teeth.map((t) => (
+                      <span key={t} className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                        {t}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-gray-400">No tooth</span>
+                  )}
+                </div>
               </div>
-              <select
-                value=""
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const value = e.target.value
-                  if (value) updateGroupTreatmentsStatus(members, value)
-                  e.target.value = ''
-                }}
-                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 cursor-pointer"
-                title="Change status for all items in this plan"
-              >
-                <option value="">Set all to…</option>
-                <option value="Planned">Planned</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
-            </td>
-            <td className="px-4 py-3 text-sm">{formatCurrency(totalCost)}</td>
-            <td className="px-4 py-3 text-sm">
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <span className="text-sm font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  {formatCurrency(totalCost)}
+                </span>
+                <div className="flex flex-wrap gap-1 justify-end max-w-[10rem]">
+                  {Array.from(statusCounts.entries()).map(([status, count]) => (
+                    <span key={status} className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${statusBadgeClass(status)}`}>
+                      {count} {status}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
               <span className={`text-xs whitespace-nowrap ${linkedCount === members.length ? 'pill-success' : 'pill-warning'}`}>
                 {linkedCount === members.length ? 'Invoiced' : linkedCount === 0 ? 'Ready to bill' : `${linkedCount}/${members.length} invoiced`}
               </span>
-            </td>
-            <td className="px-4 py-3 text-right">
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value) updateGroupTreatmentsStatus(members, value)
+                    e.target.value = ''
+                  }}
+                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 cursor-pointer"
+                  title="Change status for all items in this plan"
+                >
+                  <option value="">Set all to…</option>
+                  <option value="Planned">Planned</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
                 {linkedCount === 0 && (
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setEstimateJob({ treatments: members })
-                    }}
+                    onClick={() => setEstimateJob({ treatments: members })}
                     className="text-xs text-primary hover:underline whitespace-nowrap"
                   >
                     Estimate
                   </button>
                 )}
-                <span className="text-xs text-gray-400 whitespace-nowrap">Expand to edit</span>
               </div>
-            </td>
-          </tr>
-          {expanded && members.map((m) => renderTreatmentRow(m, true))}
-        </Fragment>
+            </div>
+          </div>
+          {expanded && (
+            <div className="mt-1">
+              {members.map((m) => renderTreatmentRow(m, true))}
+            </div>
+          )}
+        </div>
       )
     }
 
@@ -3193,25 +3232,13 @@ export function PatientProfile() {
       {treatments.length === 0 ? (
         <div className="p-8 text-center text-text-secondary">No treatments recorded</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Treatment</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tooth</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Cost</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Billing</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {displayRows.map((row) =>
-                row.kind === 'group' ? renderGroupRow(row.key, row.members) : renderTreatmentRow(row.treatment)
-              )}
-            </tbody>
-          </table>
+        <div className="p-4 sm:p-6">
+          <div className="relative pl-7">
+            <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gray-200" />
+            {displayRows.map((row) =>
+              row.kind === 'group' ? renderGroupRow(row.key, row.members) : renderTreatmentRow(row.treatment)
+            )}
+          </div>
         </div>
       )}
       </div>
