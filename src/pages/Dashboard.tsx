@@ -13,7 +13,9 @@ import {
   type BackupSettings,
 } from '@/lib/backupReminders'
 import { getDriveBackupStatus, type DriveBackupStatus } from '@/lib/deviceBackup'
+import { getStorageUsage, type StorageUsage } from '@/lib/storageUsage'
 import { countPendingIpRequests } from '@/lib/ipAccess'
+import { HardDrive } from 'lucide-react'
 import { TreatmentFollowUpCard } from '@/components/TreatmentFollowUpCard'
 
 interface Stats {
@@ -294,6 +296,8 @@ export function Dashboard() {
       {(getAppRole() === 'admin' || getAppRole() === 'operator') && (
         <BackupHealthTile onClick={() => navigate('/backup')} />
       )}
+
+      {(getAppRole() === 'admin' || getAppRole() === 'operator') && <StorageHealthTile />}
     </div>
   )
 }
@@ -392,6 +396,92 @@ function BackupHealthTile({ onClick }: { onClick: () => void }) {
         )}
       </div>
     </button>
+  )
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function usageDotClass(percent: number): string {
+  if (percent >= 90) return 'bg-red-500'
+  if (percent >= 75) return 'bg-amber-500'
+  return 'bg-green-500'
+}
+
+function StorageHealthTile() {
+  const [usage, setUsage] = useState<StorageUsage | null>(null)
+  const [error, setError] = useState(false)
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getStorageUsage()
+      .then((u) => {
+        if (cancelled) return
+        setUsage(u)
+        setCheckedAt(new Date())
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const dbPercent = usage ? Math.min(100, Math.round((usage.databaseBytes / usage.databaseLimitBytes) * 100)) : null
+  const storagePercent = usage
+    ? Math.min(100, Math.round((usage.patientFilesBytes / usage.storageLimitBytes) * 100))
+    : null
+
+  return (
+    <div className="bg-card rounded-xl shadow-elevation-low border border-gray-200/80 p-6">
+      <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="bg-primary/10 text-primary rounded-lg p-1.5">
+            <HardDrive className="w-4 h-4" />
+          </span>
+          <h3 className="text-lg font-semibold">Storage health</h3>
+        </div>
+      </div>
+      {error ? (
+        <p className="text-sm text-text-secondary">Storage usage is unavailable right now.</p>
+      ) : !usage || dbPercent === null || storagePercent === null ? (
+        <div className="space-y-2">
+          <div className="skeleton h-4 w-48" />
+          <div className="skeleton h-4 w-40" />
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${usageDotClass(dbPercent)}`} />
+            <span className="text-sm">
+              Database: {formatBytes(usage.databaseBytes)} ({dbPercent}%)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${usageDotClass(storagePercent)}`} />
+            <span className="text-sm">
+              Files: {formatBytes(usage.patientFilesBytes)} ({storagePercent}%)
+            </span>
+          </div>
+          {checkedAt && (
+            <span className="text-xs text-text-secondary">
+              Checked {formatDistanceToNow(checkedAt, { addSuffix: true })}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
