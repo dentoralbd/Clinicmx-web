@@ -4,6 +4,52 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-04 — UI polish pass (Phases 0–6): real fonts, design tokens, Patients/Prescriptions/PatientHeader/Header restyle, Storage Health tile, Treatments timeline
+Ported the visual-only parts of a prototype clone (`Clinicmx-web-redesign`) plus mockup inspiration,
+after reviewing every diff for logic changes, hardcoded placeholder text, and print/PDF coupling
+first — several issues caught and fixed before/during porting (see below). Scope: styling only, no
+workflow or menu changes; `sk-dental` untouched.
+
+- **Foundation:** Inter now actually loads via `@fontsource/inter` (previously declared in CSS/
+  Tailwind but never bundled — body text silently fell back to system-ui); added Space Grotesk 400;
+  new design tokens (`primary-light/surface`, `highlight-light`, `accent-light`, `surface-subtle/
+  glass`, `text-muted`, softer elevation shadows, `shadow-glass`, `shadow-glow-primary`); `viewport-
+  fit=cover` + safe-area padding on the mobile sidebar drawer for the Android APK.
+- **Patients:** page header, search bar, table (now also shows address/email per row), empty states,
+  and add/edit modal restyled.
+- **PatientHeader:** switched from a dark teal-to-slate gradient banner to a light glass panel (pale
+  teal, dark text) with pill chips for code/age/gender/phone/email and a stronger completeness ring,
+  per mockup direction.
+- **Header:** user area restyled into a profile pill (gradient avatar + name/role + chevron,
+  collapsing to avatar-only on phones). Caught and fixed a real bug during verification: the
+  dropdown had `.glass-card` added alongside Tailwind's `absolute` class — `.glass-card` sets
+  `position: relative` in `index.css`, which won the cascade over `absolute`, pulling the dropdown
+  into normal document flow and inflating the header's actual height, shoving all page content down
+  whenever it opened. Fixed by dropping `glass-card` from that element.
+- **Dashboard:** the clone's dashboard redesign was rejected outright — its stat cards had wrong
+  data behind correct-looking labels ("Pending Lab Tasks" was actually unpaid invoice count;
+  "Today's Patients" was the all-time total), hardcoded placeholder doctor names in every
+  appointment row, a `.slice(0, 4)` that silently hid appointments past the 4th, and had dropped the
+  admin/operator-only gate on the backup tile. None of that shipped. Only addition: a new **Storage
+  Health** tile (admin/operator only, same gate as Backup Health) showing Supabase database + patient-
+  files bucket usage against configurable plan-quota limits — new `get_storage_usage_stats()` RPC
+  (migration `051`, service_role-only, not yet applied to production — needs a manual run in the SQL
+  editor after a fresh backup), a new Cloudflare Pages Function (`functions/api/storage-usage.ts`,
+  gated by `requireStaffSession`), and `src/lib/storageUsage.ts`.
+- **Prescriptions:** list/table restyled (patient-group rows, expanded prescription table, action
+  buttons). The frozen patient-selection flow inside the New/Edit modal was verified byte-for-byte
+  untouched by diffing it against the pre-edit commit.
+- **PatientProfile Treatments tab:** converted from a data table into a timeline (left rail,
+  status-colored dots, card-per-treatment, tooth-number chips, price badge) — a surgical edit
+  confined to the two row-render functions in the 6,631-line file; same handlers, same permission
+  checks, same duplicate-detection and plan-grouping logic throughout. **Not yet visually verified
+  against live data** (local dev has zero readable patients under the Phase 2 RLS lockdown, and
+  creating a live test patient to check needs the `patient_code_seq` bump from CLAUDE.md hard rule 8
+  first) — check this tab against a real patient before considering it final.
+
+Remaining pages (Appointments, Billing, Consultations, Inventory, Lab, Login) reviewed and ported
+separately — see the entry below if present, or `git log` for the corresponding commits.
+
 ## 2026-08-03 — Reorder the post-visit prompts: appointment first, then payment WhatsApp
 After a visit with a payment, the flow used to show the WhatsApp payment thank-you prompt first,
 then chain into "Schedule next appointment?" once that closed. Reordered so the appointment prompt

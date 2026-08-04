@@ -18,6 +18,7 @@ What each module does today (2026-08-01), as behavior — implementation notes l
 Live stats (patients, today's appointments, revenue/dues) + today's appointment list with patient links. Refresh button re-runs the consolidated loader. First page after login. Admin-only dismissible banner when network access requests are pending (links to the Admin zone Network Access tab).
 
 - **Treatment follow-up reminders (2026-08-03, `TreatmentFollowUpCard.tsx`, above the Backup health tile):** a collapsible card lists patients with an incomplete treatment (`status IN ('Planned','In Progress')`) whose last visit (`patient_visits`, or oldest incomplete treatment if they've never had a recorded visit) is more than 2 months old and who have no upcoming Scheduled/Confirmed appointment booked. One tap opens `wa.me` with a soft, cordial nudge (`buildTreatmentFollowUpMessage` — no treatment names or amounts) and sets `patients.followup_reminder_sent_at` (migration 050), which snoozes that patient off the card for 30 days (Undo clears it). Self-contained: fetches its own data (4 bounded queries), renders nothing when the list is empty or a query fails. Deliberately manual-tap, same rationale as the appointment reminder queue.
+- **Storage Health tile (2026-08-04, admin/operator only, below Backup health):** shows Supabase database size + `patient-files` bucket size against configurable plan-quota limits (`SUPABASE_PLAN_DB_LIMIT_MB`/`SUPABASE_PLAN_STORAGE_LIMIT_MB` Cloudflare env vars, default Free tier 500MB/1GB), with a green/amber/red dot per number. Backed by `get_storage_usage_stats()` (migration 051, service_role-only RPC) via `functions/api/storage-usage.ts` (`requireStaffSession`-gated) and `src/lib/storageUsage.ts`. Fails gracefully ("Storage usage is unavailable right now.") if the endpoint isn't reachable — expected in local `vite dev`, which doesn't serve Cloudflare Pages Functions.
 
 ## 3. Patients (`/patients`, `/patients/:id`)
 
@@ -25,7 +26,7 @@ Live stats (patients, today's appointments, revenue/dues) + today's appointment 
 - **Patient code:** server-assigned `PT-1xxxxx` (sequence-backed, unique, shown everywhere, encoded in prescription QR).
 - **Profile (the core screen):** smart header (identity, code, age/weight, quick stats), quick-add **FAB** (visit, appointment, prescription, treatment, invoice), tabs:
   - **Visits** — visit history with per-visit Billed/Due chips and running due (see §9); add-visit form captures clinical summary + treatments done + payment in one flow; grouped similar planned treatments; summary fields non-editable after save; edit/delete with audit.
-  - **Treatments** — plan + history; multi-tooth display; status changes inline.
+  - **Treatments** — plan + history, shown as a timeline (2026-08-04: left rail with a status-colored dot per entry, card-per-treatment, tooth-number chips, price badge — was a table); multi-tooth display; status changes inline; same grouping/duplicate-detection/billing logic as before, presentation only.
   - **Prescriptions** — per-patient list + create (full prescription form embedded).
   - **Files** — profile photo, clinical images, x-rays; upload to Supabase Storage bucket `patient-files`; preview in-browser.
   - **Dental chart** — see §10.
