@@ -831,65 +831,97 @@ export function Prescriptions() {
   const selectedPatientDentition = getDentitionTypeFromDOB(selectedPatientDOB)
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold">Prescriptions</h1>
-          <p className="text-text-secondary">Manage patient prescriptions and investigations</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Clinical Prescriptions</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              {prescriptions.length} Issued
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Draft digital Rx, record diagnosis, prescription templates, and print physical clinic pads.</p>
         </div>
-        <Button onClick={() => { resetForm(); setShowForm(true) }}>
+        <Button onClick={() => { resetForm(); setShowForm(true) }} className="rounded-xl shadow-elevation-md px-5 py-2.5">
           <Plus className="w-4 h-4 mr-2" />
           New Prescription
         </Button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
-        <input
-          type="text"
-          placeholder="Search prescriptions..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        />
+      {/* Search Bar */}
+      <div className="relative glass-card bg-white/90 rounded-2xl p-2 shadow-elevation-low border border-primary/10">
+        <div className="relative flex items-center">
+          <Search className="absolute left-4 w-5 h-5 text-text-muted" />
+          <input
+            type="text"
+            placeholder="Search prescriptions by patient name, code, diagnosis, or drug..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-surface-subtle/80 border border-gray-200/80 rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-4 text-text-muted hover:text-text-primary p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-12">Loading...</div>
+        <div className="flex justify-center py-16">
+          <span className="spinner" />
+        </div>
       ) : (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 overflow-hidden">
           {groupedPrescriptions.length === 0 ? (
-            <div className="text-center py-12 text-text-secondary">No prescriptions found</div>
+            <div className="p-12 text-center text-text-secondary">
+              <div className="w-16 h-16 rounded-2xl bg-surface-subtle text-text-muted mx-auto flex items-center justify-center mb-4">
+                <Pill className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-text-primary mb-1">No Prescriptions Found</h3>
+              <p className="text-xs text-text-secondary mb-5 max-w-sm mx-auto">Start by creating a digital prescription record for your patient.</p>
+              <Button onClick={() => { resetForm(); setShowForm(true) }} className="rounded-xl shadow-elevation-md">
+                <Plus className="w-4 h-4 mr-2" />
+                New Prescription
+              </Button>
+            </div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-gray-100">
               {groupedPrescriptions.map((group) => {
                 const isExpanded = searchTerm.trim() !== '' || expandedPatients.has(group.patientId)
                 const latest = group.prescriptions[0]
                 return (
-                  <div key={group.patientId}>
+                  <div key={group.patientId} className="transition-colors">
                     <div
-                      className="flex items-center gap-3 px-4 sm:px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      className="flex items-center gap-3.5 px-6 py-4 cursor-pointer hover:bg-primary-surface/50 transition-colors group"
                       onClick={() => togglePatientExpanded(group.patientId)}
                     >
                       <ChevronDown
-                        className={`w-4 h-4 text-text-secondary flex-shrink-0 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                        className={`w-4 h-4 text-text-secondary flex-shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`}
                       />
+                      <div className="w-9 h-9 bg-gradient-to-br from-primary to-primary-bright rounded-2xl flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
+                        {group.patient?.first_name?.[0] || '?'}
+                      </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="font-medium">
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                          <span className="font-bold text-text-primary text-sm group-hover:text-primary transition-colors">
                             {group.patient?.first_name} {group.patient?.last_name}
                           </span>
                           {group.patient?.patient_code && (
-                            <span className="text-xs text-text-secondary bg-gray-100 px-2 py-0.5 rounded">
+                            <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
                               {group.patient.patient_code}
                             </span>
                           )}
-                          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                             {group.prescriptions.length} prescription{group.prescriptions.length > 1 ? 's' : ''}
                           </span>
                         </div>
-                        <div className="text-xs text-text-secondary mt-0.5">
-                          Last: {safeFormat(latest.prescribed_date, 'MMM d, yyyy')}
+                        <div className="text-xs text-text-secondary mt-0.5 flex items-center gap-2">
+                          <span>Latest Rx: <strong className="text-text-primary">{safeFormat(latest.prescribed_date, 'MMM d, yyyy')}</strong></span>
                         </div>
                       </div>
                       <button
@@ -898,43 +930,54 @@ export function Prescriptions() {
                           e.stopPropagation()
                           navigate(`/patients/${group.patientId}`)
                         }}
-                        className="p-2 text-text-secondary hover:text-primary hover:bg-gray-100 rounded-lg flex-shrink-0"
-                        title="View profile"
+                        className="p-2 text-text-secondary hover:text-primary hover:bg-white rounded-xl border border-transparent hover:border-gray-200 flex-shrink-0 transition-colors shadow-sm"
+                        title="View Patient Profile"
                       >
                         <User className="w-4 h-4" />
                       </button>
                     </div>
+
                     {isExpanded && (
-                      <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
-                        <table className="w-full">
+                      <div className="overflow-x-auto bg-surface-subtle/40 border-t border-gray-100/80">
+                        <table className="w-full text-left">
                           <thead>
-                            <tr>
-                              <th className="pl-11 pr-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Diagnosis</th>
-                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Medications</th>
-                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Investigations</th>
-                              <th className="px-6 py-2 text-left text-xs font-medium text-text-secondary uppercase">Actions</th>
+                            <tr className="bg-surface-subtle/80 border-b border-gray-100">
+                              <th className="pl-14 pr-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">Prescribed Date</th>
+                              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">Diagnosis</th>
+                              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">Medications</th>
+                              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">Investigations</th>
+                              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-text-secondary">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {group.prescriptions.map((prescription) => (
-                              <tr key={prescription.id} className="hover:bg-gray-100/60">
-                                <td className="pl-11 pr-6 py-3 text-sm">
+                              <tr key={prescription.id} className="hover:bg-white/80 transition-colors">
+                                <td className="pl-14 pr-6 py-3.5 text-xs font-mono font-bold text-text-primary">
                                   {safeFormat(prescription.prescribed_date, 'MMM d, yyyy')}
                                 </td>
-                                <td className="px-6 py-3 text-sm">{prescription.diagnosis || 'N/A'}</td>
-                                <td className="px-6 py-3 text-sm">
-                                  {Array.isArray(prescription.medications) && prescription.medications.length > 0
-                                    ? `${prescription.medications.length} medication(s)`
-                                    : 'None'}
+                                <td className="px-6 py-3.5 text-xs font-medium text-text-primary">
+                                  {prescription.diagnosis || <span className="text-text-muted italic">N/A</span>}
                                 </td>
-                                <td className="px-6 py-3 text-sm">
-                                  {Array.isArray(prescription.investigations) && prescription.investigations.length > 0
-                                    ? `${prescription.investigations.length} test(s)`
-                                    : 'None'}
+                                <td className="px-6 py-3.5 text-xs">
+                                  {Array.isArray(prescription.medications) && prescription.medications.length > 0 ? (
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                      {prescription.medications.length} drug{prescription.medications.length > 1 ? 's' : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="text-text-muted italic">None</span>
+                                  )}
                                 </td>
-                                <td className="px-6 py-3 text-sm">
-                                  <div className="flex gap-2">
+                                <td className="px-6 py-3.5 text-xs">
+                                  {Array.isArray(prescription.investigations) && prescription.investigations.length > 0 ? (
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                      {prescription.investigations.length} test{prescription.investigations.length > 1 ? 's' : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="text-text-muted italic">None</span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                                  <div className="flex justify-end gap-1.5">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -942,16 +985,16 @@ export function Prescriptions() {
                                         setPrintingPatient(pat || null)
                                         setPrintingPrescription(prescription)
                                       }}
-                                      className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
-                                      title="Print"
+                                      className="p-2 text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-xl transition-colors shadow-sm"
+                                      title="Print Prescription Pad"
                                     >
                                       <Printer className="w-4 h-4" />
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => startEdit(prescription)}
-                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                                      title="Edit"
+                                      className="p-2 text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-xl transition-colors shadow-sm"
+                                      title="Edit Prescription"
                                     >
                                       <Pencil className="w-4 h-4" />
                                     </button>
@@ -959,8 +1002,8 @@ export function Prescriptions() {
                                       <button
                                         type="button"
                                         onClick={() => handleDelete(prescription)}
-                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                                        title="Delete"
+                                        className="p-2 text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors shadow-sm"
+                                        title="Delete Prescription"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
