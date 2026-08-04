@@ -47,8 +47,23 @@ workflow or menu changes; `sk-dental` untouched.
   creating a live test patient to check needs the `patient_code_seq` bump from CLAUDE.md hard rule 8
   first) — check this tab against a real patient before considering it final.
 
-Remaining pages (Appointments, Billing, Consultations, Inventory, Lab, Login) reviewed and ported
-separately — see the entry below if present, or `git log` for the corresponding commits.
+**Phase 7 — remaining six pages**, each reviewed for logic/print/glass-card-positioning issues before
+porting (background review agent, then verified myself):
+- **Appointments, Consultations, Inventory** — pure styling, ported as-is. Consultations gained a
+  trivial clear-search (×) button (reuses existing `searchTerm` state).
+- **Lab** — restyled, but the reference had silently dropped the "(matching current filter)" suffix
+  on the three stat-card labels when a filter is active; reinstated it so a filtered view can't be
+  misread as clinic-wide totals.
+- **Billing** — restyled, but three dropdown panels (Unbilled Treatments popover, More Actions menu,
+  patient-search suggestions) combined `.glass-card` with Tailwind's `absolute` class — the same bug
+  as Header.tsx (`.glass-card` sets `position: relative` in `index.css` and wins the cascade). Fixed
+  by stripping `glass-card` from those three elements before porting; verified live that all three
+  are genuinely `position: absolute` and don't inflate the header.
+- **Login** — read the full diff line-by-line myself given `CLAUDE.md`'s security-sensitive flag on
+  this file (`ADMIN_PASSWORD` derives the secure-storage encryption key for every role). Confirmed
+  every state variable, handler, and the PIN/OTP/recovery-code logic is byte-for-byte untouched —
+  only labels and classNames changed. Verified live: admin PIN login completes end-to-end to
+  `/dashboard`.
 
 ## 2026-08-03 — Reorder the post-visit prompts: appointment first, then payment WhatsApp
 After a visit with a payment, the flow used to show the WhatsApp payment thank-you prompt first,
