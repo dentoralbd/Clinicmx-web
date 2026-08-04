@@ -150,59 +150,67 @@ export function Lab() {
   const isFiltered = searchQuery.trim() !== '' || filterMode !== 'all'
 
   return (
-    <div className="space-y-6 page-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold">Lab</h1>
-          <p className="text-text-secondary mt-1">Track labwork sent out — crowns, bridges, dentures, ortho appliances</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Dental Lab Work</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              {records.length} Lab Orders
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Track crown, denture, aligner, and lab orders, delivery status, and technician fees.</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>
+        <Button onClick={() => setShowModal(true)} className="rounded-xl shadow-elevation-md px-5 py-2.5">
           <Plus className="w-4 h-4 mr-2" />
           New Lab Work
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-4">
-          <p className="text-xs text-text-secondary">
-            Total billed by lab{isFiltered ? ' (matching current filter)' : ''}
+      {/* Summary Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="glass-card bg-white/90 rounded-3xl p-5 border border-primary/10 shadow-elevation-low">
+          <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Total Lab Billed{isFiltered ? ' (matching current filter)' : ''}
           </p>
-          <p className="text-xl font-bold mt-1">{formatBDT(totals.total)}</p>
+          <p className="text-2xl font-bold font-display text-text-primary mt-1">{formatBDT(totals.total)}</p>
         </div>
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-4">
-          <p className="text-xs text-text-secondary">
-            Paid to lab{isFiltered ? ' (matching current filter)' : ''}
+        <div className="glass-card bg-white/90 rounded-3xl p-5 border border-primary/10 shadow-elevation-low">
+          <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Paid to Lab{isFiltered ? ' (matching current filter)' : ''}
           </p>
-          <p className="text-xl font-bold mt-1 text-success">{formatBDT(totals.paid)}</p>
+          <p className="text-2xl font-bold font-display text-emerald-600 mt-1">{formatBDT(totals.paid)}</p>
         </div>
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-4">
-          <p className="text-xs text-text-secondary">
-            Due to lab{isFiltered ? ' (matching current filter)' : ''}
+        <div className="glass-card bg-white/90 rounded-3xl p-5 border border-primary/10 shadow-elevation-low">
+          <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Due to Lab{isFiltered ? ' (matching current filter)' : ''}
           </p>
-          <p className="text-xl font-bold mt-1 text-error">{formatBDT(totals.due)}</p>
+          <p className="text-2xl font-bold font-display text-rose-600 mt-1">{formatBDT(totals.due)}</p>
         </div>
       </div>
 
-      <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
+      {/* Search & Filter Bar */}
+      <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 overflow-hidden">
+        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3 bg-surface-subtle/50">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
               type="text"
-              placeholder="Search lab work..."
+              placeholder="Search by patient name, lab name, or work type..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full pl-11 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all shadow-sm"
             />
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-gray-200/80 shadow-sm">
             {(['all', 'unpaid', 'overdue'] as FilterMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setFilterMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
-                  filterMode === mode ? 'bg-primary text-white' : 'text-text-secondary hover:bg-gray-100'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${
+                  filterMode === mode ? 'bg-primary text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 {mode}
@@ -212,16 +220,29 @@ export function Lab() {
         </div>
 
         {loading ? (
-          <div className="p-8 flex justify-center">
+          <div className="p-16 flex justify-center">
             <span className="spinner" />
           </div>
         ) : filteredRecords.length === 0 ? (
-          <div className="p-8 text-center text-text-secondary">
-            <FlaskConical className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p>{isFiltered ? 'No lab work found' : 'No lab work yet. Click "New Lab Work" to get started.'}</p>
+          <div className="p-12 text-center text-text-secondary">
+            <div className="w-14 h-14 rounded-2xl bg-surface-subtle text-text-muted mx-auto flex items-center justify-center mb-3">
+              <FlaskConical className="w-7 h-7" />
+            </div>
+            <p className="text-sm font-semibold text-text-primary mb-1">
+              {isFiltered ? 'No Lab Work Found' : 'No Lab Orders Recorded'}
+            </p>
+            <p className="text-xs text-text-secondary mb-4">
+              {isFiltered ? 'Try clearing your search query or filter settings.' : 'Start by tracking your first dental laboratory order.'}
+            </p>
+            {!isFiltered && (
+              <Button onClick={() => setShowModal(true)} className="rounded-xl shadow-sm">
+                <Plus className="w-4 h-4 mr-1.5" />
+                New Lab Work
+              </Button>
+            )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-gray-100">
             {groupLabWorkByPatient(filteredRecords).map((group) => (
               <PatientLabGroup
                 key={group.patientId}
