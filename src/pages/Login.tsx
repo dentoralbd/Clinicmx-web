@@ -312,68 +312,78 @@ export function Login() {
   const roleTitle = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-2xl shadow-xl p-8 w-full max-w-md ${shake ? 'shake' : ''}`}>
+    <div className="min-h-screen bg-gradient-to-br from-background via-surface-subtle to-primary/5 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-highlight/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className={`glass-card bg-white/90 backdrop-blur-2xl rounded-3xl shadow-elevation-high p-8 sm:p-10 w-full max-w-md border border-primary/15 transition-all duration-300 ${shake ? 'shake' : ''}`}>
+
+        {/* Header / Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
-            <div className="w-28 h-28 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-              <img src="/logo.png" alt="ClinicMx Logo" className="w-20 h-20 object-contain" />
+          <div className="relative inline-flex items-center justify-center mb-4">
+            <div className="absolute inset-0 bg-gradient-to-tr from-primary to-highlight/30 rounded-full blur-md opacity-40 animate-pulse" />
+            <div className="relative w-24 h-24 rounded-2xl bg-white p-3 shadow-elevation-md border border-gray-100 flex items-center justify-center">
+              <img src="/logo.png" alt="ClinicMx Logo" className="w-16 h-16 object-contain" />
             </div>
           </div>
-          <h1 className="font-display text-3xl font-bold text-gray-900 mb-2">ClinicMx</h1>
-          <p className="text-text-secondary">Dental Clinic Management</p>
+          <h1 className="font-display text-3xl font-bold tracking-tight text-text-primary mb-1">
+            ClinicMx
+          </h1>
+          <p className="text-sm font-medium text-text-secondary">
+            Dental Practice Management
+          </p>
         </div>
 
         {waiting ? (
           <div className="space-y-6 text-center">
-            <div className="flex justify-center">
+            <div className="flex justify-center py-2">
               <span className="spinner" />
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Waiting for admin approval</h2>
-              <p className="text-sm text-text-secondary">
-                This is the first login from this network (IP {waiting.ip}). The admin has been
-                notified — you will be signed in automatically once access is approved.
+            <div className="bg-primary/5 rounded-2xl p-4 border border-primary/10">
+              <h2 className="text-base font-semibold text-text-primary mb-1">Waiting for Admin Approval</h2>
+              <p className="text-xs leading-relaxed text-text-secondary">
+                First login detected from network IP <span className="font-mono text-primary font-bold">{waiting.ip}</span>. The administrator has been notified.
               </p>
             </div>
             <Button
               type="button"
-              className="w-full py-3"
+              className="w-full py-3 text-sm font-semibold rounded-xl"
               onClick={() => void checkWaitingStatus(waiting)}
               disabled={checking}
             >
               {checking ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="spinner spinner-sm" />
-                  Checking...
+                  Checking Approval...
                 </span>
               ) : (
-                'Check again'
+                'Check Approval Status'
               )}
             </Button>
             <button
               type="button"
               onClick={handleBack}
-              className="w-full text-sm text-text-secondary hover:text-gray-900 transition-colors"
+              className="w-full text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors"
             >
-              Back
+              ← Back to role selection
             </button>
           </div>
         ) : otp ? (
           <form onSubmit={handleOtpSubmit} className="space-y-6">
             <div className="text-center">
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Two-step verification</h2>
-              <p className="text-sm text-text-secondary">
+              <h2 className="text-lg font-bold text-text-primary mb-1">Two-Step Verification</h2>
+              <p className="text-xs text-text-secondary leading-relaxed">
                 {recoveryMode
-                  ? 'Enter your recovery code to finish logging in.'
-                  : 'A 6-digit code was sent to your Telegram. Enter it below to finish logging in.'}
+                  ? 'Enter your emergency recovery code to proceed.'
+                  : 'A 6-digit verification code was sent to Telegram. Enter code to continue.'}
               </p>
             </div>
 
             {recoveryMode ? (
               <div>
-                <label htmlFor="recovery-code" className="block text-sm font-medium text-gray-700 mb-2">
-                  Recovery code
+                <label htmlFor="recovery-code" className="block text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wider">
+                  Recovery Code
                 </label>
                 <input
                   id="recovery-code"
@@ -384,8 +394,8 @@ export function Login() {
                     setOtpError('')
                   }}
                   placeholder="Enter recovery code"
-                  className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
-                    otpError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  className={`w-full px-4 py-3 border rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all ${
+                    otpError ? 'border-red-400 bg-red-50/50' : 'border-gray-200 bg-surface-subtle'
                   }`}
                   autoFocus
                   disabled={otpBusy}
@@ -393,8 +403,8 @@ export function Login() {
               </div>
             ) : (
               <div>
-                <label htmlFor="otp-code" className="block text-sm font-medium text-gray-700 mb-2">
-                  Verification code
+                <label htmlFor="otp-code" className="block text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wider text-center">
+                  6-Digit Verification Code
                 </label>
                 <input
                   id="otp-code"
@@ -407,29 +417,29 @@ export function Login() {
                     setOtpCode(e.target.value.replace(/\D/g, ''))
                     setOtpError('')
                   }}
-                  placeholder="6-digit code"
-                  className={`w-full px-4 py-3 border rounded-lg text-center text-2xl tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
-                    otpError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  placeholder="000000"
+                  className={`w-full px-4 py-3 border rounded-2xl text-center text-2xl font-mono tracking-[0.4em] font-bold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all ${
+                    otpError ? 'border-red-400 bg-red-50/50' : 'border-gray-200 bg-surface-subtle'
                   }`}
                   autoFocus
                   disabled={otpBusy}
                 />
               </div>
             )}
-            {otpError && <p className="text-sm text-red-600 text-center">{otpError}</p>}
+            {otpError && <p className="text-xs font-medium text-red-600 text-center">{otpError}</p>}
 
-            <Button type="submit" className="w-full py-3" disabled={otpBusy}>
+            <Button type="submit" className="w-full py-3.5 rounded-xl font-semibold shadow-elevation-md" disabled={otpBusy}>
               {otpBusy ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="spinner spinner-sm" />
-                  Verifying...
+                  Verifying Code...
                 </span>
               ) : (
-                'Verify'
+                'Verify & Continue'
               )}
             </Button>
 
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-xs font-medium">
               {otp.nonce !== null && !recoveryMode ? (
                 <button
                   type="button"
@@ -437,7 +447,7 @@ export function Login() {
                   className="text-primary hover:underline disabled:opacity-50"
                   disabled={otpBusy}
                 >
-                  Resend code
+                  Resend Telegram Code
                 </button>
               ) : (
                 <span />
@@ -448,7 +458,7 @@ export function Login() {
                   setRecoveryMode((prev) => !prev)
                   setOtpError('')
                 }}
-                className="text-text-secondary hover:text-gray-900 transition-colors disabled:opacity-50"
+                className="text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
                 disabled={otpBusy || (otp.nonce === null && recoveryMode)}
               >
                 {recoveryMode ? (otp.nonce !== null ? 'Use Telegram code' : '') : 'Use recovery code'}
@@ -458,49 +468,73 @@ export function Login() {
             <button
               type="button"
               onClick={handleBack}
-              className="w-full text-sm text-text-secondary hover:text-gray-900 transition-colors"
+              className="w-full text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors pt-2"
               disabled={otpBusy}
             >
-              Back
+              ← Back
             </button>
           </form>
         ) : !role ? (
-          <div className="space-y-4">
-            <p className="text-center text-sm font-medium text-gray-700">Continue as</p>
+          <div className="space-y-3.5">
+            <p className="text-center text-xs font-semibold uppercase tracking-wider text-text-secondary/70 mb-2">
+              Select Your Access Level
+            </p>
 
             <button
               type="button"
               onClick={() => setRole('admin')}
-              className="w-full flex items-center gap-4 px-5 py-4 border-2 border-primary/30 rounded-xl hover:border-primary hover:bg-primary/5 transition-colors text-left"
+              className="group w-full flex items-center gap-4 px-4 py-3.5 border border-gray-200/80 hover:border-primary/50 bg-white hover:bg-primary-surface rounded-2xl shadow-elevation-low hover:shadow-elevation-md transition-all duration-200 text-left"
             >
-              <ShieldCheck className="w-8 h-8 text-primary shrink-0" />
-              <span className="font-semibold text-gray-900">Admin Login</span>
+              <div className="w-11 h-11 rounded-xl bg-primary/10 group-hover:bg-primary group-hover:text-white text-primary flex items-center justify-center shrink-0 transition-colors duration-200">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-text-primary group-hover:text-primary transition-colors">Admin Portal</div>
+                <div className="text-xs text-text-secondary">Full practice & system settings access</div>
+              </div>
             </button>
 
             <button
               type="button"
               onClick={() => setRole('doctor')}
-              className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors text-left"
+              className="group w-full flex items-center gap-4 px-4 py-3.5 border border-gray-200/80 hover:border-primary/50 bg-white hover:bg-primary-surface rounded-2xl shadow-elevation-low hover:shadow-elevation-md transition-all duration-200 text-left"
             >
-              <Stethoscope className="w-8 h-8 text-gray-500 shrink-0" />
-              <span className="font-semibold text-gray-900">Doctor Login</span>
+              <div className="w-11 h-11 rounded-xl bg-teal-50 group-hover:bg-teal-600 group-hover:text-white text-teal-600 flex items-center justify-center shrink-0 transition-colors duration-200">
+                <Stethoscope className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-text-primary group-hover:text-primary transition-colors">Doctor Portal</div>
+                <div className="text-xs text-text-secondary">Patient consultations & clinical care</div>
+              </div>
             </button>
 
             <button
               type="button"
               onClick={() => setRole('operator')}
-              className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors text-left"
+              className="group w-full flex items-center gap-4 px-4 py-3.5 border border-gray-200/80 hover:border-amber-500/50 bg-white hover:bg-amber-50/40 rounded-2xl shadow-elevation-low hover:shadow-elevation-md transition-all duration-200 text-left"
             >
-              <UserCog className="w-8 h-8 text-gray-500 shrink-0" />
-              <span className="font-semibold text-gray-900">Operator Login</span>
+              <div className="w-11 h-11 rounded-xl bg-amber-50 group-hover:bg-amber-600 group-hover:text-white text-amber-600 flex items-center justify-center shrink-0 transition-colors duration-200">
+                <UserCog className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-text-primary group-hover:text-amber-700 transition-colors">Operator Portal</div>
+                <div className="text-xs text-text-secondary">Reception, appointments & front-desk</div>
+              </div>
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Logging in as</span>
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                {roleTitle}
+              </span>
+            </div>
+
             {role !== 'admin' && (
               <div>
-                <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email or phone number
+                <label htmlFor="identifier" className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
+                  Email or Phone Number
                 </label>
                 <input
                   id="identifier"
@@ -510,8 +544,8 @@ export function Login() {
                     setIdentifier(e.target.value)
                     setError('')
                   }}
-                  placeholder="Enter email or phone number"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                  placeholder="e.g. doctor@clinicmx.com or 01700000000"
+                  className="w-full px-4 py-3 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   autoFocus
                   disabled={loading}
                 />
@@ -519,7 +553,7 @@ export function Login() {
             )}
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="password" className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
                 {roleTitle} Password
               </label>
               <input
@@ -530,42 +564,42 @@ export function Login() {
                   setPassword(e.target.value)
                   setError('')
                 }}
-                placeholder="Enter password"
-                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
-                  error ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                placeholder="••••••••••••"
+                className={`w-full px-4 py-3 border rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all ${
+                  error ? 'border-red-400 bg-red-50/50' : 'border-gray-200 bg-surface-subtle'
                 }`}
                 autoFocus={role === 'admin'}
                 disabled={loading}
               />
               {error && (
-                <p className="mt-2 text-sm text-red-600">{error}</p>
+                <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
               )}
             </div>
 
-            <Button type="submit" className="w-full py-3" disabled={loading}>
+            <Button type="submit" className="w-full py-3.5 rounded-xl font-semibold shadow-elevation-md" disabled={loading}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="spinner spinner-sm" />
-                  Verifying...
+                  Authenticating...
                 </span>
               ) : (
-                'Login'
+                'Sign In to ClinicMx'
               )}
             </Button>
 
             <button
               type="button"
               onClick={handleBack}
-              className="w-full text-sm text-text-secondary hover:text-gray-900 transition-colors"
+              className="w-full text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors pt-1"
               disabled={loading}
             >
-              Back
+              ← Choose a different role
             </button>
           </form>
         )}
 
-        <div className="mt-6 text-center text-sm text-text-secondary">
-          <p>Secure access for authorized users only</p>
+        <div className="mt-8 pt-4 border-t border-gray-100 text-center text-xs text-text-muted">
+          <p>Protected by ClinicMx Secure Gateway</p>
         </div>
       </div>
     </div>
