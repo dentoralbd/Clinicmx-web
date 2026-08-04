@@ -440,6 +440,17 @@ export function Patients() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Email</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Date of Birth</label>
                   <input
                     type="date"
