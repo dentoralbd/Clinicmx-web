@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { User, Menu, LogOut } from 'lucide-react'
+import { User, Menu, LogOut, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 import { canDelete, canEditClinicProfile, canRevert, clearAppRole, clearAppUser, getAppRole, getAppUser } from '@/lib/appSession'
@@ -20,6 +20,8 @@ export function Header({ onMenuClick }: HeaderProps) {
   const roleLabel = role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'Operator'
   const userName = getAppUser()?.name
   const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete()
+  const displayName = role !== 'admin' && userName ? userName : roleLabel
+  const initials = (role !== 'admin' && userName ? userName.trim()[0] : roleLabel[0])?.toUpperCase() || 'U'
 
   useEffect(() => {
     if (!profileOpen) return
@@ -42,7 +44,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   }
 
   return (
-    <header className="bg-white border-b border-gray-200 shadow-elevation-low px-4 lg:px-6 py-4">
+    <header className="bg-white/95 border-b border-gray-100 shadow-elevation-low px-4 lg:px-6 py-3.5 sticky top-0 z-30">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button
@@ -73,15 +75,26 @@ export function Header({ onMenuClick }: HeaderProps) {
             <button
               aria-label="User profile"
               onClick={() => setProfileOpen((open) => !open)}
-              className="icon-button p-2 hover:bg-gray-100 hover:shadow-elevation-low rounded-lg transition-all duration-150"
+              className="flex items-center gap-2.5 p-1.5 pr-2.5 sm:pr-3 hover:bg-surface-subtle rounded-2xl transition-all border border-transparent hover:border-primary/10 group"
             >
-              <User className="w-5 h-5 text-text-secondary" />
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary-bright flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
+                {initials}
+              </div>
+              <div className="text-left hidden sm:block leading-tight">
+                <p className="text-xs font-bold text-text-primary group-hover:text-primary transition-colors">
+                  {displayName}
+                </p>
+                <p className="text-[10px] text-text-secondary">{roleLabel} Profile</p>
+              </div>
+              <ChevronDown
+                className={`hidden sm:block w-3.5 h-3.5 text-text-muted transition-transform ${profileOpen ? 'rotate-180' : ''}`}
+              />
             </button>
             {profileOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-primary/10 rounded-2xl shadow-elevation-high z-50 py-2">
                 <div className="px-4 py-2 border-b border-gray-100">
-                  <p className="text-sm text-text-secondary">Logged in as</p>
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-xs text-text-secondary">Logged in as</p>
+                  <p className="text-xs font-bold text-text-primary mt-0.5">
                     {role !== 'admin' && userName ? `${userName} (${roleLabel})` : roleLabel}
                   </p>
                 </div>
@@ -91,9 +104,9 @@ export function Header({ onMenuClick }: HeaderProps) {
                       setProfileOpen(false)
                       navigate('/admin')
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   >
-                    <User className="w-4 h-4 text-text-secondary" />
+                    <User className="w-4 h-4 text-primary" />
                     Admin
                   </button>
                 ) : hasZoneAccess ? (
@@ -102,15 +115,15 @@ export function Header({ onMenuClick }: HeaderProps) {
                       setProfileOpen(false)
                       navigate('/doctor-profile')
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
                   >
-                    <User className="w-4 h-4 text-text-secondary" />
+                    <User className="w-4 h-4 text-primary" />
                     {roleLabel} Zone
                   </button>
                 ) : null}
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Logout
