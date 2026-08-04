@@ -68,6 +68,10 @@
 
 `generate_patient_code()` (005, offset re-based by 024 to the `PT-1xxxxx` format) backs the `patient_code` column default and an RPC the app calls (`lib/patientCode.ts` — `ensurePatientCode`). Codes are server-assigned from a sequence; client code must never invent final codes. (Roadmap M4 formalizes this with provisional `PT-TMP-*` codes replaced by a `BEFORE INSERT` trigger.)
 
+## 2a. Storage usage stats
+
+`get_storage_usage_stats()` (051) returns `pg_database_size()` plus the summed `storage.objects` size for the `patient-files` bucket, in one query — backs the Dashboard "Storage Health" tile. `SECURITY DEFINER`, `EXECUTE` revoked from `PUBLIC` and granted only to `service_role` (it needs to bypass `storage.objects`' own RLS to sum every object, not just what the caller could see). Only caller is `functions/api/storage-usage.ts`, itself gated by `requireStaffSession` — never called from the browser directly.
+
 ## 3. Row Level Security — current state
 
 **Stale note removed 2026-08-01** — this section previously said RLS was decorative (`FOR ALL USING (true)` everywhere); that was true through migration 038 but has not been true since **039 (2026-07-26, roadmap M3 landed)**. Current state:
