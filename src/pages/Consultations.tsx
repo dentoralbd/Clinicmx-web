@@ -321,83 +321,120 @@ export function Consultations() {
     : null
 
   return (
-    <div className="space-y-6 page-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold">Consultation</h1>
-          <p className="text-text-secondary">Walk-in consultations, before they become full patient records</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Walk-in Consultations</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              {patients.length} Entries
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Track walk-in patients, consultation fees, and convert to full records.</p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={() => setShowForm(true)} className="rounded-xl shadow-elevation-md px-5 py-2.5">
           <Plus className="w-4 h-4 mr-2" />
           Add Consultation
         </Button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
-        <input
-          type="text"
-          placeholder="Search by name, phone, or patient ID..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        />
+      {/* Search Bar */}
+      <div className="relative glass-card bg-white/90 rounded-2xl p-2 shadow-elevation-low border border-primary/10">
+        <div className="relative flex items-center">
+          <Search className="absolute left-4 w-5 h-5 text-text-muted" />
+          <input
+            type="text"
+            placeholder="Search by consultation name, phone number, or code..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-surface-subtle/80 border border-gray-200/80 rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-4 text-text-muted hover:text-text-primary p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
+        <div className="flex justify-center py-16">
           <span className="spinner" />
         </div>
       ) : filteredPatients.length === 0 && !searchTerm ? (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-          <Stethoscope className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-text-secondary font-medium mb-3">No consultations yet</p>
-          <Button onClick={() => setShowForm(true)}>
+        <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 p-12 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-surface-subtle text-text-muted mx-auto flex items-center justify-center mb-4">
+            <Stethoscope className="w-8 h-8" />
+          </div>
+          <h3 className="text-base font-bold text-text-primary mb-1">No Consultations Recorded</h3>
+          <p className="text-xs text-text-secondary mb-5 max-w-sm mx-auto">Add your first walk-in consultation entry to record fees and write prescriptions.</p>
+          <Button onClick={() => setShowForm(true)} className="rounded-xl shadow-elevation-md">
             <Plus className="w-4 h-4 mr-2" />
             Add First Consultation
           </Button>
         </div>
       ) : (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 overflow-hidden">
           {filteredPatients.length === 0 ? (
-            <p className="text-center text-text-secondary py-8">No consultations match your search</p>
+            <div className="p-12 text-center">
+              <Search className="w-10 h-10 text-text-muted mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-semibold text-text-primary mb-1">No Consultations Found</p>
+              <p className="text-xs text-text-secondary">No records match <span className="font-mono font-bold text-primary">"{searchTerm}"</span></p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
+              <table className="w-full text-left">
+                <thead className="bg-surface-subtle/80 border-b border-gray-100">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Contact</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Gender</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Fee</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Patient Name</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Phone / Contact</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Gender</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Consultation Date</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Fee Status</th>
+                    <th className="px-6 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-text-secondary">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100/80">
                   {filteredPatients.map((patient) => {
                     const invoice = invoicesByPatient[patient.id]
                     return (
-                      <tr key={patient.id} className="hover:bg-gray-50 transition-colors group">
+                      <tr key={patient.id} className="hover:bg-primary-surface/60 transition-colors group">
                         <td className="px-6 py-4">
                           <div
-                            className="flex items-center gap-3 cursor-pointer"
+                            className="flex items-center gap-3.5 cursor-pointer"
                             onClick={() => navigate(`/patients/${patient.id}`)}
                           >
-                            <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-bright rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                            <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-bright rounded-2xl flex items-center justify-center text-white text-sm font-bold shadow-elevation-low shrink-0">
                               {patient.first_name?.[0] || '?'}
                             </div>
-                            <span className="font-medium group-hover:text-primary transition-colors">
-                              {patient.first_name} {patient.last_name}
-                            </span>
+                            <div>
+                              <span className="font-semibold text-text-primary text-sm group-hover:text-primary transition-colors">
+                                {patient.first_name} {patient.last_name}
+                              </span>
+                              {patient.patient_code && (
+                                <p className="text-[11px] font-mono text-primary font-semibold">{patient.patient_code}</p>
+                              )}
+                            </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm">{patient.phone || <span className="text-gray-400">—</span>}</td>
-                        <td className="px-6 py-4 text-sm">{patient.gender || '—'}</td>
-                        <td className="px-6 py-4 text-sm">{format(new Date(patient.created_at), 'MMM d, yyyy')}</td>
-                        <td className="px-6 py-4 text-sm">{invoiceStatusChip(invoice)}</td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2">
+                        <td className="px-6 py-4 text-xs font-mono font-medium text-text-primary">
+                          {patient.phone || <span className="text-text-muted italic">—</span>}
+                        </td>
+                        <td className="px-6 py-4 text-xs">
+                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                            {patient.gender || '—'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-text-primary">
+                          {format(new Date(patient.created_at), 'MMM d, yyyy')}
+                        </td>
+                        <td className="px-6 py-4 text-xs">{invoiceStatusChip(invoice)}</td>
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <div className="flex justify-end gap-1.5">
                             <button
                               onClick={() =>
                                 setInvoiceTarget({
@@ -405,8 +442,8 @@ export function Consultations() {
                                   patientName: `${patient.first_name} ${patient.last_name}`.trim(),
                                 })
                               }
-                              className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                              title="Invoice fee"
+                              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                              title="Invoice Fee"
                             >
                               <ReceiptText className="w-4 h-4" />
                             </button>
@@ -414,37 +451,37 @@ export function Consultations() {
                               onClick={() =>
                                 navigate('/prescriptions', { state: { newPrescriptionPatientId: patient.id } })
                               }
-                              className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                              title="Write prescription"
+                              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                              title="Write Prescription"
                             >
                               <Pill className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleConvert(patient)}
-                              className="p-2 text-highlight hover:bg-highlight/10 rounded-lg transition-colors"
-                              title="Convert to patient"
+                              className="p-2 text-highlight hover:bg-highlight/10 rounded-xl transition-colors"
+                              title="Convert to Full Patient Record"
                             >
                               <ArrowUpRight className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => navigate(`/patients/${patient.id}`)}
-                              className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
                               title="View Profile"
                             >
                               <Eye className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleEdit(patient)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Edit"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                              title="Edit Entry"
                             >
                               <Edit className="w-4 h-4" />
                             </button>
                             {canDelete() && (
                               <button
                                 onClick={() => handleDelete(patient)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                                title="Delete Entry"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -461,46 +498,58 @@ export function Consultations() {
         </div>
       )}
 
+      {/* Add / Edit Consultation Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="font-display text-xl font-bold">{editingId ? 'Edit Consultation' : 'Add Consultation'}</h2>
-              <button type="button" onClick={() => { setShowForm(false); setEditingId(null); resetForm() }} className="p-1.5 hover:bg-gray-100 rounded-lg">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass-card bg-white rounded-3xl shadow-elevation-high max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-primary/15">
+            <div className="p-6 border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-md flex items-center justify-between z-10">
+              <div>
+                <h2 className="font-display text-xl font-bold text-text-primary">
+                  {editingId ? 'Edit Consultation Entry' : 'New Walk-in Consultation'}
+                </h2>
+                <p className="text-xs text-text-secondary">Quick intake form for immediate consultation</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setEditingId(null); resetForm() }}
+                className="p-2 text-text-muted hover:text-text-primary hover:bg-gray-100 rounded-xl transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
-                Only name, age, and sex are required. Everything else is optional and can be filled in later.
+            <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5">
+              <div className="flex items-center gap-2 p-3.5 bg-blue-50/70 rounded-2xl border border-blue-100 text-xs font-medium text-blue-800">
+                Only First Name, Last Name, Age, and Sex are required. Additional info can be added anytime later.
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">First Name *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">First Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.first_name}
                     onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter first name"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Last Name *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Last Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.last_name}
                     onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter last name"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Age *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Age (Years) *</label>
                   <input
                     type="number"
                     min={0}
@@ -508,18 +557,18 @@ export function Consultations() {
                     required={!editingId}
                     value={formData.age}
                     onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                    placeholder={editingId ? 'Leave blank to keep existing DOB' : ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder={editingId ? 'Leave blank to keep existing DOB' : 'e.g. 28'}
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Sex *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Sex *</label>
                   <select
                     required
                     value={formData.gender}
                     onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   >
                     <option>Male</option>
                     <option>Female</option>
@@ -529,7 +578,7 @@ export function Consultations() {
 
                 {!editingId && (
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1">Consultation Fee (BDT) *</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Consultation Fee (BDT) *</label>
                     <input
                       type="number"
                       min={0}
@@ -537,7 +586,8 @@ export function Consultations() {
                       required
                       value={formData.fee}
                       onChange={(e) => setFormData({ ...formData, fee: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="e.g. 500"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm font-mono text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                 )}
@@ -546,67 +596,70 @@ export function Consultations() {
               <button
                 type="button"
                 onClick={() => setShowMore((prev) => !prev)}
-                className="flex items-center gap-1 text-sm font-medium text-primary"
+                className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline pt-1"
               >
                 <ChevronDown className={`w-4 h-4 transition-transform ${showMore ? 'rotate-180' : ''}`} />
-                More details (optional)
+                {showMore ? 'Hide optional details' : '+ Optional contact & notes'}
               </button>
 
               {showMore && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Phone</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Phone</label>
                     <input
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="01700000000"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Email</label>
                     <input
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="email@example.com"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Date of Birth</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Date of Birth</label>
                     <input
                       type="date"
                       value={formData.date_of_birth}
                       onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Address</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Address</label>
                     <input
                       type="text"
                       value={formData.address}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Address"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1">Notes</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Consultation Notes</label>
                     <SuggestTextarea
                       memoryKey={MEMORY_KEYS.CONSULTATION_NOTES}
                       sectionLabel="Consultation Notes"
                       rows={2}
                       value={formData.notes}
                       onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                     />
                   </div>
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1">
-                  {editingId ? 'Update Consultation' : 'Add & Invoice Fee'}
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <Button type="submit" className="flex-1 py-3 rounded-xl font-semibold shadow-elevation-md">
+                  {editingId ? 'Save Changes' : 'Save & Invoice Fee'}
                 </Button>
                 <Button
                   type="button"
@@ -616,7 +669,7 @@ export function Consultations() {
                     setEditingId(null)
                     resetForm()
                   }}
-                  className="flex-1"
+                  className="flex-1 py-3 rounded-xl font-semibold"
                 >
                   Cancel
                 </Button>
@@ -648,15 +701,15 @@ export function Consultations() {
       )}
 
       {prescriptionPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 space-y-4">
-            <h3 className="font-display text-lg font-bold">Write a prescription?</h3>
-            <p className="text-sm text-text-secondary">
-              Write a prescription for {prescriptionPrompt.patientName} now?
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass-card bg-white rounded-3xl shadow-elevation-high max-w-sm w-full p-6 space-y-4 border border-primary/15">
+            <h3 className="font-display text-lg font-bold text-text-primary">Write a prescription?</h3>
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Would you like to write a prescription for <span className="font-bold text-text-primary">{prescriptionPrompt.patientName}</span> now?
             </p>
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-2">
               <Button
-                className="flex-1"
+                className="flex-1 py-2.5 rounded-xl font-semibold text-xs shadow-sm"
                 onClick={() => {
                   const { patientId } = prescriptionPrompt
                   setPrescriptionPrompt(null)
@@ -665,8 +718,8 @@ export function Consultations() {
               >
                 Write Prescription
               </Button>
-              <Button variant="outline" className="flex-1" onClick={() => setPrescriptionPrompt(null)}>
-                Not now
+              <Button variant="outline" className="flex-1 py-2.5 rounded-xl text-xs font-semibold" onClick={() => setPrescriptionPrompt(null)}>
+                Not Now
               </Button>
             </div>
           </div>
