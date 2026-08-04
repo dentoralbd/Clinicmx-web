@@ -195,202 +195,263 @@ export function Patients() {
   })
 
   return (
-    <div className="space-y-6 page-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold">Patients</h1>
-          <p className="text-text-secondary">Manage patient records</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Patients Directory</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              {patients.length} Registered
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Search, view, and manage complete patient profiles.</p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={() => setShowForm(true)} className="rounded-xl shadow-elevation-md px-5 py-2.5">
           <Plus className="w-4 h-4 mr-2" />
-          Add Patient
+          Add New Patient
         </Button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
-        <input
-          type="text"
-          placeholder="Search by name, phone, email, or patient ID..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        />
+      {/* Search Bar */}
+      <div className="relative glass-card bg-white/90 rounded-2xl p-2 shadow-elevation-low border border-primary/10">
+        <div className="relative flex items-center">
+          <Search className="absolute left-4 w-5 h-5 text-text-muted" />
+          <input
+            type="text"
+            placeholder="Search by patient name, phone number, email, or Patient ID (e.g. PT-00042)..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-surface-subtle/80 border border-gray-200/80 rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-4 text-text-muted hover:text-text-primary p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
+        <div className="flex justify-center py-16">
           <span className="spinner" />
         </div>
       ) : filteredPatients.length === 0 && !searchTerm ? (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-          <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-text-secondary font-medium mb-3">No patients yet</p>
-          <Button onClick={() => setShowForm(true)}>
+        <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 p-12 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-surface-subtle text-text-muted mx-auto flex items-center justify-center mb-4">
+            <Users className="w-8 h-8" />
+          </div>
+          <h3 className="text-base font-bold text-text-primary mb-1">No Patients Registered Yet</h3>
+          <p className="text-xs text-text-secondary mb-5 max-w-sm mx-auto">Get started by creating your first patient record to begin tracking appointments, treatments, and prescriptions.</p>
+          <Button onClick={() => setShowForm(true)} className="rounded-xl shadow-elevation-md">
             <Plus className="w-4 h-4 mr-2" />
             Add First Patient
           </Button>
         </div>
       ) : (
-        <div className="bg-card rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="glass-card bg-white/90 rounded-3xl shadow-elevation-low border border-primary/10 overflow-hidden">
           {filteredPatients.length === 0 ? (
-            <p className="text-center text-text-secondary py-8">No patients match your search</p>
+            <div className="p-12 text-center">
+              <Search className="w-10 h-10 text-text-muted mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-semibold text-text-primary mb-1">No Patients Found</p>
+              <p className="text-xs text-text-secondary">No records match <span className="font-mono font-bold text-primary">"{searchTerm}"</span></p>
+            </div>
           ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Contact</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">DOB</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Gender</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-text-secondary uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredPatients.map((patient) => (
-                  <tr key={patient.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {patient.patient_code ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-                          {patient.patient_code}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div
-                        className="flex items-center gap-3 cursor-pointer"
-                        onClick={() => navigate(`/patients/${patient.id}`)}
-                      >
-                        <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-bright rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-                          {patient.first_name?.[0] || '?'}
-                        </div>
-                        <span className="font-medium group-hover:text-primary transition-colors">
-                          {patient.first_name} {patient.last_name}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div>{patient.phone}</div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM d, yyyy') : '—'}
-                    </td>
-                    <td className="px-6 py-4 text-sm">{patient.gender}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => navigate(`/patients/${patient.id}`)}
-                          className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                          title="View Profile"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(patient)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {canDelete() && (
-                          <button
-                            onClick={() => handleDelete(patient)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-surface-subtle/80 border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Patient Code</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Patient Name</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Contact Info</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Date of Birth / Age</th>
+                    <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">Gender</th>
+                    <th className="px-6 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-text-secondary">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100/80">
+                  {filteredPatients.map((patient) => {
+                    const dobFormatted = patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM d, yyyy') : '—'
+                    const ageCalculated = patient.date_of_birth ? calculateAgeFromDate(patient.date_of_birth) : null
+
+                    return (
+                      <tr key={patient.id} className="hover:bg-primary-surface/60 transition-colors group">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {patient.patient_code ? (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-primary/10 text-primary border border-primary/20">
+                              {patient.patient_code}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-text-muted italic">Unassigned</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div
+                            className="flex items-center gap-3.5 cursor-pointer"
+                            onClick={() => navigate(`/patients/${patient.id}`)}
+                          >
+                            <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-bright rounded-2xl flex items-center justify-center text-white text-sm font-bold shadow-elevation-low shrink-0">
+                              {patient.first_name?.[0] || '?'}
+                            </div>
+                            <div>
+                              <span className="font-semibold text-text-primary text-sm group-hover:text-primary transition-colors">
+                                {patient.first_name} {patient.last_name}
+                              </span>
+                              {patient.address && (
+                                <p className="text-xs text-text-secondary truncate max-w-xs">{patient.address}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-text-primary">
+                          <div className="font-mono">{patient.phone}</div>
+                          {patient.email && <div className="text-text-secondary text-[11px] mt-0.5">{patient.email}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-xs text-text-primary">
+                          <span className="font-medium">{dobFormatted}</span>
+                          {ageCalculated !== null && (
+                            <span className="ml-2 text-[11px] font-semibold text-text-secondary bg-gray-100 px-2 py-0.5 rounded-full">
+                              {ageCalculated} yrs
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-xs">
+                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            patient.gender === 'Female'
+                              ? 'bg-highlight/10 text-highlight border border-highlight/20'
+                              : 'bg-teal-50 text-teal-700 border border-teal-200'
+                          }`}>
+                            {patient.gender}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              onClick={() => navigate(`/patients/${patient.id}`)}
+                              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                              title="View Patient Profile"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleEdit(patient)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                              title="Edit Patient Details"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            {canDelete() && (
+                              <button
+                                onClick={() => handleDelete(patient)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                                title="Delete Record"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
+      {/* Patient Create / Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="font-display text-xl font-bold">{editingId ? 'Edit Patient' : 'Add New Patient'}</h2>
-              <button type="button" onClick={() => { setShowForm(false); resetForm() }} className="p-1.5 hover:bg-gray-100 rounded-lg">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass-card bg-white rounded-3xl shadow-elevation-high max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-primary/15">
+            <div className="p-6 border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-md flex items-center justify-between z-10">
+              <div>
+                <h2 className="font-display text-xl font-bold text-text-primary">
+                  {editingId ? 'Edit Patient Record' : 'Register New Patient'}
+                </h2>
+                <p className="text-xs text-text-secondary">Fill in patient identification and clinical details</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); resetForm() }}
+                className="p-2 text-text-muted hover:text-text-primary hover:bg-gray-100 rounded-xl transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {editingId && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <span className="text-sm text-text-secondary font-medium">Patient ID:</span>
+            <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5">
+              {editingId ? (
+                <div className="flex items-center gap-3 p-3.5 bg-primary/5 rounded-2xl border border-primary/15">
+                  <span className="text-xs font-semibold text-text-secondary">Assigned Patient ID:</span>
                   {editingPatientCode ? (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-primary text-white shadow-sm">
                       {editingPatientCode}
                     </span>
                   ) : (
-                    <span className="text-sm text-gray-400 italic">Not yet assigned</span>
+                    <span className="text-xs text-text-muted italic">Assigned automatically on save</span>
                   )}
                 </div>
-              )}
-              {!editingId && (
-                <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
-                  A unique Patient ID (e.g. PT-00042) will be auto-assigned when this patient is saved.
+              ) : (
+                <div className="flex items-center gap-2 p-3.5 bg-blue-50/70 rounded-2xl border border-blue-100 text-xs font-medium text-blue-800">
+                  Patient Code (e.g. <span className="font-mono font-bold">PT-00042</span>) will be generated automatically upon saving.
                 </div>
               )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">First Name *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">First Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.first_name}
                     onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter first name"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Last Name *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Last Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.last_name}
                     onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter last name"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Phone *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Phone Number *</label>
                   <input
                     type="tel"
                     required
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="01700000000"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm font-mono text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Date of Birth</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Date of Birth</label>
                   <input
                     type="date"
                     value={formData.date_of_birth}
                     onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
                     required={!formData.age}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Age</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Age (Years)</label>
                   <input
                     type="number"
                     min={0}
@@ -406,18 +467,18 @@ export function Patients() {
                       setFormData({ ...formData, age: value, date_of_birth: derivedDob })
                     }}
                     required={!formData.date_of_birth}
-                    placeholder="Enter age if DOB is unknown"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Age if DOB is unknown"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Gender *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Gender *</label>
                   <select
                     required
                     value={formData.gender}
                     onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   >
                     <option>Male</option>
                     <option>Female</option>
@@ -426,33 +487,36 @@ export function Patients() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Weight (kg)</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Weight (kg)</label>
                   <input
                     type="number"
                     min={0}
                     step="0.1"
                     value={formData.weight}
                     onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                    placeholder="Optional"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Optional (e.g. 65.5)"
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
 
-                <p className="text-sm text-text-secondary">Provide either Date of Birth or Age.</p>
+                <div className="flex items-center">
+                  <p className="text-xs text-text-muted italic">Provide either Date of Birth or Age.</p>
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Address</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Address</label>
                 <input
                   type="text"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Street address or city"
+                  className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Medical History</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Medical History</label>
                 <MedicalHistoryFields
                   checked={getMedicalHistoryChecks(formData.medical_history).items.filter((i) => i.checked).map((i) => i.label)}
                   other={getMedicalHistoryChecks(formData.medical_history).other}
@@ -463,20 +527,20 @@ export function Patients() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Notes</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Clinical Notes</label>
                 <SuggestTextarea
                   memoryKey={MEMORY_KEYS.PATIENT_NOTES}
                   sectionLabel="Patient Notes"
                   rows={2}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1">
-                  {editingId ? 'Update Patient' : 'Add Patient'}
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <Button type="submit" className="flex-1 py-3 rounded-xl font-semibold shadow-elevation-md">
+                  {editingId ? 'Save Patient Changes' : 'Save Patient Record'}
                 </Button>
                 <Button
                   type="button"
@@ -486,7 +550,7 @@ export function Patients() {
                     setEditingId(null)
                     resetForm()
                   }}
-                  className="flex-1"
+                  className="flex-1 py-3 rounded-xl font-semibold"
                 >
                   Cancel
                 </Button>
