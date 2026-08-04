@@ -329,24 +329,29 @@ export function Inventory() {
   const tabItems = getTabItems()
 
   return (
-    <div className="space-y-6 page-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 page-fade-in pb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Package className="w-6 h-6 text-primary" />
-            Inventory Management
-          </h1>
-          <p className="text-text-secondary mt-1">Manage clinic supplies, instruments, and consumables</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className="p-2 bg-primary/10 rounded-2xl text-primary">
+              <Package className="w-6 h-6" />
+            </div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Inventory & Stock</h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              {items.length} Items
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary">Track dental materials, instruments, stock movements, and low stock warnings.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={loadItems}
             disabled={loading}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-            title="Refresh"
+            className="p-2.5 hover:bg-surface-subtle border border-gray-200 rounded-xl transition-colors disabled:opacity-50"
+            title="Refresh Inventory"
           >
-            <RefreshCw className={`w-5 h-5 text-text-secondary ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-text-secondary ${loading ? 'animate-spin' : ''}`} />
           </button>
           {activeTab !== 'overview' && (
             <Button
@@ -354,45 +359,46 @@ export function Inventory() {
                 setFormData({ ...emptyForm, category: activeTab as Category })
                 setShowForm(true)
               }}
+              className="rounded-xl shadow-elevation-md px-5 py-2.5"
             >
               <Plus className="w-4 h-4 mr-2" />
-              Add Item
+              Add {activeTab} Item
             </Button>
           )}
         </div>
       </div>
 
-      {/* Alert banners */}
+      {/* Alert Banners */}
       {totalAlerts > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {expiringMaterials.length > 0 && (
-            <div className="flex items-start gap-3 bg-amber-500/[0.14] border border-amber-500/[0.35] rounded-lg px-4 py-3">
+            <div className="flex items-start gap-3 bg-amber-50/90 border border-amber-300/80 rounded-2xl px-5 py-4 shadow-sm">
               <Calendar className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-amber-800">
+                <p className="font-bold text-amber-950 text-sm">
                   {expiringMaterials.length} material{expiringMaterials.length !== 1 ? 's' : ''} expiring within 60 days
                 </p>
-                <p className="text-sm text-amber-700 mt-0.5">
+                <p className="text-xs text-amber-800 mt-0.5 font-medium">
                   {expiringMaterials.slice(0, 3).map((i) => i.name).join(', ')}
                   {expiringMaterials.length > 3 && ` +${expiringMaterials.length - 3} more`}
                 </p>
               </div>
               <button
                 onClick={() => { setActiveTab('Materials'); setExpiryFilter('expiring') }}
-                className="text-sm font-medium text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
+                className="text-xs font-bold text-amber-900 hover:text-amber-950 underline whitespace-nowrap bg-amber-100/80 px-3 py-1.5 rounded-xl border border-amber-300/60"
               >
-                View all
+                View Expiring
               </button>
             </div>
           )}
           {(lowStockMaterials.length > 0 || lowStockInstruments.length > 0) && (
-            <div className="flex items-start gap-3 bg-red-500/[0.14] border border-red-500/[0.35] rounded-lg px-4 py-3">
-              <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div className="flex items-start gap-3 bg-rose-50/90 border border-rose-300/80 rounded-2xl px-5 py-4 shadow-sm">
+              <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-red-800">
-                  Low stock alert — {lowStockMaterials.length + lowStockInstruments.length} item(s) need restocking
+                <p className="font-bold text-rose-950 text-sm">
+                  Low Stock Alert — {lowStockMaterials.length + lowStockInstruments.length} item(s) need restocking
                 </p>
-                <p className="text-sm text-red-700 mt-0.5">
+                <p className="text-xs text-rose-800 mt-0.5 font-medium">
                   {lowStockMaterials.length > 0 && `${lowStockMaterials.length} material${lowStockMaterials.length !== 1 ? 's' : ''}`}
                   {lowStockMaterials.length > 0 && lowStockInstruments.length > 0 && ' • '}
                   {lowStockInstruments.length > 0 && `${lowStockInstruments.length} instrument${lowStockInstruments.length !== 1 ? 's' : ''}`}
