@@ -22,10 +22,10 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
     : 'Profile complete'
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary-light via-primary-surface to-white p-4 sm:p-6 text-text-primary shadow-glass border border-primary/10">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/25 via-primary/12 to-white p-4 sm:p-6 text-text-primary shadow-glass border border-primary/20">
       {/* Ambient glass glows */}
-      <div className="absolute -top-24 -right-24 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-highlight/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -top-24 -right-24 w-80 h-80 bg-primary/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-highlight/15 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between z-10">
         <div className="flex items-start gap-4 sm:items-center">

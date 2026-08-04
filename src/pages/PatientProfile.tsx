@@ -2268,34 +2268,37 @@ export function PatientProfile() {
           </InfoCard>
         </div>
 
-        <div className="rounded-3xl bg-gradient-to-br from-primary via-primary/80 to-slate-900 p-4 sm:p-6 text-white shadow-sm">
-          <p className="text-sm text-white/70">Financial dashboard</p>
-          <div className="mt-2 text-3xl font-bold">{formatCurrency(Math.abs(totalDue))}</div>
-          <p className="mt-1 text-sm text-white/80">{totalDue < 0 ? 'Advance paid' : 'Current balance due'}</p>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
-              <div className="text-xs uppercase tracking-wide text-white/70">Paid</div>
-              <div className="mt-1 text-lg font-semibold">{formatCurrency(totalPaid)}</div>
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/25 via-primary/12 to-white p-4 sm:p-6 text-text-primary shadow-glass border border-primary/20">
+          <div className="absolute -top-24 -right-24 w-80 h-80 bg-primary/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10">
+            <p className="text-sm text-text-secondary">Financial dashboard</p>
+            <div className="mt-2 text-3xl font-bold text-text-primary">{formatCurrency(Math.abs(totalDue))}</div>
+            <p className="mt-1 text-sm text-text-secondary">{totalDue < 0 ? 'Advance paid' : 'Current balance due'}</p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white/70 p-3 backdrop-blur-sm border border-primary/10 shadow-sm">
+                <div className="text-xs uppercase tracking-wide text-text-secondary">Paid</div>
+                <div className="mt-1 text-lg font-semibold text-text-primary">{formatCurrency(totalPaid)}</div>
+              </div>
+              <div className="rounded-2xl bg-white/70 p-3 backdrop-blur-sm border border-primary/10 shadow-sm">
+                <div className="text-xs uppercase tracking-wide text-text-secondary">Pending</div>
+                <div className="mt-1 text-lg font-semibold text-text-primary">{pendingInvoices.length}</div>
+              </div>
             </div>
-            <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
-              <div className="text-xs uppercase tracking-wide text-white/70">Pending</div>
-              <div className="mt-1 text-lg font-semibold">{pendingInvoices.length}</div>
-            </div>
+            {totalBilled > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-text-secondary">
+                  <span>Paid</span>
+                  <span>{Math.round((totalPaid / totalBilled) * 100)}% of {formatCurrency(totalBilled)}</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-primary/10">
+                  <div
+                    className="h-2 rounded-full bg-emerald-500"
+                    style={{ width: `${Math.min(100, Math.round((totalPaid / totalBilled) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          {totalBilled > 0 && (
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-xs text-white/70">
-                <span>Paid</span>
-                <span>{Math.round((totalPaid / totalBilled) * 100)}% of {formatCurrency(totalBilled)}</span>
-              </div>
-              <div className="mt-1.5 h-2 rounded-full bg-white/20">
-                <div
-                  className="h-2 rounded-full bg-emerald-300"
-                  style={{ width: `${Math.min(100, Math.round((totalPaid / totalBilled) * 100))}%` }}
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         <InfoCard title="Quick Stats">
