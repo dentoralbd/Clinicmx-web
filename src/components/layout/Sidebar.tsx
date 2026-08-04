@@ -123,6 +123,10 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
           lg:translate-x-0
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-br from-primary/5 to-highlight/5">
