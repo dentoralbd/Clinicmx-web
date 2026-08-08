@@ -158,8 +158,8 @@ export function OfflineOutbox() {
     setActionError(null)
     try {
       if (group.groupId) {
-        const { failed } = await syncGroup(group.groupId)
-        if (failed > 0) setActionError(`Some items in this group failed to sync — see the error on the card below.`)
+        const { failed, deferred } = await syncGroup(group.groupId)
+        if (failed > 0 || deferred > 0) setActionError(`Some items in this group were not sent — see the note on the card below.`)
       } else {
         const ok = await syncMutationById(group.items[0].id)
         if (!ok) setActionError(`Failed to sync item (${group.items[0].table}) — see the error on the card below.`)
@@ -189,8 +189,8 @@ export function OfflineOutbox() {
     setSyncingKey('__all__')
     setActionError(null)
     try {
-      const { failed } = await syncVisiblePending()
-      if (failed > 0) setActionError(`${failed} item(s) failed to sync — see the error on each card below.`)
+      const { failed, deferred } = await syncVisiblePending()
+      if (failed > 0 || deferred > 0) setActionError(`${failed + deferred} item(s) were not sent — see the note on each card below.`)
       await loadMutations()
     } catch (err: any) {
       setActionError(`Failed to sync all items: ${err?.message || 'Server error'}`)

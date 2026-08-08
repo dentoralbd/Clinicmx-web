@@ -43,7 +43,16 @@ async function markStagedReport(clientMutationId: string, status: 'synced' | 'di
   return true
 }
 
-export type ClaimResult = 'claimed' | 'taken' | 'absent' | 'network-error'
+// 'terminal': the server row exists and is already synced/discarded — a
+// durable, un-resurrectable fact (055's guard trigger makes those statuses
+// sticky). Dropping the local copy here loses nothing. 'held': the server
+// row exists and is still ACTIVE (pending/blocked/failed) but another
+// device's claim on it hasn't gone stale yet — nothing has been written to
+// the real table, so the local copy must NOT be dropped. Conflating these
+// two used to both be called 'taken' and both trigger a local delete, which
+// silently destroyed a queued edit that had never actually synced anywhere
+// (see syncOne).
+export type ClaimResult = 'claimed' | 'held' | 'terminal' | 'absent' | 'network-error'
 
 /**
  * Atomic compare-and-swap so two devices (or a user + admin) can never both
@@ -52,7 +61,9 @@ export type ClaimResult = 'claimed' | 'taken' | 'absent' | 'network-error'
  * Postgres row-locks serialize concurrent claim attempts; the loser sees
  * zero rows updated. 'absent' means this mutation was never reported
  * server-side (or was already purged) — the only device that can possibly
- * hold it is this one, so the caller should proceed as normal.
+ * hold it is this one, so the caller should proceed as normal. 'absent' is
+ * also returned when this schema predates migration 055 (no claim columns)
+ * — see isClaimUnsupported — which degrades to the same "proceed" behavior.
  */
 async function claimMutation(clientMutationId: string): Promise<ClaimResult> {
   try {
@@ -64,18 +75,19 @@ async function claimMutation(clientMutationId: string): Promise<ClaimResult> {
       .in('status', ['pending', 'blocked', 'failed'])
       .or(`claimed_at.is.null,claimed_at.lt.${staleBefore}`)
       .select('id')
-    if (error) return 'network-error'
+    if (error) return isClaimUnsupported(error) ? 'absent' : 'network-error'
     if (data && data.length > 0) return 'claimed'
 
     // Zero rows: either someone else holds an active claim, the row is
     // terminal (synced/discarded), or it never existed. Disambiguate.
     const { data: existing, error: lookupError } = await supabase
       .from('offline_edit_queue')
-      .select('id')
+      .select('id, status')
       .eq('client_mutation_id', clientMutationId)
       .maybeSingle()
-    if (lookupError) return 'network-error'
-    return existing ? 'taken' : 'absent'
+    if (lookupError) return isClaimUnsupported(lookupError) ? 'absent' : 'network-error'
+    if (!existing) return 'absent'
+    return existing.status === 'synced' || existing.status === 'discarded' ? 'terminal' : 'held'
   } catch {
     return 'network-error'
   }
@@ -282,6 +294,30 @@ function missingColumnName(error: unknown): string | null {
   return match ? match[1] : null
 }
 
+/**
+ * True when claimMutation's own query failed because this schema predates
+ * migration 055 (no claimed_at/claimed_by_device columns) or even 054 (no
+ * offline_edit_queue table at all) — NOT because of a real connectivity
+ * failure. Deliberately distinct from a connectivity error: this means
+ * "cross-device claiming is unavailable here", which safely degrades to the
+ * pre-055 single-device behavior (claimMutation returns 'absent', callers
+ * proceed as the only device). A genuine connectivity failure must still
+ * fail closed — we truly cannot tell whether another device already
+ * executed the edit. Two different PostgREST wordings can appear here: the
+ * update body produces "Could not find the 'X' column" (PGRST204, matched
+ * by missingColumnName), while the `.or(...)` filter on a missing column
+ * instead surfaces Postgres's own "column ... does not exist" (42703).
+ * PGRST205 (missing table entirely) covers 054 also being absent.
+ */
+function isClaimUnsupported(error: unknown): boolean {
+  const column = missingColumnName(error)
+  if (column === 'claimed_at' || column === 'claimed_by_device') return true
+  const e = (error as { message?: string; code?: string } | null) || {}
+  if (e.code === 'PGRST204' || e.code === 'PGRST205') return true
+  const message = e.message || ''
+  return /claimed_at|claimed_by_device|offline_edit_queue/i.test(message) && /does not exist|schema cache/i.test(message)
+}
+
 function stripColumn(row: any, column: string) {
   const { [column]: _drop, ...rest } = row
   return rest
@@ -398,37 +434,92 @@ function reportSyncedForReview(mut: PendingMutation): void {
 }
 
 /**
- * 'ok' = executed here. 'skipped' = someone else already approved (or
- * discarded) this edit from another device — dropped locally without
- * executing, no duplicate [Offline Sync] notification (the other device
- * already wrote one). 'failed' = genuinely failed; attempts/lastError
- * recorded as before.
+ * Records a failed attempt. `bumpAttempts=false` is for a claim-phase
+ * network error — executeMutation was never reached, so burning one of
+ * MAX_ATTEMPTS toward a permanent 'failed' stamp would be wrong; a device
+ * whose navigator.onLine lies would exhaust all 5 attempts on the claim
+ * alone and never even get a real try at executing.
  */
-type SyncOutcome = 'ok' | 'skipped' | 'failed'
+async function recordFailure(mut: PendingMutation, message: string, bumpAttempts = true): Promise<void> {
+  const attempts = bumpAttempts ? mut.attempts + 1 : mut.attempts
+  await updateMutation(mut.id, {
+    attempts,
+    lastError: message,
+    status: bumpAttempts && attempts >= MAX_ATTEMPTS ? 'failed' : 'pending',
+  })
+}
+
+/**
+ * Releases a claim this device took but then failed to execute, so a retry
+ * (from this device or another) isn't blocked by our own stale claim until
+ * CLAIM_STALE_MS passes. Mirrors syncRemoteMutation's release-on-failure —
+ * kept as a single shared helper so the two paths can't drift apart again
+ * (that drift is exactly how the silent-data-loss bug happened: this
+ * release existed on the remote path but not here). Best-effort; never
+ * throws — worst case the claim just sits until it goes stale on its own.
+ */
+async function releaseClaim(clientMutationId: string, message: string): Promise<void> {
+  const { error } = await supabase
+    .from('offline_edit_queue')
+    .update({ status: 'failed', last_error: message, claimed_at: null, claimed_by_device: null })
+    .eq('client_mutation_id', clientMutationId)
+  if (error) console.warn('[OfflineSync] Could not release claim:', error.message)
+}
+
+/**
+ * 'ok' = executed here. 'skipped' = the server confirms this edit already
+ * reached a TERMINAL state (synced/discarded) elsewhere — safe to drop
+ * locally, no duplicate [Offline Sync] notification (the other device
+ * already wrote one). 'deferred' = another device currently holds an ACTIVE
+ * claim on this edit — nothing has been written to the real table yet, so
+ * the local copy is kept (not deleted) and marked blocked; this used to be
+ * conflated with 'skipped' under the old 'taken' result, which is what
+ * silently destroyed a queued edit that had never actually synced anywhere.
+ * 'failed' = genuinely failed; attempts/lastError recorded as before.
+ */
+type SyncOutcome = 'ok' | 'skipped' | 'deferred' | 'failed'
 
 async function syncOne(mut: PendingMutation): Promise<SyncOutcome> {
+  const claim = await claimMutation(mut.id)
+
+  if (claim === 'terminal') {
+    // The ONLY case where dropping the local copy is safe: the server says
+    // this edit already reached a terminal state, so the write either
+    // landed (synced) or was deliberately dropped (discarded) elsewhere.
+    await removeMutation(mut.id)
+    return 'skipped'
+  }
+
+  if (claim === 'held') {
+    // Another device claimed it and the server row is STILL ACTIVE —
+    // nothing has been written to the real table. Never delete here: that
+    // is the silent data loss this rewrite exists to close. Keep it
+    // queued, say so, and let the other device's claim either finish or go
+    // stale (CLAIM_STALE_MS) so a retry here can pick it up.
+    await updateMutation(mut.id, {
+      status: 'blocked',
+      lastError: 'Another device is currently approving this edit, so it was not sent from here. It is still saved on this device — try again in a few minutes if it does not clear on its own.',
+    })
+    return 'deferred'
+  }
+
+  if (claim === 'network-error') {
+    await recordFailure(mut, 'Could not verify this edit was not already approved elsewhere — try again once online.', false)
+    return 'failed'
+  }
+
+  // 'claimed' | 'absent' (never reported / already purged, or this schema
+  // can't claim at all) — we own it, proceed to execute.
   try {
-    const claim = await claimMutation(mut.id)
-    if (claim === 'network-error') {
-      throw new Error('Could not verify this edit was not already approved elsewhere — try again once online.')
-    }
-    if (claim === 'taken') {
-      await removeMutation(mut.id)
-      return 'skipped'
-    }
     await executeMutation(mut)
     await removeMutation(mut.id)
     reportSyncedForReview(mut)
     await markStagedReport(mut.id, 'synced')
     return 'ok'
   } catch (err: any) {
-    const attempts = mut.attempts + 1
     const message = err?.message || String(err)
-    await updateMutation(mut.id, {
-      attempts,
-      lastError: message,
-      status: attempts >= MAX_ATTEMPTS ? 'failed' : 'pending',
-    })
+    if (claim === 'claimed') await releaseClaim(mut.id, message)
+    await recordFailure(mut, message)
     console.error('[OfflineSync] mutation failed', mut, err)
     return 'failed'
   }
@@ -454,16 +545,18 @@ export async function syncMutationById(id: string): Promise<boolean> {
   if (!mut || !canActOn(mut)) return false
   const outcome = await syncOne({ ...mut, status: 'pending' })
   invalidateAfterSync([mut.meta.patientId])
-  return outcome !== 'failed'
+  // 'deferred' must NOT read as success — the edit was not sent anywhere.
+  return outcome === 'ok' || outcome === 'skipped'
 }
 
-/** Syncs every mutation sharing a groupId, in seq order; a failure blocks (not fails) the rest of that group. No-ops if the current session may not act on this group (a group is always created by one account, so checking the first item is sufficient). */
-export async function syncGroup(groupId: string): Promise<{ succeeded: number; failed: number }> {
+/** Syncs every mutation sharing a groupId, in seq order; a failure (or another device holding a step) blocks the rest of that group rather than running out of order. No-ops if the current session may not act on this group (a group is always created by one account, so checking the first item is sufficient). */
+export async function syncGroup(groupId: string): Promise<{ succeeded: number; failed: number; deferred: number }> {
   const all = await getPendingMutations()
   const items = all.filter((m) => m.groupId === groupId).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-  if (items.length === 0 || !canActOn(items[0])) return { succeeded: 0, failed: 0 }
+  if (items.length === 0 || !canActOn(items[0])) return { succeeded: 0, failed: 0, deferred: 0 }
   let succeeded = 0
   let failed = 0
+  let deferred = 0
   let blocked = false
   const patientIds: (string | null | undefined)[] = []
   for (const m of items) {
@@ -476,16 +569,22 @@ export async function syncGroup(groupId: string): Promise<{ succeeded: number; f
     if (outcome === 'failed') {
       failed++
       blocked = true
+    } else if (outcome === 'deferred') {
+      // A later step (e.g. a payment) must not run if an earlier step (e.g.
+      // its invoice) was deferred rather than actually written — same
+      // ordering reasoning as a hard failure.
+      deferred++
+      blocked = true
     } else {
       succeeded++
     }
   }
   invalidateAfterSync(patientIds)
-  return { succeeded, failed }
+  return { succeeded, failed, deferred }
 }
 
 /** Syncs everything pending — ungrouped mutations independently, grouped ones as ordered units. Skips items already marked `failed`; use per-item retry for those. `scope` restricts which entries are eligible (defaults to everything); see `syncVisiblePending` for the non-admin-scoped variant. */
-export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<{ succeeded: number; failed: number }> {
+export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<{ succeeded: number; failed: number; deferred: number }> {
   const pending = (await getPendingMutations()).filter((m) => m.status !== 'failed' && (!scope || scope(m)))
   const groups = new Map<string, PendingMutation[]>()
   const solo: PendingMutation[] = []
@@ -501,12 +600,14 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
 
   let succeeded = 0
   let failed = 0
+  let deferred = 0
   const patientIds: (string | null | undefined)[] = []
 
   for (const m of solo) {
     patientIds.push(m.meta.patientId)
     const outcome = await syncOne(m)
     if (outcome === 'failed') failed++
+    else if (outcome === 'deferred') deferred++
     else succeeded++
   }
 
@@ -523,6 +624,9 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
       if (outcome === 'failed') {
         failed++
         blocked = true
+      } else if (outcome === 'deferred') {
+        deferred++
+        blocked = true
       } else {
         succeeded++
       }
@@ -530,11 +634,11 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
   }
 
   invalidateAfterSync(patientIds)
-  return { succeeded, failed }
+  return { succeeded, failed, deferred }
 }
 
 /** Approve & Sync All, scoped to what the current session is allowed to touch — admins sync everything pending; everyone else syncs only their own account's queued edits. */
-export async function syncVisiblePending(): Promise<{ succeeded: number; failed: number }> {
+export async function syncVisiblePending(): Promise<{ succeeded: number; failed: number; deferred: number }> {
   if (getAppRole() === 'admin') return syncAll()
   return syncAll((m) => canActOn(m))
 }
@@ -772,7 +876,16 @@ export async function syncRemoteMutation(row: SitewidePendingRow): Promise<{ out
   if (claim === 'network-error') {
     return { outcome: 'failed', error: 'Could not reach the server to claim this edit — try again.' }
   }
-  if (claim === 'taken') return { outcome: 'skipped' }
+  // 'terminal' — the server confirms this already reached synced/discarded
+  // (from wherever it happened); safe to treat as done here too.
+  if (claim === 'terminal') return { outcome: 'skipped' }
+  // 'held' — another device holds an ACTIVE claim; nothing was written yet.
+  // Report this as failed (not skipped) so syncRemoteGroup correctly blocks
+  // any later step in the group rather than treating a not-yet-done step as
+  // success.
+  if (claim === 'held') {
+    return { outcome: 'failed', error: 'Another device is currently approving this edit — try again in a few minutes.' }
+  }
 
   try {
     await executeMutation(mut)
@@ -782,12 +895,7 @@ export async function syncRemoteMutation(row: SitewidePendingRow): Promise<{ out
     return { outcome: 'ok' }
   } catch (err: any) {
     const message = err?.message || String(err)
-    // Release the claim on failure so a retry (from this device or another)
-    // isn't blocked by our own stale claim until CLAIM_STALE_MS passes.
-    await supabase
-      .from('offline_edit_queue')
-      .update({ status: 'failed', last_error: message, claimed_at: null, claimed_by_device: null })
-      .eq('client_mutation_id', mut.id)
+    if (claim === 'claimed') await releaseClaim(mut.id, message)
     return { outcome: 'failed', error: message }
   }
 }
