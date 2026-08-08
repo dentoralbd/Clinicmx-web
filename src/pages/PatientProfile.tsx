@@ -613,21 +613,31 @@ export function PatientProfile() {
 
     // Offline (or on a genuine connectivity failure below — navigator.onLine
     // can lie), there's no way to fetch the full app_users roster or every
-    // patient's treatment history. Fall back to doctor names already present
-    // on THIS patient's cached treatments instead of leaving the dropdown
-    // empty — narrower than the online list, but usable. Without this the
-    // two awaits below reject outright when offline (a real fetch failure,
-    // not a resolved {error}), which skipped setDoctorsList entirely and
-    // left the "Attending Doctor" field with no options at all.
-    const addNamesFromCachedTreatments = () => {
+    // patient's treatment history. Fall back to doctor names AND share
+    // percentages already present on THIS patient's cached treatments
+    // instead of leaving the dropdown/percent field empty — narrower and
+    // less authoritative than the admin-configured default (it's whatever
+    // percentage was last used for that doctor on this specific patient),
+    // but not empty. Merges into whatever doctorSharePctMap already has
+    // rather than replacing it, so a fetch that already succeeded earlier
+    // this session (e.g. loaded online, then went offline) isn't downgraded.
+    const applyCachedTreatmentFallback = () => {
       const cached = id ? queryClient.getQueryData<any>(qk.patients.bundle(id)) : null
+      const sharePctMap: Record<string, number> = {}
       for (const t of cached?.treatments || []) {
-        if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
+        if (t.doctor_name && t.doctor_name.trim()) {
+          const name = t.doctor_name.trim()
+          set.add(name)
+          if (t.doctor_share_pct != null) sharePctMap[name] = Number(t.doctor_share_pct)
+        }
+      }
+      if (Object.keys(sharePctMap).length > 0) {
+        setDoctorSharePctMap((prev) => ({ ...sharePctMap, ...prev }))
       }
     }
 
     if (!navigator.onLine) {
-      addNamesFromCachedTreatments()
+      applyCachedTreatmentFallback()
       setDoctorsList(Array.from(set))
       return
     }
@@ -670,7 +680,7 @@ export function PatientProfile() {
       }
     } catch (err) {
       console.warn('Doctor roster fetch failed, falling back to this patient’s treatment history:', err)
-      addNamesFromCachedTreatments()
+      applyCachedTreatmentFallback()
     }
 
     setDoctorsList(Array.from(set))
@@ -4985,21 +4995,33 @@ function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSa
 let visitMemoryBootstrapped = false
 async function bootstrapVisitMemory(): Promise<void> {
   if (visitMemoryBootstrapped) return
+  // Offline, skip without latching the flag so a later call (once back
+  // online) can still try. Previously this set the flag unconditionally
+  // before the fetch, so a first attempt made while offline rejected
+  // (uncaught) and permanently — for the rest of the session — disabled
+  // autocomplete suggestions being seeded from past visits, even after
+  // reconnecting.
+  if (!navigator.onLine) return
   visitMemoryBootstrapped = true
-  const { data } = await supabase
-    .from('patient_visits')
-    .select('chief_complaint, examination_findings, diagnosis, treatment_plan, notes')
-    .order('created_at', { ascending: false })
-    .limit(50)
-  if (!data) return
-  // Reversed so the most recent visit ends up first in memory (rememberItem prepends).
-  for (const row of [...data].reverse()) {
-    if (row.chief_complaint?.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, row.chief_complaint)
-    if (row.examination_findings?.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, row.examination_findings)
-    if (row.diagnosis?.trim()) rememberItem(MEMORY_KEYS.DIAGNOSIS, row.diagnosis)
-    if (row.treatment_plan?.trim()) rememberItem(MEMORY_KEYS.TREATMENT_PLAN, row.treatment_plan)
-    const doctorNotes = splitVisitNotes(row.notes).rest
-    if (doctorNotes) rememberItem(MEMORY_KEYS.VISIT_NOTES, doctorNotes)
+  try {
+    const { data } = await supabase
+      .from('patient_visits')
+      .select('chief_complaint, examination_findings, diagnosis, treatment_plan, notes')
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (!data) return
+    // Reversed so the most recent visit ends up first in memory (rememberItem prepends).
+    for (const row of [...data].reverse()) {
+      if (row.chief_complaint?.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, row.chief_complaint)
+      if (row.examination_findings?.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, row.examination_findings)
+      if (row.diagnosis?.trim()) rememberItem(MEMORY_KEYS.DIAGNOSIS, row.diagnosis)
+      if (row.treatment_plan?.trim()) rememberItem(MEMORY_KEYS.TREATMENT_PLAN, row.treatment_plan)
+      const doctorNotes = splitVisitNotes(row.notes).rest
+      if (doctorNotes) rememberItem(MEMORY_KEYS.VISIT_NOTES, doctorNotes)
+    }
+  } catch (err) {
+    console.warn('Could not bootstrap visit memory suggestions:', err)
+    visitMemoryBootstrapped = false
   }
 }
 
