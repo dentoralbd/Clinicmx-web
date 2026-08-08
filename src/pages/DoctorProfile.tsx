@@ -26,12 +26,16 @@ import {
   ScrollText,
   Wifi,
   Clock,
+  FileCheck2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { UsersTab } from '@/components/admin/UsersTab'
 import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
 import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
 import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
+import { OfflineEditsTab } from '@/components/admin/OfflineEditsTab'
+import { SnapshotDetails } from '@/components/SnapshotDetails'
+import { getVisiblePendingMutations } from '@/lib/offlineSync'
 import { countPendingIpRequests } from '@/lib/ipAccess'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
@@ -147,98 +151,7 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'lab_work', label: 'Lab' },
 ]
 
-function humanizeKey(key: string) {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/
-
-function isIdKey(key: string) {
-  return key === 'id' || key.endsWith('_id')
-}
-
-function formatSnapshotScalar(value: unknown): string | null {
-  if (value === null || value === undefined || value === '') return null
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (typeof value === 'number') return String(value)
-  if (typeof value === 'string') {
-    if (ISO_DATE_RE.test(value)) {
-      const date = new Date(value)
-      if (!Number.isNaN(date.getTime())) {
-        return value.includes('T') ? format(date, 'MMM d, yyyy h:mm a') : format(date, 'MMM d, yyyy')
-      }
-    }
-    return value
-  }
-  return null
-}
-
-function summarizeSnapshotItem(item: unknown): string {
-  if (item === null || item === undefined) return ''
-  if (typeof item !== 'object') return formatSnapshotScalar(item) ?? ''
-  const parts: string[] = []
-  for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
-    if (isIdKey(key)) continue
-    if (Array.isArray(value)) {
-      const joined = value.map((v) => formatSnapshotScalar(v)).filter(Boolean).join(', ')
-      if (joined) parts.push(joined)
-      continue
-    }
-    const formatted = formatSnapshotScalar(value)
-    if (formatted) parts.push(formatted)
-  }
-  return parts.join(' — ')
-}
-
-function SnapshotDetails({ payload }: { payload: unknown }) {
-  if (!payload || typeof payload !== 'object') {
-    return <p className="text-xs text-gray-400">No details recorded.</p>
-  }
-
-  const entries = Object.entries(payload as Record<string, unknown>)
-  const idEntries = entries.filter(([key]) => isIdKey(key))
-  const detailEntries = entries.filter(([key]) => !isIdKey(key))
-
-  return (
-    <div className="space-y-1.5">
-      {detailEntries.map(([key, value]) => {
-        let rendered: React.ReactNode = null
-        if (Array.isArray(value)) {
-          const lines = value.map(summarizeSnapshotItem).filter(Boolean)
-          if (lines.length === 0) return null
-          rendered = (
-            <span className="space-y-0.5">
-              {lines.map((line, idx) => (
-                <span key={idx} className="block">{lines.length > 1 ? `${idx + 1}. ` : ''}{line}</span>
-              ))}
-            </span>
-          )
-        } else if (value !== null && typeof value === 'object') {
-          const summary = summarizeSnapshotItem(value)
-          if (!summary) return null
-          rendered = summary
-        } else {
-          const formatted = formatSnapshotScalar(value)
-          if (formatted === null) return null
-          rendered = <span className="whitespace-pre-line">{formatted}</span>
-        }
-        return (
-          <div key={key} className="flex gap-3 text-xs">
-            <span className="w-36 flex-shrink-0 font-medium text-gray-500">{humanizeKey(key)}</span>
-            <span className="text-gray-800 min-w-0 flex-1">{rendered}</span>
-          </div>
-        )
-      })}
-      {idEntries.length > 0 && (
-        <p className="pt-2 mt-2 border-t border-gray-200 text-[10px] text-gray-400 break-all">
-          {idEntries.map(([key, value]) => `${humanizeKey(key)}: ${String(value)}`).join(' · ')}
-        </p>
-      )}
-    </div>
-  )
-}
-
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -256,6 +169,10 @@ function getAvailableTabs(): ZoneTabDef[] {
   if (getAppRole() === 'admin') tabs.push({ id: 'network', label: 'Network Access', icon: Wifi })
   if (getAppRole() === 'admin') tabs.push({ id: 'logs', label: 'Activity Log', icon: ScrollText })
   if (getAppRole() === 'admin') tabs.push({ id: 'hours', label: 'Clinic Hours', icon: Clock })
+  // Admin-only oversight of the device's offline outbox — every account's
+  // queued edits, not just the admin's own (see canActOn() in offlineSync.ts:
+  // admin is the one role allowed to approve/discard someone else's).
+  if (getAppRole() === 'admin') tabs.push({ id: 'offline', label: 'Offline Edits', icon: FileCheck2 })
   return tabs
 }
 
@@ -267,6 +184,7 @@ const TAB_GRID_COLS: Record<number, string> = {
   5: 'grid-cols-2 sm:grid-cols-5',
   6: 'grid-cols-2 sm:grid-cols-3',
   7: 'grid-cols-2 sm:grid-cols-4',
+  8: 'grid-cols-2 sm:grid-cols-4',
 }
 
 export function DoctorProfile() {
@@ -280,6 +198,7 @@ export function DoctorProfile() {
   const availableTabs = getAvailableTabs()
   const [activeTab, setActiveTab] = useState<ZoneTab>(() => getAvailableTabs()[0]?.id ?? 'profile')
   const [pendingIpCount, setPendingIpCount] = useState(0)
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0)
   const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
@@ -314,6 +233,20 @@ export function DoctorProfile() {
       .catch(() => {
         // Badge is informational only — a failed count must not break the page.
       })
+  }, [])
+
+  useEffect(() => {
+    if (getAppRole() !== 'admin') return
+    const refresh = () => {
+      getVisiblePendingMutations()
+        .then((list) => setPendingOfflineCount(list.length))
+        .catch(() => {
+          // Badge is informational only — a failed count must not break the page.
+        })
+    }
+    refresh()
+    window.addEventListener('clinicmx_outbox_updated', refresh)
+    return () => window.removeEventListener('clinicmx_outbox_updated', refresh)
   }, [])
 
   useEffect(() => {
@@ -618,6 +551,11 @@ export function DoctorProfile() {
                   {pendingIpCount}
                 </span>
               )}
+              {tab.id === 'offline' && pendingOfflineCount > 0 && (
+                <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
+                  {pendingOfflineCount}
+                </span>
+              )}
             </button>
           )
         })}
@@ -630,6 +568,8 @@ export function DoctorProfile() {
       {activeTab === 'logs' && <ActivityLogTab />}
 
       {activeTab === 'hours' && <ClinicHoursTab />}
+
+      {activeTab === 'offline' && <OfflineEditsTab />}
 
       {activeTab === 'profile' && (
       <form onSubmit={handleSave} className="space-y-6">

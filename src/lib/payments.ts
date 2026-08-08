@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase'
 import { isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
+import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
+import { queryClient } from '@/lib/queryClient'
+import { qk } from '@/repositories/keys'
 
 export interface RecordInvoicePaymentArgs {
   invoiceId: string
@@ -10,6 +13,9 @@ export interface RecordInvoicePaymentArgs {
   method?: string
   paymentDateIso?: string
   notes?: string | null
+  /** Lets an offline-queued payment patch the right patient's cached bundle and label its outbox card. Omit only when the caller genuinely has no patient context (payment recording still works — just without that optimistic UI). */
+  patientId?: string | null
+  patientName?: string | null
 }
 
 export interface RecordInvoicePaymentResult {
@@ -19,11 +25,62 @@ export interface RecordInvoicePaymentResult {
   newStatus: 'Paid' | 'Partial' | 'Pending'
 }
 
+async function enqueueOfflinePayment(args: {
+  invoiceId: string
+  amount: number
+  method: string
+  dateIso: string
+  notes: string | null
+  newPaidAmount: number
+  newStatus: RecordInvoicePaymentResult['newStatus']
+  patientId?: string | null
+  patientName?: string | null
+}) {
+  const groupId = newGroupId()
+  const label = args.patientName ? `Payment for ${args.patientName}` : 'Payment'
+  await enqueueMutation({
+    table: 'payments',
+    action: 'insert',
+    payload: {
+      id: crypto.randomUUID(),
+      invoice_id: args.invoiceId,
+      amount: args.amount,
+      payment_method: args.method,
+      payment_date: args.dateIso,
+      notes: args.notes,
+    },
+    meta: { patientId: args.patientId, label },
+    groupId,
+    seq: 0,
+  })
+  await enqueueMutation({
+    table: 'invoices',
+    action: 'update',
+    payload: { id: args.invoiceId, paid_amount: args.newPaidAmount, status: args.newStatus },
+    meta: { patientId: args.patientId, label: `${label} — update invoice balance` },
+    groupId,
+    seq: 1,
+  })
+  queryClient.setQueriesData({ queryKey: qk.patients.all }, (old: any) => {
+    if (!old || !old.invoices) return old
+    return {
+      ...old,
+      invoices: (old.invoices || []).map((inv: any) =>
+        inv.id === args.invoiceId ? { ...inv, paid_amount: args.newPaidAmount, status: args.newStatus } : inv
+      ),
+    }
+  })
+}
+
 /**
  * Records a payment against an invoice: payments ledger row (3-tier payload
  * fallback for legacy schemas), invoice paid_amount/status update, and a
  * swallowed invoice_history event. No alerts and no activity log — callers
  * own their own messaging.
+ *
+ * Offline (or on a genuine connectivity failure), the payment insert and the
+ * invoice balance update are queued as one group so they sync together —
+ * see offlineSync.ts. A real server-side rejection still throws.
  */
 export async function recordInvoicePayment({
   invoiceId,
@@ -33,8 +90,19 @@ export async function recordInvoicePayment({
   method = 'Cash',
   paymentDateIso,
   notes = null,
+  patientId,
+  patientName,
 }: RecordInvoicePaymentArgs): Promise<RecordInvoicePaymentResult> {
   const dateIso = paymentDateIso || new Date().toISOString()
+  const newPaidAmount = invoicePaid + amount
+  const newStatus: RecordInvoicePaymentResult['newStatus'] =
+    newPaidAmount >= invoiceTotal && invoiceTotal > 0 ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
+
+  if (!navigator.onLine) {
+    await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName })
+    return { paymentStored: true, newPaidAmount, newStatus }
+  }
+
   let paymentStored = false
   let paymentSchemaError: unknown = null
   const paymentPayloads: Array<{
@@ -49,31 +117,30 @@ export async function recordInvoicePayment({
     { invoice_id: invoiceId, amount },
   ]
 
-  for (const payload of paymentPayloads) {
-    const { error: paymentError } = await supabase.from('payments').insert(payload)
-    if (!paymentError) {
-      paymentStored = true
-      paymentSchemaError = null
-      break
+  try {
+    for (const payload of paymentPayloads) {
+      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      if (!paymentError) {
+        paymentStored = true
+        paymentSchemaError = null
+        break
+      }
+      if (!isSchemaCompatibilityError(paymentError)) throw paymentError
+      paymentSchemaError = paymentError
     }
 
-    if (!isSchemaCompatibilityError(paymentError)) {
-      throw paymentError
+    const { error: invoiceError } = await supabase
+      .from('invoices')
+      .update({ paid_amount: newPaidAmount, status: newStatus })
+      .eq('id', invoiceId)
+    if (invoiceError) throw invoiceError
+  } catch (err: any) {
+    if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+      await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName })
+      return { paymentStored: true, newPaidAmount, newStatus }
     }
-
-    paymentSchemaError = paymentError
+    throw err
   }
-
-  const newPaidAmount = invoicePaid + amount
-  const newStatus: RecordInvoicePaymentResult['newStatus'] =
-    newPaidAmount >= invoiceTotal && invoiceTotal > 0 ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
-
-  const { error: invoiceError } = await supabase
-    .from('invoices')
-    .update({ paid_amount: newPaidAmount, status: newStatus })
-    .eq('id', invoiceId)
-
-  if (invoiceError) throw invoiceError
 
   // Auto-advance: an invoice reaching Paid completes every treatment still linked to
   // it (unless already Completed/Cancelled). Fire-and-forget, never reverted if a

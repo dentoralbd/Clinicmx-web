@@ -54,7 +54,9 @@ No tests, no linter. Verification = typecheck + build + manually exercising the 
 - **New drug category → three places:** the `category` union in `src/lib/dentalDrugDatabase.ts`, plus `CATEGORY_META` and `CATEGORY_ORDER` in `src/components/DrugPicker.tsx`. Missing either DrugPicker list makes those drugs invisible in the default dropdown (happened with Antifibrinolytic).
 - **Audit ordering:** `logEdit`/`logDeletion` must snapshot the row **before** the write, or restore breaks.
 - **Any new PDF "download" → `sharePdf()`, never `jsPDF.save()`** (2026-08-01) — the app also ships as a native Android APK with no download handler; `.save()` silently does nothing there. See UI-UX.md §7 for the full pattern; found three PDF generators that skipped it and were broken in the app.
-- `main.tsx` reloads on `vite:preloadError` (stale-chunk recovery) — unconditional today; needs a loop guard before any service worker lands (roadmap M1).
+- `main.tsx`'s `vite:preloadError` reload is now loop-guarded (max once/minute) — landed as part of the offline-m1 PWA work (2026-08-07), no longer an open item.
+- **Offline outbox (2026-08-07, branch `offline-m1`):** any new write path added to `PatientProfile.tsx`/`InvoiceModal.tsx` that should work offline needs an explicit `if (!navigator.onLine) { ... } else { ... }` branch calling `enqueueMutation` from `src/lib/offlineSync.ts` — there's no automatic interception of `supabase.from(...)` calls. Dependent mutations (e.g. an insert another mutation's row references) must share a `groupId`/`seq` or they can sync out of order. Approval is account-scoped (`canActOn()`) — a mutation's `meta`/`actor` fields aren't cosmetic, they gate who can sync/discard it. See FEATURES.md §1b for what's covered today and OFFLINE_ROADMAP.md's status note for the full picture.
+- **`SnapshotDetails` (2026-08-08, `src/components/SnapshotDetails.tsx`) is shared by three views:** Delete History, Edit History (both `DoctorProfile.tsx`), and Admin → Offline Edits (`components/admin/OfflineEditsTab.tsx`). Changing how it renders a field changes all three — don't fork a local copy for one of them.
 
 ## Where things are
 

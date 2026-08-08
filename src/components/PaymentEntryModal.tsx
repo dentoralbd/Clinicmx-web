@@ -107,6 +107,8 @@ export function PaymentEntryModal({
         method: paymentMethod,
         paymentDateIso,
         notes: notes || null,
+        patientId: invoiceMeta?.patientId,
+        patientName: invoiceMeta?.patientName,
       })
 
       if (result.paymentStored) {

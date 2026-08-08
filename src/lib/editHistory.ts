@@ -3,6 +3,7 @@ import type { Json } from './database.types'
 import { getAuditActor } from './appSession'
 import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
+import { enqueueMutation } from './offlineSync'
 
 export interface EditLogInput {
   entityType: TrackedEntityType
@@ -13,6 +14,8 @@ export interface EditLogInput {
   previousPayload: object
   /** Optional human-readable summary passed through to the activity log. */
   details?: string | null
+  /** When this log is one step of a larger offline mutation, the shared groupId + this entry's sync position — keeps the log-before-edit order when the group syncs later. */
+  offlineGroup?: { groupId: string; seq: number }
 }
 
 /**
@@ -20,9 +23,13 @@ export interface EditLogInput {
  * called and awaited BEFORE the update is applied (log-first, edit-second),
  * so every version of a record is recoverable. Only called for edits to an
  * *existing* record — first-time creation is never logged here.
+ *
+ * Offline (or on a genuine connectivity failure), the snapshot is queued to
+ * the offline outbox instead of thrown away. A real server-side rejection is
+ * NOT swallowed: it still throws so the caller aborts the edit.
  */
 export async function logEdit(input: EditLogInput) {
-  const { error } = await supabase.from('edit_history').insert({
+  const payload = {
     entity_type: input.entityType,
     entity_id: input.entityId,
     entity_label: input.entityLabel ?? null,
@@ -30,10 +37,33 @@ export async function logEdit(input: EditLogInput) {
     patient_name: input.patientName ?? null,
     previous_payload: input.previousPayload as Json,
     edited_by: getAuditActor(),
-  })
-  if (error) {
-    throw new Error(`Failed to record edit history: ${error.message}`)
   }
+
+  const enqueueOffline = () =>
+    enqueueMutation({
+      table: 'edit_history',
+      action: 'insert',
+      payload,
+      meta: { patientId: input.patientId, label: `Edit audit: ${input.entityLabel || input.entityType}` },
+      groupId: input.offlineGroup?.groupId,
+      seq: input.offlineGroup?.seq ?? 0,
+    })
+
+  if (!navigator.onLine) {
+    await enqueueOffline()
+  } else {
+    try {
+      const { error } = await supabase.from('edit_history').insert(payload)
+      if (error) throw error
+    } catch (err: any) {
+      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+        await enqueueOffline()
+      } else {
+        throw new Error(`Failed to record edit history: ${err.message}`)
+      }
+    }
+  }
+
   logActivity({
     action: 'edit',
     entityType: input.entityType,

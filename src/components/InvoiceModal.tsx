@@ -24,6 +24,9 @@ import { logActivity } from '@/lib/activityLog'
 import { logEdit } from '@/lib/editHistory'
 import type { InvoiceTemplateData } from '@/components/InvoiceTemplateSelector'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
+import { queryClient } from '@/lib/queryClient'
+import { qk } from '@/repositories/keys'
+import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
 
 export interface EditableInvoice {
   id: string
@@ -229,6 +232,21 @@ export function InvoiceModal({
   }
 
   async function loadPendingTreatments(patientId: string): Promise<PendingTreatment[]> {
+    if (!navigator.onLine) {
+      // Offline: the network round-trip below (and its own legacy-safe retry)
+      // would just fail twice. Read from whatever the patient bundle query
+      // already has cached instead — same filtering rule as the online path.
+      const bundle = queryClient.getQueryData<any>(qk.patients.bundle(patientId))
+      const cachedInvoices: Array<{ items?: unknown }> = bundle?.invoices || []
+      const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+        cachedInvoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
+      )
+      const cachedTreatments = ((bundle?.treatments as PendingTreatment[]) || []).filter(
+        (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id && !linkedTreatmentIds.has(treatment.id)
+      )
+      setPendingTreatments(cachedTreatments)
+      return cachedTreatments
+    }
     try {
       const [{ data, error }, { data: invoicesData, error: invoicesError }] = await Promise.all([
         supabase
@@ -467,6 +485,94 @@ export function InvoiceModal({
     onSave(editingInvoice.id)
   }
 
+  /**
+   * Offline invoice creation: enqueues the invoice insert and the
+   * treatment-link update as one group (so a treatment can never come back
+   * as "unbilled" after sync just because the link update never made it —
+   * see Fix C in offlineSync.ts) and writes both optimistically into the
+   * patient bundle cache. The invoice gets a provisional `INV-TMP-*` number
+   * — resolved to a real one by insertInvoiceWithAutoNumber when the group
+   * syncs — and its client-generated `id` is preserved through that whole
+   * path so the treatment link and any payment recorded against it keep
+   * pointing at the right row.
+   */
+  async function createInvoiceOffline(normalizedItems: BillingLineItem[], parsedPaymentAmount: number) {
+    const clientInvoiceId = crypto.randomUUID()
+    const provisionalNumber = `INV-TMP-${clientInvoiceId.slice(0, 8)}`
+    const groupId = newGroupId()
+    const invoicePatient = patients.find((p) => p.id === formData.patient_id)
+    const patientLabel = invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null
+    const linkedIds = Array.from(selectedTreatmentIds)
+
+    const offlineInvoice = {
+      id: clientInvoiceId,
+      patient_id: formData.patient_id,
+      items: normalizedItems as unknown as any,
+      total_amount: totalAmount,
+      paid_amount: 0,
+      status: formData.status,
+      due_date: formData.due_date || null,
+      notes: formData.notes || null,
+      payment_terms: formData.payment_terms || null,
+      tax_rate: taxRate,
+      tax_amount: taxAmount,
+      discount_amount: discountCalcAmount,
+      discount_type: formData.discount_type,
+      discount_value: discountValueNum,
+      credit_amount: creditAmount,
+      invoice_number: provisionalNumber,
+      recurring_enabled: formData.recurring_enabled,
+      recurring_frequency: formData.recurring_enabled ? formData.recurring_frequency : null,
+    }
+
+    await enqueueMutation({
+      table: 'invoices',
+      action: 'insert',
+      payload: offlineInvoice,
+      meta: { patientId: formData.patient_id, label: `Invoice ${provisionalNumber}${patientLabel ? ` for ${patientLabel}` : ''}` },
+      groupId,
+      seq: 0,
+    })
+
+    if (linkedIds.length > 0) {
+      await enqueueMutation({
+        table: 'treatments',
+        action: 'update_many',
+        payload: { ids: linkedIds, fields: { is_invoiced: true, invoice_id: clientInvoiceId } },
+        meta: { patientId: formData.patient_id, label: `Link ${linkedIds.length} treatment(s) to ${provisionalNumber}` },
+        groupId,
+        seq: 1,
+      })
+    }
+
+    queryClient.setQueryData(qk.patients.bundle(formData.patient_id), (old: any) => {
+      if (!old) return old
+      return {
+        ...old,
+        invoices: [offlineInvoice, ...(old.invoices || [])],
+        treatments: (old.treatments || []).map((t: any) =>
+          linkedIds.includes(t.id) ? { ...t, is_invoiced: true, invoice_id: clientInvoiceId } : t
+        ),
+      }
+    })
+
+    logActivity({
+      action: 'create',
+      entityType: 'invoice',
+      entityId: clientInvoiceId,
+      entityLabel: provisionalNumber,
+      patientId: formData.patient_id,
+      patientName: patientLabel,
+      details: `Total ${formatBDT(totalAmount)} (Saved Offline)`,
+    })
+
+    if (collectPayment && parsedPaymentAmount > 0) {
+      await recordImmediatePayment(clientInvoiceId, parsedPaymentAmount)
+    }
+
+    onSave(clientInvoiceId)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -515,6 +621,11 @@ export function InvoiceModal({
 
     setSaving(true)
     try {
+      if (!navigator.onLine) {
+        await createInvoiceOffline(normalizedItems, parsedPaymentAmount)
+        return
+      }
+
       const basePayload = buildLegacySafeInvoicePayload({
         patientId: formData.patient_id,
         items: normalizedItems,
@@ -685,6 +796,7 @@ export function InvoiceModal({
     const now = new Date()
     paymentDateTime.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
     const paymentDateIso = paymentDateTime.toISOString()
+    const paymentPatient = patients.find((p) => p.id === formData.patient_id)
     const result = await recordInvoicePayment({
       invoiceId,
       amount,
@@ -692,10 +804,11 @@ export function InvoiceModal({
       invoicePaid: 0,
       method: paymentMethod,
       paymentDateIso,
+      patientId: formData.patient_id,
+      patientName: paymentPatient ? `${paymentPatient.first_name} ${paymentPatient.last_name}` : null,
     })
 
     if (result.paymentStored) {
-      const paymentPatient = patients.find((p) => p.id === formData.patient_id)
       logActivity({
         action: 'create',
         entityType: 'payment',
