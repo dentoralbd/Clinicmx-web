@@ -4,6 +4,17 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-08 — Offline Edits: cross-device approval, sitewide log, admin fixes
+Built out Admin → Offline Edits (`src/components/admin/OfflineEditsTab.tsx`) from a placeholder into a real sitewide audit log, then closed the gap it exposed: approving your own offline edit required being back on the exact device that queued it.
+
+- **Migration 054** — `offline_edit_queue`: metadata-only sitewide visibility for pending offline edits (who, patient, what kind, when — no payload). RLS: creator or admin.
+- Enriched every offline-edit card with patient name, tooth number, and amount (`meta.patientName`/`meta.detail`, threaded through `treatmentsRepo.ts`, `InvoiceModal.tsx`, `payments.ts`, `deleteHistory.ts`/`editHistory.ts`); admin gets notified via the bell once an edit is approved & synced elsewhere, attributed to who actually made it, not who clicked Approve.
+- Added the amber "Offline — showing saved data" banner to `Header.tsx` (present in the redesign clone this port started from, dropped during the port) and a "Recently Synced" section in Admin → Offline Edits, since a synced edit previously vanished from that page with no trace beyond the separate Activity Log tab.
+- **Migration 055 — cross-device approval.** The account that created an offline edit (or admin) can now finish **Approve & Sync from any device**, not just the one that queued it: the payload is encrypted client-side (AES-GCM, `src/lib/payloadCrypto.ts`) before being staged, and an atomic per-row claim (`claimMutation()`) guarantees only one device ever executes a given edit even if two are approved near-simultaneously. Honest security note (also in `payloadCrypto.ts` and DATABASE.md §3): the key is derivable from the public JS bundle, so this is defence-in-depth (keeps plaintext out of the dashboard/logs/dumps, destroyed on approval/discard) rather than confidentiality — RLS is the real access control, unchanged from 054. Fixed a real bug in the same pass: `reportPendingToServer()` was reporting the *whole* device outbox regardless of who was currently logged in, which would have misattributed a shared device's queued edits once payloads went server-side.
+- New "Pending on your other devices" sections in `/offline-outbox` and Admin → Offline Edits, both actionable (Approve & Sync / Discard). Coverage limit stated plainly in FEATURES.md §1b: only helps once a device has reconnected at least once after queuing — a device lost while still offline, never reported, isn't recoverable this way.
+
+---
+
 ## 2026-08-08 — HR & Payroll page (admin-only): leave management, real payroll charts, Staff Analytics relocated
 New `/hr-payroll` admin page, sidebar entry directly below Financial Analysis. Started from an HR-poster-inspired demo prototyped in `Clinicmx-web-redesign` (`HRPayrollDashboard.tsx`/`lib/hr.ts`); kept the leave-management idea, rewrote the rest — the demo's payroll donut was fabricated (base × 0.15/0.05 "allowances"/"deductions") and its `staff_leaves` RLS was wide-open (`FOR ALL TO authenticated USING (true)`), neither shippable against a table with real names and dates on it.
 

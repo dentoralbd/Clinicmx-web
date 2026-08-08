@@ -12,6 +12,9 @@ import {
   reportPendingToServer,
   fetchSitewidePendingEdits,
   listRecentOfflineSyncAlerts,
+  syncRemoteMutation,
+  syncRemoteGroup,
+  discardRemoteMutation,
   type PendingMutation,
   type SitewidePendingRow,
   type OfflineSyncAlertRow,
@@ -59,6 +62,12 @@ const EDITS_FILTERS: Array<{ value: EditsFilter; label: string }> = [
   { value: 'audit', label: 'Audit Logs' },
 ]
 
+const DECRYPT_ERROR_COPY: Record<string, string> = {
+  'no-key': 'Log in again on this device to decrypt and approve this.',
+  'key-mismatch': 'Encrypted with a previous app key — can\'t be approved here; approve from the device that originally queued it.',
+  corrupt: 'This edit\'s staged data is unreadable and can\'t be approved from here.',
+}
+
 function matchesFilter(mut: PendingMutation, filter: EditsFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'audit') return mut.table === 'delete_history' || mut.table === 'edit_history'
@@ -105,6 +114,8 @@ export function OfflineEditsTab() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [remoteRows, setRemoteRows] = useState<SitewidePendingRow[]>([])
   const [syncedRows, setSyncedRows] = useState<OfflineSyncAlertRow[]>([])
+  const [remoteBusyKey, setRemoteBusyKey] = useState<string | null>(null)
+  const [remoteErrors, setRemoteErrors] = useState<Record<string, string>>({})
 
   async function loadMutations() {
     setLoading(true)
@@ -243,6 +254,41 @@ export function OfflineEditsTab() {
     const cleared = await clearVisiblePending()
     for (const mut of cleared) cleanUpOptimisticEntry(mut)
     await loadMutations()
+  }
+
+  function remoteKeyFor(items: SitewidePendingRow[]): string {
+    return items[0].group_id || items[0].id
+  }
+
+  async function handleSyncRemote(items: SitewidePendingRow[]) {
+    if (!isOnline) {
+      alert('You must be online to sync data to the server.')
+      return
+    }
+    const key = remoteKeyFor(items)
+    setRemoteBusyKey(key)
+    setRemoteErrors((prev) => ({ ...prev, [key]: '' }))
+    try {
+      if (items[0].group_id) {
+        const { failed } = await syncRemoteGroup(items[0].group_id)
+        if (failed > 0) setRemoteErrors((prev) => ({ ...prev, [key]: 'Some items in this group failed to sync.' }))
+      } else {
+        const { outcome, error } = await syncRemoteMutation(items[0])
+        if (outcome !== 'ok' && outcome !== 'skipped') {
+          setRemoteErrors((prev) => ({ ...prev, [key]: DECRYPT_ERROR_COPY[outcome] || error || 'Failed to sync.' }))
+        }
+      }
+      await loadRemote()
+      await loadMutations()
+    } finally {
+      setRemoteBusyKey(null)
+    }
+  }
+
+  async function handleDiscardRemote(items: SitewidePendingRow[]) {
+    if (!confirm('Discard this offline edit? It will be deleted permanently and never reach the server.')) return
+    for (const row of items) await discardRemoteMutation(row.client_mutation_id)
+    await loadRemote()
   }
 
   const anyBusy = busyKey !== null
@@ -436,40 +482,75 @@ export function OfflineEditsTab() {
           <div className="divide-y divide-gray-100">
             {remoteOnlyGroups.map((items) => {
               const first = items[0]
+              const key = remoteKeyFor(items)
+              const rowError = remoteErrors[key]
+              const isRowBusy = remoteBusyKey === key
               return (
-                <div key={first.group_id || first.id} className="py-3 flex items-start gap-3">
-                  <Smartphone className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-700 truncate">
-                      {first.meta.label}
-                      {items.length > 1 && (
-                        <span className="ml-1.5 text-[10px] font-bold uppercase text-gray-400">{items.length} steps</span>
-                      )}
-                    </p>
-                    {(first.meta.patientName || first.meta.detail) && (
-                      <p className="text-xs text-gray-500 truncate">
-                        {first.meta.patientName}
-                        {first.meta.patientName && first.meta.detail ? ' · ' : ''}
-                        {first.meta.detail}
+                <div key={key} className="py-3 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <Smartphone className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-700 truncate">
+                        {first.meta.label}
+                        {items.length > 1 && (
+                          <span className="ml-1.5 text-[10px] font-bold uppercase text-gray-400">{items.length} steps</span>
+                        )}
                       </p>
-                    )}
-                    <p className="text-xs text-gray-400">{format_(first.created_at)}</p>
-                  </div>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 flex-shrink-0">
-                    <User className="w-3 h-3 mr-1" />
-                    {formatAuditActor(first.actor || 'doctor')}
-                  </span>
-                  {first.status !== 'pending' && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
-                      {first.status}
+                      {(first.meta.patientName || first.meta.detail) && (
+                        <p className="text-xs text-gray-500 truncate">
+                          {first.meta.patientName}
+                          {first.meta.patientName && first.meta.detail ? ' · ' : ''}
+                          {first.meta.detail}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400">{format_(first.created_at)}</p>
+                    </div>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 flex-shrink-0">
+                      <User className="w-3 h-3 mr-1" />
+                      {formatAuditActor(first.actor || 'doctor')}
                     </span>
+                    {first.status !== 'pending' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
+                        {first.status}
+                      </span>
+                    )}
+                  </div>
+
+                  {rowError && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 ml-7">{rowError}</p>
+                  )}
+
+                  {first.payload_encrypted ? (
+                    <div className="flex items-center gap-2 ml-7">
+                      <button
+                        type="button"
+                        onClick={() => handleSyncRemote(items)}
+                        disabled={!isOnline || remoteBusyKey !== null}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRowBusy ? 'animate-spin' : ''}`} />
+                        Approve &amp; Sync
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDiscardRemote(items)}
+                        disabled={remoteBusyKey !== null}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Discard
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-400 ml-7">No staged payload yet — not approvable from here.</p>
                   )}
                 </div>
               )
             })}
           </div>
           <p className="text-[11px] text-gray-400 px-1">
-            These are staged on a different device and can only be approved &amp; synced from there — no unapproved data leaves a device before that happens.
+            Staged on a different device, encrypted at rest — approvable from here (or the originating device) once it
+            carries a payload.
           </p>
         </div>
       )}
