@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { Bell, Receipt, Wifi, X } from 'lucide-react'
+import { Bell, CalendarDays, Receipt, Wifi, X } from 'lucide-react'
 import {
   getNotifications,
   markAllRead,
@@ -13,6 +13,7 @@ import { getAppRole, getAppUser, formatAuditActor } from '@/lib/appSession'
 import { countPendingIpRequests, listPendingIpRequestsForUser } from '@/lib/ipAccess'
 import { listRecentBillingAlerts, getBillingAlertsSeen, setBillingAlertsSeen } from '@/lib/billingAlerts'
 import { getVisiblePendingMutations } from '@/lib/offlineSync'
+import { getPendingLeaveCount } from '@/lib/leaveAlerts'
 
 /** Synthetic, never-persisted entry derived live from Supabase (network
  * access status, billing changes) — always identical across every device
@@ -20,7 +21,7 @@ import { getVisiblePendingMutations } from '@/lib/offlineSync'
  * per-browser. */
 interface LiveEntry {
   id: string
-  kind: 'ip' | 'billing'
+  kind: 'ip' | 'billing' | 'leave'
   title: string
   message: string
   linkTo?: string
@@ -69,7 +70,11 @@ export function NotificationBell() {
     const refreshLive = async () => {
       try {
         if (role === 'admin') {
-          const [count, billingRows] = await Promise.all([countPendingIpRequests(), listRecentBillingAlerts()])
+          const [count, billingRows, leaveCount] = await Promise.all([
+            countPendingIpRequests(),
+            listRecentBillingAlerts(),
+            getPendingLeaveCount().catch(() => 0),
+          ])
           if (cancelled) return
 
           const seen = getBillingAlertsSeen()
@@ -84,6 +89,20 @@ export function NotificationBell() {
                     title: 'Network access pending',
                     message: `${count} network access request${count > 1 ? 's' : ''} waiting for your approval.`,
                     linkTo: '/doctor-profile',
+                    unread: true,
+                  },
+                ]
+              : []
+
+          const leaveEntries: LiveEntry[] =
+            leaveCount > 0
+              ? [
+                  {
+                    id: 'live-leave-admin',
+                    kind: 'leave',
+                    title: 'Leave requests pending',
+                    message: `${leaveCount} leave request${leaveCount > 1 ? 's' : ''} waiting for your approval.`,
+                    linkTo: '/hr-payroll',
                     unread: true,
                   },
                 ]
@@ -113,7 +132,7 @@ export function NotificationBell() {
                 ]
               : []
 
-          setLiveEntries([...outboxEntries, ...ipEntries, ...billingEntries])
+          setLiveEntries([...outboxEntries, ...leaveEntries, ...ipEntries, ...billingEntries])
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
@@ -232,7 +251,7 @@ export function NotificationBell() {
               {liveEntries.map((n) => (
                 <div
                   key={n.id}
-                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
+                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : n.kind === 'leave' ? 'bg-teal-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
                   onClick={() => {
                     if (n.linkTo) {
                       setOpen(false)
@@ -242,6 +261,8 @@ export function NotificationBell() {
                 >
                   {n.kind === 'billing' ? (
                     <Receipt className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  ) : n.kind === 'leave' ? (
+                    <CalendarDays className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                   ) : (
                     <Wifi className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   )}
