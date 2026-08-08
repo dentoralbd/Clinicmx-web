@@ -392,6 +392,68 @@ export interface Database {
           }
         ]
       }
+      offline_edit_queue: {
+        Row: {
+          id: string
+          client_mutation_id: string
+          group_id: string | null
+          seq: number
+          table_name: string
+          action: string
+          meta: Json
+          created_by_user_id: string | null
+          actor: string
+          status: string
+          attempts: number
+          last_error: string | null
+          device_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_mutation_id: string
+          group_id?: string | null
+          seq?: number
+          table_name: string
+          action: string
+          meta?: Json
+          created_by_user_id?: string | null
+          actor: string
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          device_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          client_mutation_id?: string
+          group_id?: string | null
+          seq?: number
+          table_name?: string
+          action?: string
+          meta?: Json
+          created_by_user_id?: string | null
+          actor?: string
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          device_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'offline_edit_queue_created_by_user_id_fkey'
+            columns: ['created_by_user_id']
+            isOneToOne: false
+            referencedRelation: 'app_users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       treatments: {
         Row: {
           id: string

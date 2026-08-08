@@ -8,6 +8,36 @@ import { insertInvoiceWithAutoNumber } from '@/lib/invoiceNumbering'
 const OUTBOX_KEY = 'clinicmx_offline_mutations_v1'
 const MAX_ATTEMPTS = 5
 const MAX_SCHEMA_FALLBACK_RETRIES = 6
+const DEVICE_ID_KEY = 'clinicmx_device_id'
+
+/** Stable per-browser id, diagnostics only — lets a sitewide report be traced back to "which of my devices" without being security-relevant (RLS never checks this). */
+function getDeviceId(): string {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return 'unknown'
+  let id = localStorage.getItem(DEVICE_ID_KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(DEVICE_ID_KEY, id)
+  }
+  return id
+}
+
+/**
+ * Best-effort: remove this mutation's sitewide visibility report once it's
+ * no longer pending locally (synced or discarded) — so it disappears from
+ * Admin > Offline Edits at the same time it disappears from this device's
+ * own outbox. Never throws; a stale report just means the sitewide view
+ * shows something briefly longer than it should, which the next successful
+ * report-and-cleanup cycle corrects.
+ */
+function deleteStagedReport(clientMutationId: string): void {
+  void supabase
+    .from('offline_edit_queue')
+    .delete()
+    .eq('client_mutation_id', clientMutationId)
+    .then(({ error }) => {
+      if (error) console.warn('[OfflineSync] Could not clear sitewide report:', error.message)
+    })
+}
 
 export type MutationAction = 'insert' | 'update' | 'update_many' | 'delete'
 export type MutationStatus = 'pending' | 'blocked' | 'failed'
@@ -171,17 +201,20 @@ export async function discardMutation(id: string): Promise<PendingMutation | nul
   const mut = all.find((m) => m.id === id) || null
   if (!mut || !canActOn(mut)) return null
   await removeMutation(id)
+  deleteStagedReport(mut.id)
   return mut
 }
 
 /** Clears the outbox. `scope` restricts which entries are removed (defaults to everything); pass `getAuditActor()`-based filtering for a non-admin caller — see `clearVisiblePending`. */
 export async function clearOutbox(scope?: (m: PendingMutation) => boolean): Promise<PendingMutation[]> {
-  return withOutbox((current) => {
+  const removed = await withOutbox((current) => {
     if (!scope) return { next: [], result: current }
     const removed = current.filter(scope)
     const next = current.filter((m) => !scope(m))
     return { next, result: removed }
   })
+  for (const mut of removed) deleteStagedReport(mut.id)
+  return removed
 }
 
 /** Clear All Drafts, scoped to what the current session is allowed to touch. */
@@ -327,6 +360,7 @@ async function syncOne(mut: PendingMutation): Promise<boolean> {
     await executeMutation(mut)
     await removeMutation(mut.id)
     reportSyncedForReview(mut)
+    deleteStagedReport(mut.id)
     return true
   } catch (err: any) {
     const attempts = mut.attempts + 1
@@ -497,4 +531,103 @@ export function getOfflineSyncAlertsSeen(): string {
 export function setOfflineSyncAlertsSeen(iso: string) {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return
   localStorage.setItem(OFFLINE_SYNC_SEEN_KEY, iso)
+}
+
+// ---------------------------------------------------------------------------
+// Sitewide visibility (offline_edit_queue, migration 054) — metadata only,
+// no payload. A device can't tell the server anything while genuinely
+// offline; the moment it has any connectivity again, it reports a summary
+// of what's still queued so Admin > Offline Edits (and, for a non-admin,
+// their own other devices) can see it before it's actually approved &
+// synced. Approving/syncing itself is unchanged — it only ever happens
+// against the local outbox on the device that holds the real data; this
+// table is never read from to execute anything.
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort: upsert a metadata-only report for every mutation still in
+ * the local outbox. Call whenever the device might have just gained
+ * connectivity (the 'online' event, or on mount of a page that cares).
+ * Silently does nothing useful if genuinely offline — the upsert just fails
+ * and is swallowed, exactly like any other best-effort network call in this
+ * file. Never throws, never blocks a caller.
+ */
+export async function reportPendingToServer(): Promise<void> {
+  try {
+    const pending = await getPendingMutations()
+    if (pending.length === 0) return
+    const deviceId = getDeviceId()
+    const rows = pending.map((m) => ({
+      client_mutation_id: m.id,
+      group_id: m.groupId ?? null,
+      seq: m.seq ?? 0,
+      table_name: m.table,
+      action: m.action,
+      meta: m.meta as any,
+      actor: m.actor || 'doctor',
+      status: m.status === 'failed' ? 'failed' : m.status === 'blocked' ? 'blocked' : 'pending',
+      attempts: m.attempts,
+      last_error: m.lastError ?? null,
+      device_id: deviceId,
+    }))
+    // created_by_user_id/status/attempts/last_error on a fresh insert are
+    // re-stamped server-side by offline_edit_queue_fill_creator() — the
+    // status here matters for the UPDATE half of this upsert (re-reporting
+    // an item whose status changed since the last report).
+    const { error } = await supabase
+      .from('offline_edit_queue')
+      .upsert(rows as any, { onConflict: 'created_by_user_id,client_mutation_id' })
+    if (error) console.warn('[OfflineSync] Could not report pending edits sitewide:', error.message)
+  } catch (err) {
+    console.warn('[OfflineSync] Could not report pending edits sitewide:', err)
+  }
+}
+
+export interface SitewidePendingRow {
+  id: string
+  client_mutation_id: string
+  group_id: string | null
+  seq: number
+  table_name: string
+  action: string
+  meta: { patientId?: string | null; patientName?: string | null; label: string; detail?: string | null }
+  actor: string
+  status: string
+  attempts: number
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Sitewide list of still-pending offline edits — admin sees every account's;
+ * anyone else sees only their own (RLS-scoped, mirrors canActOn() but
+ * enforced server-side too now). Includes this device's own items (already
+ * visible locally via getVisiblePendingMutations) as well as any reported
+ * from other devices — callers that already show the local list should
+ * de-dupe on client_mutation_id. Best-effort: never throws.
+ */
+export async function fetchSitewidePendingEdits(): Promise<SitewidePendingRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from('offline_edit_queue')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) return []
+    return (data || []) as unknown as SitewidePendingRow[]
+  } catch {
+    return []
+  }
+}
+
+// Reporting on reconnect is NOT auto-sync: it never applies a mutation to
+// any real table, it only lets other devices/accounts SEE that something is
+// still queued (see the section above). Actually approving/syncing an edit
+// still always requires a human pressing Approve & Sync on the device that
+// holds the real data — that stays 100% manual, unchanged from the rest of
+// this file's design.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    void reportPendingToServer()
+  })
 }

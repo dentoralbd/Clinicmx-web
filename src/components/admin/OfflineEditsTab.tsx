@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CloudOff, RefreshCw, Trash2, ChevronDown, ChevronUp, Clock, User, AlertTriangle, Layers, Wifi, WifiOff } from 'lucide-react'
+import { CloudOff, RefreshCw, Trash2, ChevronDown, ChevronUp, Clock, User, AlertTriangle, Layers, Wifi, WifiOff, Smartphone } from 'lucide-react'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
 import {
   getVisiblePendingMutations,
@@ -9,7 +9,10 @@ import {
   syncGroup,
   syncVisiblePending,
   cleanUpOptimisticEntry,
+  reportPendingToServer,
+  fetchSitewidePendingEdits,
   type PendingMutation,
+  type SitewidePendingRow,
 } from '@/lib/offlineSync'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { formatAuditActor } from '@/lib/appSession'
@@ -98,6 +101,7 @@ export function OfflineEditsTab() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [remoteRows, setRemoteRows] = useState<SitewidePendingRow[]>([])
 
   async function loadMutations() {
     setLoading(true)
@@ -110,12 +114,46 @@ export function OfflineEditsTab() {
     }
   }
 
+  async function loadRemote() {
+    setRemoteRows(await fetchSitewidePendingEdits())
+  }
+
   useEffect(() => {
     loadMutations()
-    const handleUpdate = () => loadMutations()
+    // Push this device's own queued edits up (in case they haven't been
+    // reported yet) before reading the sitewide list — best-effort, doesn't
+    // block the local list from showing immediately.
+    void reportPendingToServer().then(loadRemote)
+    loadRemote()
+    const handleUpdate = () => {
+      loadMutations()
+      loadRemote()
+    }
     window.addEventListener('clinicmx_outbox_updated', handleUpdate)
     return () => window.removeEventListener('clinicmx_outbox_updated', handleUpdate)
   }, [])
+
+  // Rows reported from a device other than this one — everything this
+  // device already has locally is excluded so nothing shows twice.
+  const remoteOnlyGroups = useMemo(() => {
+    const localIds = new Set(mutations.map((m) => m.id))
+    const byGroup = new Map<string, SitewidePendingRow[]>()
+    const solo: SitewidePendingRow[][] = []
+    for (const row of remoteRows) {
+      if (localIds.has(row.client_mutation_id)) continue
+      if (!matchesFilter({ table: row.table_name } as PendingMutation, filter)) continue
+      if (row.group_id) {
+        const arr = byGroup.get(row.group_id) || []
+        arr.push(row)
+        byGroup.set(row.group_id, arr)
+      } else {
+        solo.push([row])
+      }
+    }
+    return [...Array.from(byGroup.values()), ...solo]
+      .map((items) => items.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)))
+      .sort((a, b) => new Date(b[0].created_at).getTime() - new Date(a[0].created_at).getTime())
+  }, [remoteRows, mutations, filter])
 
   const rows = useMemo<LogRow[]>(() => {
     const byGroup = new Map<string, PendingMutation[]>()
@@ -217,7 +255,7 @@ export function OfflineEditsTab() {
                 {isOnline ? 'Online' : 'Offline'}
               </span>
             </div>
-            <p className="text-xs text-gray-400">Every edit staged offline on this device, from every account, with full detail — for audit and approval</p>
+            <p className="text-xs text-gray-400">Every offline edit, from every account and every device, with full detail — for audit and approval. Edits queued on this device can be approved here; edits from other devices show for review only.</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -268,10 +306,12 @@ export function OfflineEditsTab() {
 
       {loading ? (
         <p className="text-sm text-gray-400 py-4 text-center">Loading offline edits…</p>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && remoteOnlyGroups.length === 0 ? (
         <p className="text-sm text-gray-400 py-4 text-center">
-          {filter === 'all' ? 'No offline edits staged on this device.' : 'No offline edits in this category.'}
+          {filter === 'all' ? 'No offline edits staged anywhere.' : 'No offline edits in this category.'}
         </p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-400 py-2 px-1">Nothing on this device — see below for what's pending elsewhere.</p>
       ) : (
         <div className="divide-y divide-gray-100">
           {rows.map((row) => {
@@ -374,6 +414,52 @@ export function OfflineEditsTab() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {remoteOnlyGroups.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-gray-100">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
+            Pending on other devices ({remoteOnlyGroups.length})
+          </h3>
+          <div className="divide-y divide-gray-100">
+            {remoteOnlyGroups.map((items) => {
+              const first = items[0]
+              return (
+                <div key={first.group_id || first.id} className="py-3 flex items-start gap-3">
+                  <Smartphone className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-700 truncate">
+                      {first.meta.label}
+                      {items.length > 1 && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase text-gray-400">{items.length} steps</span>
+                      )}
+                    </p>
+                    {(first.meta.patientName || first.meta.detail) && (
+                      <p className="text-xs text-gray-500 truncate">
+                        {first.meta.patientName}
+                        {first.meta.patientName && first.meta.detail ? ' · ' : ''}
+                        {first.meta.detail}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400">{format_(first.created_at)}</p>
+                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 flex-shrink-0">
+                    <User className="w-3 h-3 mr-1" />
+                    {formatAuditActor(first.actor || 'doctor')}
+                  </span>
+                  {first.status !== 'pending' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
+                      {first.status}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-gray-400 px-1">
+            These are staged on a different device and can only be approved &amp; synced from there — no unapproved data leaves a device before that happens.
+          </p>
         </div>
       )}
     </div>
