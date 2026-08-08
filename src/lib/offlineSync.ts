@@ -276,10 +276,57 @@ async function executeMutation(mut: PendingMutation): Promise<void> {
 // the device until a human presses Approve & Sync on /offline-outbox.
 // ---------------------------------------------------------------------------
 
+// entity_type values the rest of the app already uses in activity_log — kept
+// consistent so this shows up correctly anywhere else that reads the table
+// (Activity Log tab, Pt. Log). Audit-log tables are support entries for
+// another mutation in the same group, not a distinct user-facing action, so
+// they never get their own "synced" notification.
+const TABLE_ENTITY_TYPE: Record<string, string> = {
+  treatments: 'treatment',
+  invoices: 'invoice',
+  payments: 'payment',
+  patient_visits: 'patient_visit',
+  prescriptions: 'prescription',
+  patients: 'patient',
+}
+
+/**
+ * Fire-and-forget: once a mutation actually lands in the real tables (i.e.
+ * someone — the account that queued it, or an admin acting on their behalf —
+ * pressed Approve & Sync), record who originally made the offline edit so
+ * admin's notification bell can surface it for review. Deliberately inserts
+ * directly rather than through logActivity(), which always stamps the
+ * *current* session as actor — here that would misattribute the edit to
+ * whoever clicked Approve & Sync instead of who actually made it.
+ */
+function reportSyncedForReview(mut: PendingMutation): void {
+  const entityType = TABLE_ENTITY_TYPE[mut.table]
+  if (!entityType) return
+  // Only the group's first step gets a notification — an invoice + its
+  // treatment-link + its payment syncing together is one event to admin,
+  // not three.
+  if (mut.groupId && (mut.seq ?? 0) !== 0) return
+  void supabase
+    .from('activity_log')
+    .insert({
+      action: 'edit',
+      entity_type: entityType,
+      entity_label: mut.meta.label,
+      patient_id: mut.meta.patientId ?? null,
+      patient_name: mut.meta.patientName ?? null,
+      details: `[Offline Sync] ${mut.meta.detail ? `${mut.meta.label} — ${mut.meta.detail}` : mut.meta.label}`,
+      actor: mut.actor || 'doctor',
+    })
+    .then(({ error }) => {
+      if (error) console.warn('[OfflineSync] Could not record sync notification:', error.message)
+    })
+}
+
 async function syncOne(mut: PendingMutation): Promise<boolean> {
   try {
     await executeMutation(mut)
     await removeMutation(mut.id)
+    reportSyncedForReview(mut)
     return true
   } catch (err: any) {
     const attempts = mut.attempts + 1
@@ -395,4 +442,59 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
 export async function syncVisiblePending(): Promise<{ succeeded: number; failed: number }> {
   if (getAppRole() === 'admin') return syncAll()
   return syncAll((m) => canActOn(m))
+}
+
+export interface OfflineSyncAlertRow {
+  id: string
+  occurred_at: string
+  entity_type: string
+  entity_label: string | null
+  patient_id: string | null
+  patient_name: string | null
+  details: string | null
+  actor: string
+}
+
+const OFFLINE_SYNC_LOOKBACK_DAYS = 7
+
+/**
+ * Recent offline edits that have actually landed in the real tables (see
+ * reportSyncedForReview) — for the admin notification bell, so admin finds
+ * out once someone's offline work is approved & synced, with who made it.
+ * Cross-device by design (read fresh from Supabase like listRecentBillingAlerts,
+ * not from local IndexedDB) — this is a record of a completed sync, not the
+ * still-local, not-yet-synced outbox. Best-effort: never throws.
+ */
+export async function listRecentOfflineSyncAlerts(): Promise<OfflineSyncAlertRow[]> {
+  try {
+    const since = new Date(Date.now() - OFFLINE_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    const { data, error } = await supabase
+      .from('activity_log')
+      .select('id, occurred_at, entity_type, entity_label, patient_id, patient_name, details, actor')
+      .like('details', '[Offline Sync]%')
+      .gte('occurred_at', since)
+      .order('occurred_at', { ascending: false })
+      .limit(10)
+    if (error) return []
+    return (data || []) as OfflineSyncAlertRow[]
+  } catch {
+    return []
+  }
+}
+
+const OFFLINE_SYNC_SEEN_KEY = 'clinicmx_offline_sync_alerts_seen'
+
+/** Per-device "last seen" watermark for the offline-sync alert unread dot — same pattern as billingAlerts.ts's getBillingAlertsSeen/setBillingAlertsSeen, kept separate so opening one doesn't mark the other read. */
+export function getOfflineSyncAlertsSeen(): string {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return new Date().toISOString()
+  const stored = localStorage.getItem(OFFLINE_SYNC_SEEN_KEY)
+  if (stored) return stored
+  const now = new Date().toISOString()
+  localStorage.setItem(OFFLINE_SYNC_SEEN_KEY, now)
+  return now
+}
+
+export function setOfflineSyncAlertsSeen(iso: string) {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return
+  localStorage.setItem(OFFLINE_SYNC_SEEN_KEY, iso)
 }
