@@ -25,7 +25,7 @@ import {
 } from '@/lib/staff'
 
 function emptyStaffForm() {
-  return { full_name: '', phone: '', designation: '', monthly_salary: '', app_user_id: '', joined_on: '', notes: '' }
+  return { full_name: '', phone: '', designation: '', monthly_salary: '', app_user_id: '', joined_on: '', notes: '', leave_quota_days: '20' }
 }
 
 function currentMonthKey() {
@@ -145,6 +145,7 @@ export function StaffAnalyticsSection() {
       app_user_id: s.app_user_id || '',
       joined_on: s.joined_on || '',
       notes: s.notes || '',
+      leave_quota_days: String(s.leave_quota_days ?? 20),
     })
     setStaffFormError('')
     setStaffModal('edit')
@@ -162,6 +163,11 @@ export function StaffAnalyticsSection() {
       setStaffFormError('Enter a valid monthly salary.')
       return
     }
+    const leaveQuota = parseFloat(staffForm.leave_quota_days)
+    if (isNaN(leaveQuota) || leaveQuota < 0) {
+      setStaffFormError('Enter a valid annual leave quota.')
+      return
+    }
     setStaffSaving(true)
     try {
       const input = {
@@ -172,6 +178,7 @@ export function StaffAnalyticsSection() {
         app_user_id: staffForm.app_user_id || null,
         joined_on: staffForm.joined_on || null,
         notes: staffForm.notes || null,
+        leave_quota_days: leaveQuota,
       }
       if (staffModal === 'create') {
         await createStaff(input)
@@ -574,6 +581,18 @@ export function StaffAnalyticsSection() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Annual Leave Quota (days/year)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={staffForm.leave_quota_days}
+                  onChange={(e) => setStaffForm({ ...staffForm, leave_quota_days: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p className="text-xs text-gray-400 mt-1">Shown to this staff member (if linked to an app account) as their leave balance on My Leave. Approved leave of any type counts against it, reset each calendar year.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Linked App Account (optional)</label>

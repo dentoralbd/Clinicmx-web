@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2 } from 'lucide-react'
-import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, canAccessStaffAnalytics, type AppPageKey } from '@/lib/appSession'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet } from 'lucide-react'
+import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, type AppPageKey } from '@/lib/appSession'
 import { getVisiblePendingMutations } from '@/lib/offlineSync'
 
 interface SidebarProps {
@@ -80,9 +80,13 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
   const location = useLocation()
   const appRole = getAppRole()
   const isAdmin = appRole === 'admin'
-  // Non-admins see a Doctor/Operator Zone entry only if some zone tab is available to them
-  const hasFinancialAccess = canAccessDoctorAnalytics() || canAccessStaffAnalytics()
-  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete() || hasFinancialAccess
+  // Financial Analysis (Doctor Analytics) only — Staff Analytics moved into the
+  // admin-only HR & Payroll page, so can_access_staff_analytics no longer
+  // grants a Financial Analysis link (it would just redirect away).
+  const hasFinancialAccess = canAccessDoctorAnalytics()
+  // Every non-admin gets at least the "My Leave" self-service tab in their
+  // Zone now, regardless of any other permission.
+  const hasZoneAccess = canEditClinicProfile() || canRevert() || canDelete() || hasFinancialAccess || appRole === 'doctor' || appRole === 'operator'
   const zoneLabel = appRole === 'operator' ? 'Operator Zone' : 'Doctor Zone'
   const visibleGroups = menuGroups
     .map((group) => ({
@@ -306,6 +310,20 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                         <PieChart className="w-5 h-5 text-teal-600" />
                       </span>
                       <span>Financial Analysis</span>
+                    </>
+                  )}
+                </NavLink>
+                <NavLink
+                  to="/hr-payroll"
+                  onClick={onNavClick}
+                  className={navLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={iconChipClass(isActive)}>
+                        <Wallet className="w-5 h-5 text-teal-600" />
+                      </span>
+                      <span>HR &amp; Payroll</span>
                     </>
                   )}
                 </NavLink>

@@ -8,7 +8,7 @@ What each module does today (2026-08-01), as behavior — implementation notes l
 
 - Role selector: **Admin** (PIN-gated, client-side, see `VITE_ADMIN_PASSWORD`), **Doctor** / **Operator** (accounts in `app_users`, email-or-phone identifier + password).
 - Roles: admin = everything incl. delete/revert/clinic-profile/users; doctor = default no-delete, can revert; operator = default no-delete/no-revert. Per-user permission overrides (page toggles + `can_delete`/`can_revert`/`can_edit_clinic_profile`) set by admin in Users tab. Unknown/legacy permission keys fail open.
-- **Three more per-account permissions (2026-08-01), same Users-tab mechanism:** `can_set_doctor_share_pct` (see the Doctor Share % field, §15b), `can_access_doctor_analytics`, `can_access_staff_analytics` (both gate tabs on the Financial Analysis page, §15c). Independently grantable — e.g. an operator can get Staff Analytics without also getting Doctor Analytics. `can_access_staff_analytics` is the one backed by real RLS (DATABASE.md §3); the other two only control what the UI shows/allows — the underlying `treatments` write permission was already broad before these existed and is unchanged by them.
+- **Three more per-account permissions (2026-08-01), same Users-tab mechanism:** `can_set_doctor_share_pct` (see the Doctor Share % field, §15b), `can_access_doctor_analytics` (gates the Financial Analysis page, §15b), `can_access_staff_analytics` (still backed by real RLS on `staff`/`staff_salary_payments`, DATABASE.md §3, but has had **no UI surface since 2026-08-08** — Staff Analytics moved into the strictly admin-only HR & Payroll page, §15c, so this toggle no longer grants any screen; left in the Users tab and at the database layer, not removed). `can_access_doctor_analytics` only controls what the UI shows/allows — the underlying `treatments` write permission was already broad before it existed and is unchanged by it.
 - Page access enforced per-route (`RequirePage`); wrong login shakes; session persists in localStorage until logout.
 - **Network access gate (2026-07-18):** doctor/operator logins (after the password verifies) check the device's public IP (ipify, 3s timeout) against that user's admin-approved list in `authorized_ips` — max 5 per user, oldest replaced on approval. Unknown IP → pending request + "Waiting for admin approval" screen (polls every 10s, auto-enters on approval); denied IP → refused. IP lookup failure → login **blocked** (fail-closed) unless the user has the **"Entry from any IP"** permission (`can_any_ip`, new Users-tab checkbox), which skips the gate entirely; missing key on old accounts = gated (fails closed, unlike page keys). Admin logins are never gated. Managed in Admin zone → **Network Access** tab; approve/deny/remove actions land in the Activity Log (`ip_access`).
 - **Admin 2FA (2026-07-19):** after the PIN, an unknown device must enter a 6-digit code sent to the admin's **Telegram** (Cloudflare Pages Function `/api/admin-otp`; channel pluggable — Gmail planned). Behavior contract: code valid **5 min**, max **5 wrong codes** per code; successful verification stores a signed trusted-device token so that browser skips the OTP for **7 days**; ≥10 failures (PIN/code/recovery) per IP per hour → endpoint locks out for an hour; max 5 Telegram sends per IP per hour. If Telegram delivery fails, the card switches to the **recovery code** path (long passphrase, `ADMIN_RECOVERY_CODE` secret). While the Cloudflare secrets/KV are **not configured** the endpoint answers `unconfigured` and admin login stays PIN-only (deploy-safe); same PIN-only fallback in local dev where functions don't run. The hardcoded PIN constant remains in the bundle **only** as the secure-storage key-derivation input (all roles need it); the server holds its own `ADMIN_PIN` copy for the actual gate.
@@ -128,6 +128,8 @@ Camera scanner (html5-qrcode) reads the QR printed on prescriptions → jumps st
 
 - **Profile:** doctor name, multi-degree list, registration, chamber/clinic details, logo upload — feeds prescription/invoice letterheads; syncs across devices (Supabase singleton) with encrypted local mirror for offline.
 - **Admin zone (admin only):** **Users** tab (create/edit doctor/operator accounts, activate/deactivate, per-user permissions incl. page toggles); **Network Access** tab (approve/deny/remove per-user login IPs, pending-count badge — see §1); **Activity Log** tab (who did what, when, filterable); **restore/revert center** — deleted records (from `delete_history`) restorable; edits revertible (from `edit_history`); actions labeled with the responsible role/user.
+- **My Leave tab (every non-admin account, 2026-08-08):** every `doctor`/`operator` account gets this tab in their Zone regardless of any other permission — submit a leave request (type/dates/reason), see their own requests with status and any admin decision note, cancel a still-pending one. Independent of `can_access_staff_analytics`/HR & Payroll (§15c) — self-service leave and admin leave review are two different surfaces over the same `staff_leaves` table (DATABASE.md, migration 052). See `src/components/hr/MyLeaveTab.tsx`.
+  - **Leave balance tiles (2026-08-08, migration 053):** Total Leave / Used (this year) / Leave Left, sourced from the `my_leave_balance()` RPC — Total is the admin-set `staff.leave_quota_days` (default 20, editable per staff member in the Staff & Salary roster, §15c-iii), Used sums the inclusive day-count of every **Approved** leave request of **any type** with a start date in the current calendar year (resets each Jan 1), Left is Total − Used, floored at 0. Silently hidden (not an error banner) when the signed-in account isn't linked to a `staff` roster row, or the RPC isn't available yet (migration not applied) — a missing balance never blocks submitting/viewing/cancelling requests.
 
 ## 14. Backup & Restore (`/backup`, admin + operator — opened to operator 2026-08-03, was admin-only)
 
@@ -148,16 +150,17 @@ Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar li
 
 **Consultation-only patients excluded from new-patient counts, but not from revenue attribution (2026-07-22):** `Analytics.tsx` fetches all patients (unfiltered) so revenue features that need a name — Top Revenue Sources, the Daily Earnings calendar's per-patient breakdown — can still resolve a consultation-only patient's name instead of showing "Unknown Patient" (a bug in the initial cut: the fetch was filtered at the query level, breaking name lookups for anyone who'd paid a consultation fee but not converted). Only the "New Patients" stat tile and the new-registrations/returning-vs-new charts use a separately filtered `fullPatients` list (`patient_type !== 'consultation'`) so walk-ins who haven't converted don't inflate those. Consultation-fee invoices/payments are never filtered, so the fee always counts in Revenue Collected/Outstanding — see §3b.
 
-## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01, Statement/Detailed + Resolve action + per-doctor default % added 2026-08-02)
+## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01, Statement/Detailed + Resolve action + per-doctor default % added 2026-08-02; narrowed to Doctor Analytics only 2026-08-08)
 
 Sidebar entry replaces admin's old direct "Doctor Analytics" link, at the same position (below
-Analytics). Two tabs, each independently gated: **Doctor Analytics** — admin, or anyone granted
-`can_access_doctor_analytics`; **Staff Analytics** — admin, or anyone granted
-`can_access_staff_analytics`. A user with only one permission never sees so much as a dead button
-for the other. Doctors keep their own separate, unrelated sidebar entry — "Doctor Analytics",
-self-locked to their own work — untouched by any of this.
+Analytics). Single page, gated on `canAccessDoctorAnalytics()` (admin, or anyone granted
+`can_access_doctor_analytics`) — self-redirects to `/dashboard` otherwise. Doctors keep their own
+separate, unrelated sidebar entry — "Doctor Analytics", self-locked to their own work — untouched by
+any of this. **Staff Analytics used to be a second tab here; it moved into the admin-only HR &
+Payroll page 2026-08-08 (§15c)** — a non-admin holding only `can_access_staff_analytics` no longer
+gets a Financial Analysis sidebar link (it would have redirected them straight back out).
 
-### 15b-i. Doctor Analytics tab — two-part payout ledger
+### 15b-i. Doctor Analytics — two-part payout ledger
 
 Replaced an earlier version that computed each treatment's `Total Paid` as its cost × the parent
 invoice's payment ratio — produced fractional, never-actually-paid amounts (e.g. BDT 3,333.33
@@ -230,18 +233,61 @@ calculations:
 - Export: CSV and PDF, both following whichever view (Statement/Detailed) is currently active on
   screen, so the downloaded file always matches what was visible when it was generated.
 
-### 15b-ii. Staff Analytics tab (new 2026-08-01, migration 045)
+## 15c. HR & Payroll (`/hr-payroll`, admin-only, added 2026-08-08)
 
-- **Roster:** salaried staff (name, phone, designation, monthly salary, active/inactive) — includes
-  any fixed-salary doctors, not just non-clinical staff. Admin CRUD; delete admin-only (matches the
-  `staff_delete`/`staff_salary_payments_delete` RLS policy, which stays admin-only even though
-  select/insert/update are `can_access_staff_analytics`-gated, same convention as
-  `doctor_profiles_delete`).
+Sidebar entry sits directly below Financial Analysis, admin section only (`getAppRole() ===
+'admin'` — self-redirects to `/dashboard` for anyone else, no permission-flag override, unlike
+Financial Analysis). Three in-page tabs: Overview, Leave Requests, Staff & Salary.
+
+### 15c-i. Overview tab
+
+Real figures only, computed by `getHRMetrics()` (`src/lib/hr.ts`) from data already fetched for the
+other two tabs — no extra round-trips, and it reuses `calculateStaffSalarySummary()`
+(`src/lib/staff.ts`, the same function Staff & Salary's own statement uses) so these numbers can
+never drift from what that tab shows for the same month:
+
+- KPI tiles: Total Staff, Active Staff, On Leave Today (Approved leave spanning today), Net Payroll
+  for the current month (with Paid/Due underneath), plus a pending-approvals badge on the Leave
+  Requests tab button.
+- **Payroll Summary** — real base/bonus/deduction/advance totals for the current month (bar chart);
+  empty state, not an invented split, when the month hasn't been generated yet.
+- **Staff Mix** — active staff grouped by designation.
+- **Payroll Trend** — net payable vs. paid across the last 6 generated months.
+- **Recent HR Activity** — `activity_log` rows for `staff`/`staff_salary`/`staff_leave` entity types,
+  newest first (`listHrActivity()`).
+
+### 15c-ii. Leave Requests tab
+
+Admin review surface for `staff_leaves` (migration 052, DATABASE.md). Filter by status
+(Pending/Approved/Rejected/All, defaults to Pending). Approve/Reject opens a small modal for an
+optional decision note; both actions stamp `decided_by`/`decided_at` and write an `activity_log`
+entry. **Add Leave For Staff** lets the admin file a request on a roster member's behalf (e.g. a
+staff member without an app login) — same table, same trigger-filled identity, admin bypasses the
+"own rows only" self-service policy per `staff_leaves_insert_admin`.
+
+Every active `doctor`/`operator` account can submit their own request independently, from **My Leave**
+in their Zone (§13) — see DATABASE.md for the RLS split between admin and self-service rows.
+
+### 15c-iii. Staff & Salary tab (moved from Financial Analysis 2026-08-08, feature itself unchanged since 2026-08-01, migration 045)
+
+Renders the same `StaffAnalyticsSection` component that used to live in Financial Analysis — moved,
+not rewritten, so nothing about how it works changed:
+
+- **Roster:** salaried staff (name, phone, designation, monthly salary, active/inactive, `leave_quota_days`
+  — annual leave entitlement, default 20, migration 053) — includes any fixed-salary doctors, not just
+  non-clinical staff. Admin CRUD; delete admin-only (matches the `staff_delete`/`staff_salary_payments_delete`
+  RLS policy, which stays admin-only even though select/insert/update are `can_access_staff_analytics`-gated,
+  same convention as `doctor_profiles_delete`).
 - **Monthly salary statement:** pick a month, "Generate" seeds one row per active staff member
   (idempotent — re-running never overwrites figures already entered, `UNIQUE(staff_id,
   period_month)`), `base_salary` snapshotted from the roster's current `monthly_salary` at that
   moment so a later raise doesn't rewrite an already-generated month. Record bonus/deduction/
   advance/amount-paid per staff member per month; export CSV/PDF.
+
+Because the page itself is now strictly admin-only, `can_access_staff_analytics` (§1) no longer has
+any effect on who can reach this tab — a non-admin account holding that permission keeps its RLS
+access to the underlying tables but has no UI route to them. Not removed as part of this change;
+flagged for a separate decision.
 
 ## 16. Notifications
 

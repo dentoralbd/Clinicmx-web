@@ -35,6 +35,7 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'authorized_ips', // after app_users: authorized_ips.user_id (migration 027)
   'staff', // no FK dependency — payroll roster (migration 045)
   'staff_salary_payments', // after staff: staff_salary_payments.staff_id (migration 045)
+  'staff_leaves', // after staff/app_users: staff_leaves.staff_id/app_user_id (migration 052)
   'delete_history',
   'edit_history',
   'activity_log',

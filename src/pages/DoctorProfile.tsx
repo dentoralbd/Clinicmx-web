@@ -27,6 +27,7 @@ import {
   Wifi,
   Clock,
   FileCheck2,
+  CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { UsersTab } from '@/components/admin/UsersTab'
@@ -34,6 +35,7 @@ import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
 import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
 import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
 import { OfflineEditsTab } from '@/components/admin/OfflineEditsTab'
+import { MyLeaveTab } from '@/components/hr/MyLeaveTab'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
 import { getVisiblePendingMutations } from '@/lib/offlineSync'
 import { countPendingIpRequests } from '@/lib/ipAccess'
@@ -151,7 +153,7 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'lab_work', label: 'Lab' },
 ]
 
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline' | 'leave'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -173,6 +175,10 @@ function getAvailableTabs(): ZoneTabDef[] {
   // queued edits, not just the admin's own (see canActOn() in offlineSync.ts:
   // admin is the one role allowed to approve/discard someone else's).
   if (getAppRole() === 'admin') tabs.push({ id: 'offline', label: 'Offline Edits', icon: FileCheck2 })
+  // Self-service leave requests — every non-admin account gets this tab,
+  // independent of any other zone permission (admins manage leave from the
+  // HR & Payroll page instead).
+  if (getAppRole() !== 'admin') tabs.push({ id: 'leave', label: 'My Leave', icon: CalendarDays })
   return tabs
 }
 
@@ -570,6 +576,8 @@ export function DoctorProfile() {
       {activeTab === 'hours' && <ClinicHoursTab />}
 
       {activeTab === 'offline' && <OfflineEditsTab />}
+
+      {activeTab === 'leave' && <MyLeaveTab />}
 
       {activeTab === 'profile' && (
       <form onSubmit={handleSave} className="space-y-6">
