@@ -1,11 +1,11 @@
 # DATABASE.md — Database Schema & Migration Guidelines
 
 **Database:** Supabase PostgreSQL, project `https://mgzmxnkrbdawymdviclv.supabase.co` — **live production data**. Storage bucket: `patient-files` (public; created manually in the dashboard).
-**Schema source of truth:** `supabase/migrations/001–050` (applied by hand in the Supabase SQL editor — there is no migration runner or CLI pipeline). TypeScript mirror: `src/lib/database.types.ts` (hand-maintained).
+**Schema source of truth:** `supabase/migrations/001–053` (applied by hand in the Supabase SQL editor — there is no migration runner or CLI pipeline). TypeScript mirror: `src/lib/database.types.ts` (hand-maintained).
 
 ---
 
-## 1. Tables (27)
+## 1. Tables (28)
 
 ### Core clinical
 
@@ -20,12 +20,26 @@
 | `patient_files` | Metadata for Storage uploads: `patient_id`, category (profile photo / clinical image / x-ray), path, name, type. Binary lives in the `patient-files` bucket. |
 | `lab_work` | Lab tab (030): labwork sent to a dental lab (crowns, bridges, dentures, ortho appliances…). `lab_name`, `work_type` (checked enum), `teeth` JSONB (FDI `number[]`), `unit_count`, `shade`, `material`, `pricing_mode` (`per_unit`\|`flat`) + `unit_price`/`flat_price`, `status` (Pending→Sent→Received→Delivered, or Cancelled), `date_sent`/`expected_date`/`date_received`, `is_paid` (boolean — paid **to the lab**, not a patient invoice; no partial-payment tracking), `source_plan_group_id`/`source_treatment_id` (provenance for rows auto-created when a lab-related treatment is saved — see `src/lib/labWork.ts`). `UNIQUE(source_plan_group_id, work_type)` makes the auto-create idempotent. `updated_at` trigger. |
 
-### Staff & payroll (045)
+### Staff & payroll (045, 052)
 
 | Table | Purpose / key columns |
 |---|---|
-| `staff` | Salaried staff roster (Staff Analytics tab, incl. any fixed-salary doctors): name, phone, designation, `monthly_salary`, `is_active`. |
+| `staff` | Salaried staff roster (HR & Payroll → Staff & Salary tab, `/hr-payroll`, admin-only — moved out of Financial Analysis 2026-08-08; incl. any fixed-salary doctors): name, phone, designation, `monthly_salary`, `is_active`, `leave_quota_days` (053, `NUMERIC NOT NULL DEFAULT 20` — annual leave entitlement, admin-set in the same Add/Edit Staff modal; feeds `my_leave_balance()` below). |
 | `staff_salary_payments` | One row per (staff, `period_month` `'YYYY-MM'`), `UNIQUE(staff_id, period_month)` so "generate this month" is an idempotent upsert. `base_salary` is a **snapshot** of `staff.monthly_salary` at row-creation time — a later raise doesn't rewrite an already-generated month's statement. Plus `bonus`, `deduction`, `advance`, `amount_paid`, `payment_date`, notes. |
+| `staff_leaves` (052) | Leave requests: `staff_id`/`app_user_id` (both nullable, resolved by a `BEFORE INSERT` trigger — see §3), `requester_name` (name **snapshot**, not a join, so the admin list renders without giving requesters read access to `staff`), `leave_type` (`Annual`\|`Sick`\|`Casual`\|`Unpaid`\|`Maternity`), `start_date`/`end_date`, `reason`, `status` (`Pending`\|`Approved`\|`Rejected`), `decided_by`/`decided_at`/`decision_note`. Admin reviews from HR & Payroll → Leave Requests; every active app user files their own from Doctor/Operator Zone → My Leave (`src/components/hr/MyLeaveTab.tsx`). |
+
+`my_leave_balance(p_year int)` (053) — `SECURITY DEFINER` RPC, `EXECUTE` granted to `authenticated`,
+returns `(quota_days, used_days, remaining_days)` for the *calling* account only
+(`s.app_user_id = current_app_user_id()`), used_days = Σ inclusive-day-count of that account's
+**Approved** `staff_leaves` rows (any `leave_type` — user decision, 2026-08-08) whose `start_date`
+falls in the given calendar year, default current year. Backs the "Total Leave / Used / Leave Left"
+tiles on My Leave. Deliberately an RPC rather than a `staff` SELECT policy: `staff` also holds
+`monthly_salary`, gated admin/`can_access_staff_analytics`-only (046), and RLS is row-level — a
+"read your own row" policy would hand every linked account its own salary figure along with the
+quota. The function bypasses `staff`'s RLS by ownership (same SECURITY DEFINER pattern as
+`staff_leaves_fill_requester()`, 052) and returns only the three numbers. Zero rows back means the
+calling account isn't linked to any `staff.app_user_id` — the tab treats that as "no quota to show",
+not an error.
 
 ### Templates & reference
 
@@ -91,6 +105,16 @@
     (permissions ->> flag)::boolean`. Admin always passes; anyone else needs that key `true` in
     their `app_users.permissions` JSONB. Used for `can_edit_clinic_profile`, `can_delete`,
     `can_revert`, and (since 046) `can_access_staff_analytics` on `staff`/`staff_salary_payments`.
+    That flag now has no UI surface (HR & Payroll, its only consumer, is strictly admin-only as of
+    2026-08-08) but still gates the tables at the database layer — left in place deliberately, not
+    removed as part of that change.
+  - `current_app_user_id()` — the signed-in account's own `app_users.id`, used by `staff_leaves`'
+    "own rows" policies (052) instead of `app_can`: HR & Payroll is admin-only, but every active
+    account still needs to read/insert/cancel *its own* leave requests regardless of any permission
+    flag. A `BEFORE INSERT` trigger (`staff_leaves_fill_requester()`, `SECURITY DEFINER`) fills
+    `app_user_id`/`staff_id`/`requester_name` from the session and forces `status = 'Pending'` for
+    non-admins before the `WITH CHECK` runs, so a self-service insert can't spoof another account's
+    identity or self-approve.
 - `app_users` itself has **column-level** grants (039 §4) — `SELECT` excludes `password_hash`/
   `password_salt` entirely; a plain `select('*')` fails with `permission denied for column
   password_hash` (must name columns explicitly, see `src/lib/appUsers.ts`). Non-admins can only read
@@ -117,7 +141,7 @@
 
 ## 4. Migration guidelines
 
-1. **Numbering:** next is `051_short_name.sql`. Recent: 037 fixed the `patient_code_seq` pollution incident; 038 added the Supabase-Auth helper functions (`is_active_app_user()`/`is_app_admin()`/`app_can()`); **039 is the RLS lockdown** — see §3 above, the load-bearing one; 040/041 unaccounted for in this doc (check the folder if it matters); 042 added `treatments.doctor_name`/`doctor_share_pct`; 043 fixed migration-042 fallout (RLS filter injection response, `app_users_select_roster` policy) + unified default share to 50%; 044 revised that default to 30% same day per user decision; 045 added `staff`/`staff_salary_payments`; 046 added `app_can('can_access_staff_analytics')` RLS to those two tables; 047 added `treatments.completed_at` + its auto-stamp trigger; 048 added `app_users.default_share_pct`; 049 added the column-level grant 048 forgot (see §3's gotcha above); 050 added `patients.followup_reminder_sent_at` (Dashboard treatment follow-up card — plain table-level grant already covers `patients`, no separate grant migration needed, unlike `app_users`). Watch out — history already contains two duplicate numbers (`003_add_patient_code` / `003_patient_files`, and `014_add_patient_weight` / `014_prescription_multi_entry_fields`). Don't add more; check the folder before numbering.
+1. **Numbering:** next is `054_short_name.sql`. Recent: 037 fixed the `patient_code_seq` pollution incident; 038 added the Supabase-Auth helper functions (`is_active_app_user()`/`is_app_admin()`/`app_can()`); **039 is the RLS lockdown** — see §3 above, the load-bearing one; 040/041 unaccounted for in this doc (check the folder if it matters); 042 added `treatments.doctor_name`/`doctor_share_pct`; 043 fixed migration-042 fallout (RLS filter injection response, `app_users_select_roster` policy) + unified default share to 50%; 044 revised that default to 30% same day per user decision; 045 added `staff`/`staff_salary_payments`; 046 added `app_can('can_access_staff_analytics')` RLS to those two tables; 047 added `treatments.completed_at` + its auto-stamp trigger; 048 added `app_users.default_share_pct`; 049 added the column-level grant 048 forgot (see §3's gotcha above); 050 added `patients.followup_reminder_sent_at` (Dashboard treatment follow-up card — plain table-level grant already covers `patients`, no separate grant migration needed, unlike `app_users`); 051 added `get_storage_usage_stats()` (§2a); 052 added `staff_leaves` + its `staff_leaves_fill_requester()` trigger and self-service RLS (§3) for the HR & Payroll page / My Leave tab; 053 added `staff.leave_quota_days` (plain table-level grant already covers `staff`, same as 050's `patients` case — no separate grant migration) plus the `my_leave_balance()` RPC (§1) backing the My Leave balance tiles. Watch out — history already contains two duplicate numbers (`003_add_patient_code` / `003_patient_files`, and `014_add_patient_weight` / `014_prescription_multi_entry_fields`). Don't add more; check the folder before numbering.
 2. **Idempotent style:** use `IF NOT EXISTS` / guarded `DO $$` blocks (the established pattern) so re-running in the SQL editor is safe.
 3. **Application is manual:** paste into the Supabase SQL editor. There is no `supabase db push`, no migration state table — the file numbering is the only record. Note in the PR/commit when a migration has actually been applied to prod.
 4. **Live-data protocol (mandatory):** staging-first (restore a nightly backup into a scratch Supabase project via `scripts/backup/restore.mjs`), explicit user sign-off, fresh manual backup immediately before applying, written rollback statement alongside the migration.
@@ -127,7 +151,7 @@
 
 ## 5. Backups & restore
 
-- Nightly: all 31 tables → zipped JSON + `patient-files` mirror → Google Drive (3:00 AM BDT; workflow live only on `gsbanikudc-byte/Clinicmx-web`, and per the workspace-level CLAUDE.md this scheduled run is retired 2026-07-20 in favor of the in-app mechanism below — the script itself still works if run by hand). Daily/weekly/monthly tiers, retention, verification, anomaly detection, encryption (2026-07-18). **2026-08-01: `staff`/`staff_salary_payments` (migration 045, shipped same day) had been left out of both `scripts/backup/lib.mjs`'s `TABLES_IN_DEPENDENCY_ORDER` and the in-app `BACKUP_TABLES` (`src/lib/deviceBackup.ts`) — found and fixed while writing this doc entry, per rule 6 above. Restores normally (no `app_users`-style skip; it's plain business data, not credentials).** **2026-08-03: same failure mode found again on audit — `backup_settings` (031) and `app_notifications` (032) had never been in either table list despite being live and RLS-readable for months; also `app_users.default_share_pct` (048) was silently dropped from the in-app backup's own hand-maintained column allowlist (`TABLE_SELECT_COLUMNS`, needed because that table can't use `select('*')` under the RLS lockdown). The local script (`scripts/backup/lib.mjs`) additionally had its own separate gap the in-app backup didn't: `appointment_schedule_windows`/`appointment_schedule_date_overrides` (041, the live slot-scheduling tables) were missing from it alone — the in-app list already had both right. All fixed same day in both `deviceBackup.ts` and `scripts/backup/lib.mjs`. (A fifth suspected gap, `appointment_settings` from migration 040, turned out to be a false alarm — that table was superseded and `DROP TABLE`'d by migration 041 the same day it landed, so it correctly has never been in either backup list; verified live against prod, where querying it 404s. Don't add it back.) Given the real gaps have now happened twice, treat "add the new table/column to both backup lists, and check the two lists still agree with each other" as a mandatory step of shipping any schema change, not an optional follow-up.**
+- Nightly: all 32 tables → zipped JSON + `patient-files` mirror → Google Drive (3:00 AM BDT; workflow live only on `gsbanikudc-byte/Clinicmx-web`, and per the workspace-level CLAUDE.md this scheduled run is retired 2026-07-20 in favor of the in-app mechanism below — the script itself still works if run by hand). Daily/weekly/monthly tiers, retention, verification, anomaly detection, encryption (2026-07-18). **2026-08-01: `staff`/`staff_salary_payments` (migration 045, shipped same day) had been left out of both `scripts/backup/lib.mjs`'s `TABLES_IN_DEPENDENCY_ORDER` and the in-app `BACKUP_TABLES` (`src/lib/deviceBackup.ts`) — found and fixed while writing this doc entry, per rule 6 above. Restores normally (no `app_users`-style skip; it's plain business data, not credentials).** **2026-08-03: same failure mode found again on audit — `backup_settings` (031) and `app_notifications` (032) had never been in either table list despite being live and RLS-readable for months; also `app_users.default_share_pct` (048) was silently dropped from the in-app backup's own hand-maintained column allowlist (`TABLE_SELECT_COLUMNS`, needed because that table can't use `select('*')` under the RLS lockdown). The local script (`scripts/backup/lib.mjs`) additionally had its own separate gap the in-app backup didn't: `appointment_schedule_windows`/`appointment_schedule_date_overrides` (041, the live slot-scheduling tables) were missing from it alone — the in-app list already had both right. All fixed same day in both `deviceBackup.ts` and `scripts/backup/lib.mjs`. (A fifth suspected gap, `appointment_settings` from migration 040, turned out to be a false alarm — that table was superseded and `DROP TABLE`'d by migration 041 the same day it landed, so it correctly has never been in either backup list; verified live against prod, where querying it 404s. Don't add it back.) Given the real gaps have now happened twice, treat "add the new table/column to both backup lists, and check the two lists still agree with each other" as a mandatory step of shipping any schema change, not an optional follow-up.** **2026-08-08: `staff_leaves` (migration 052) added to both lists in the same change that created the table, per that rule.**
 - In-app: `/backup` page — device JSON download/restore (dry-run first) + one-tap Drive upload.
 - Restore tooling: `scripts/backup/restore.mjs`, dry-run by default, `--confirm` to write.
 - **Incident history:** a real invoice was accidentally deleted 2026-07-02 (pre-backup era) — the reason this system exists. Assume no second chances: back up before risky operations.

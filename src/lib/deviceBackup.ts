@@ -67,6 +67,7 @@ export const BACKUP_TABLES = [
   'authorized_ips',
   'staff', // payroll roster (migration 045, 2026-08-01)
   'staff_salary_payments', // after staff: staff_salary_payments.staff_id
+  'staff_leaves', // after staff/app_users: staff_leaves.staff_id/app_user_id (migration 052, 2026-08-08)
   'delete_history',
   'edit_history',
   'activity_log',

@@ -16,6 +16,7 @@ export interface StaffRecord {
   is_active: boolean
   joined_on: string | null
   notes: string | null
+  leave_quota_days: number
   created_at: string
   updated_at: string
 }
@@ -36,7 +37,7 @@ export interface StaffSalaryPayment {
 }
 
 const STAFF_COLUMNS =
-  'id, full_name, phone, designation, monthly_salary, app_user_id, is_active, joined_on, notes, created_at, updated_at'
+  'id, full_name, phone, designation, monthly_salary, app_user_id, is_active, joined_on, notes, leave_quota_days, created_at, updated_at'
 const PAYMENT_COLUMNS =
   'id, staff_id, period_month, base_salary, bonus, deduction, advance, amount_paid, payment_date, notes, created_at, updated_at'
 
@@ -54,6 +55,7 @@ export interface StaffInput {
   app_user_id?: string | null
   joined_on?: string | null
   notes?: string | null
+  leave_quota_days?: number
 }
 
 function staffPayload(input: StaffInput) {
@@ -65,6 +67,7 @@ function staffPayload(input: StaffInput) {
     app_user_id: input.app_user_id || null,
     joined_on: input.joined_on || null,
     notes: input.notes?.trim() || null,
+    leave_quota_days: input.leave_quota_days ?? 20,
   }
 }
 

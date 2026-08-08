@@ -23,6 +23,7 @@ const BackupRestore = lazy(() => import('./pages/BackupRestore').then(m => ({ de
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
 const DoctorAnalytics = lazy(() => import('./pages/DoctorAnalytics').then(m => ({ default: m.DoctorAnalytics })))
 const FinancialAnalysis = lazy(() => import('./pages/FinancialAnalysis').then(m => ({ default: m.FinancialAnalysis })))
+const HRPayroll = lazy(() => import('./pages/HRPayroll').then(m => ({ default: m.HRPayroll })))
 const OfflineOutbox = lazy(() => import('./pages/OfflineOutbox').then(m => ({ default: m.OfflineOutbox })))
 
 function PageLoader() {
@@ -74,6 +75,7 @@ function App() {
               <Route path="analytics" element={<Analytics />} />
               <Route path="doctor-analytics" element={<DoctorAnalytics />} />
               <Route path="financial-analysis" element={<FinancialAnalysis />} />
+              <Route path="hr-payroll" element={<HRPayroll />} />
               <Route path="offline-outbox" element={<RequirePage page="patients"><OfflineOutbox /></RequirePage>} />
             </Route>
           </Routes>

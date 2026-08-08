@@ -231,6 +231,7 @@ export interface Database {
           is_active: boolean
           joined_on: string | null
           notes: string | null
+          leave_quota_days: number
           created_at: string
           updated_at: string
         }
@@ -244,6 +245,7 @@ export interface Database {
           is_active?: boolean
           joined_on?: string | null
           notes?: string | null
+          leave_quota_days?: number
           created_at?: string
           updated_at?: string
         }
@@ -257,6 +259,7 @@ export interface Database {
           is_active?: boolean
           joined_on?: string | null
           notes?: string | null
+          leave_quota_days?: number
           created_at?: string
           updated_at?: string
         }
@@ -319,6 +322,72 @@ export interface Database {
             columns: ['staff_id']
             isOneToOne: false
             referencedRelation: 'staff'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      staff_leaves: {
+        Row: {
+          id: string
+          staff_id: string | null
+          app_user_id: string | null
+          requester_name: string
+          leave_type: string
+          start_date: string
+          end_date: string
+          reason: string | null
+          status: string
+          decided_by: string | null
+          decided_at: string | null
+          decision_note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          staff_id?: string | null
+          app_user_id?: string | null
+          requester_name?: string
+          leave_type: string
+          start_date: string
+          end_date: string
+          reason?: string | null
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          staff_id?: string | null
+          app_user_id?: string | null
+          requester_name?: string
+          leave_type?: string
+          start_date?: string
+          end_date?: string
+          reason?: string | null
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_leaves_staff_id_fkey'
+            columns: ['staff_id']
+            isOneToOne: false
+            referencedRelation: 'staff'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'staff_leaves_app_user_id_fkey'
+            columns: ['app_user_id']
+            isOneToOne: false
+            referencedRelation: 'app_users'
             referencedColumns: ['id']
           }
         ]
