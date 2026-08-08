@@ -217,8 +217,8 @@ export function OfflineEditsTab() {
     setActionError(null)
     try {
       if (row.groupId) {
-        const { failed } = await syncGroup(row.groupId)
-        if (failed > 0) setActionError('Part of this group failed to sync — see the error below.')
+        const { failed, deferred } = await syncGroup(row.groupId)
+        if (failed > 0 || deferred > 0) setActionError('Part of this group was not sent — see the note below.')
       } else {
         const ok = await syncMutationById(row.items[0].id)
         if (!ok) setActionError('Failed to sync this item — see the error below.')
@@ -239,8 +239,8 @@ export function OfflineEditsTab() {
     setBusyKey('__all__')
     setActionError(null)
     try {
-      const { failed } = await syncVisiblePending()
-      if (failed > 0) setActionError(`${failed} item(s) failed to sync — expand a row to see the error.`)
+      const { failed, deferred } = await syncVisiblePending()
+      if (failed > 0 || deferred > 0) setActionError(`${failed + deferred} item(s) were not sent — expand a row to see the note.`)
       await loadMutations()
     } catch (err: any) {
       setActionError(`Failed to sync all: ${err?.message || 'Server error'}`)
