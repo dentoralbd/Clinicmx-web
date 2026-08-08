@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { queryClient, idbPersister, CACHE_BUSTER, shouldPersistQuery } from './lib/queryClient'
 import { DashboardLayout } from './components/layout/DashboardLayout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { RequirePage } from './components/RequirePage'
@@ -22,8 +23,7 @@ const BackupRestore = lazy(() => import('./pages/BackupRestore').then(m => ({ de
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
 const DoctorAnalytics = lazy(() => import('./pages/DoctorAnalytics').then(m => ({ default: m.DoctorAnalytics })))
 const FinancialAnalysis = lazy(() => import('./pages/FinancialAnalysis').then(m => ({ default: m.FinancialAnalysis })))
-
-const queryClient = new QueryClient()
+const OfflineOutbox = lazy(() => import('./pages/OfflineOutbox').then(m => ({ default: m.OfflineOutbox })))
 
 function PageLoader() {
   return (
@@ -35,7 +35,18 @@ function PageLoader() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister: idbPersister,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        buster: CACHE_BUSTER,
+        dehydrateOptions: {
+          shouldDehydrateMutation: () => false,
+          shouldDehydrateQuery: (query) => shouldPersistQuery(query),
+        },
+      }}
+    >
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -63,11 +74,12 @@ function App() {
               <Route path="analytics" element={<Analytics />} />
               <Route path="doctor-analytics" element={<DoctorAnalytics />} />
               <Route path="financial-analysis" element={<FinancialAnalysis />} />
+              <Route path="offline-outbox" element={<RequirePage page="patients"><OfflineOutbox /></RequirePage>} />
             </Route>
           </Routes>
         </Suspense>
       </BrowserRouter>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   )
 }
 

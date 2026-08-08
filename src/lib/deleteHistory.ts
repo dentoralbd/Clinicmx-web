@@ -5,6 +5,7 @@ import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
 import { extractTreatmentIdsFromInvoiceItems } from './billing'
 import { advanceTreatmentStatusOnBilling } from './invoiceSync'
+import { enqueueMutation } from './offlineSync'
 
 export type DeletedEntityType = TrackedEntityType | 'patient_file'
 
@@ -17,16 +18,24 @@ export interface DeletionLogInput {
   payload: object
   /** Optional human-readable summary passed through to the activity log. */
   details?: string | null
+  /** When this log is one step of a larger offline mutation (e.g. "delete this treatment"), the shared groupId + this entry's sync position — keeps the log-before-delete order when the group syncs later. */
+  offlineGroup?: { groupId: string; seq: number }
 }
 
 /**
  * Records a full snapshot of a record into delete_history. Must be called and
  * awaited BEFORE the actual delete (log-first, delete-second) so nothing can
- * be deleted without a trace. Throws if the log insert fails — callers should
- * abort the deletion in that case.
+ * be deleted without a trace.
+ *
+ * Offline (or on a genuine connectivity failure), the snapshot is queued to
+ * the offline outbox instead of thrown away — it still syncs before the
+ * caller's own deletion when both share `offlineGroup`. A real server-side
+ * rejection (RLS denial, constraint violation) is NOT swallowed: it still
+ * throws so the caller aborts the deletion rather than removing a record
+ * with no audit trail.
  */
 export async function logDeletion(input: DeletionLogInput) {
-  const { error } = await supabase.from('delete_history').insert({
+  const payload = {
     entity_type: input.entityType,
     entity_id: input.entityId,
     entity_label: input.entityLabel ?? null,
@@ -34,10 +43,33 @@ export async function logDeletion(input: DeletionLogInput) {
     patient_name: input.patientName ?? null,
     payload: input.payload as Json,
     deleted_by: getAuditActor(),
-  })
-  if (error) {
-    throw new Error(`Failed to record delete history: ${error.message}`)
   }
+
+  const enqueueOffline = () =>
+    enqueueMutation({
+      table: 'delete_history',
+      action: 'insert',
+      payload,
+      meta: { patientId: input.patientId, label: `Delete audit: ${input.entityLabel || input.entityType}` },
+      groupId: input.offlineGroup?.groupId,
+      seq: input.offlineGroup?.seq ?? 0,
+    })
+
+  if (!navigator.onLine) {
+    await enqueueOffline()
+  } else {
+    try {
+      const { error } = await supabase.from('delete_history').insert(payload)
+      if (error) throw error
+    } catch (err: any) {
+      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+        await enqueueOffline()
+      } else {
+        throw new Error(`Failed to record delete history: ${err.message}`)
+      }
+    }
+  }
+
   logActivity({
     action: 'delete',
     entityType: input.entityType,

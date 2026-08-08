@@ -731,6 +731,11 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
           {combined && dueOnly && (
             <div className="text-sm text-gray-600">Outstanding invoices only</div>
           )}
+          {!combined && invoices[0]?.invoice_number?.startsWith('INV-TMP-') && (
+            <div className="mt-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full inline-block px-3 py-1">
+              Provisional invoice created offline — the invoice number will be adjusted automatically once the system is back online.
+            </div>
+          )}
         </div>
 
         {/* ── Patient Info ── */}

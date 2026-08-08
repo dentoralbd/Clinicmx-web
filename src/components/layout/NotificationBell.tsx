@@ -12,6 +12,7 @@ import {
 import { getAppRole, getAppUser, formatAuditActor } from '@/lib/appSession'
 import { countPendingIpRequests, listPendingIpRequestsForUser } from '@/lib/ipAccess'
 import { listRecentBillingAlerts, getBillingAlertsSeen, setBillingAlertsSeen } from '@/lib/billingAlerts'
+import { getVisiblePendingMutations } from '@/lib/offlineSync'
 
 /** Synthetic, never-persisted entry derived live from Supabase (network
  * access status, billing changes) — always identical across every device
@@ -97,21 +98,51 @@ export function NotificationBell() {
             unread: row.occurred_at > seen,
           }))
 
-          setLiveEntries([...ipEntries, ...billingEntries])
+          const outboxList = await getVisiblePendingMutations().catch(() => [])
+          const outboxEntries: LiveEntry[] =
+            outboxList.length > 0
+              ? [
+                  {
+                    id: 'live-outbox-pending',
+                    kind: 'ip',
+                    title: 'Offline edits pending verification',
+                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on your device. Click to verify & sync to server.`,
+                    linkTo: '/offline-outbox',
+                    unread: true,
+                  },
+                ]
+              : []
+
+          setLiveEntries([...outboxEntries, ...ipEntries, ...billingEntries])
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
-          const rows = await listPendingIpRequestsForUser(userId)
+          const [rows, outboxList] = await Promise.all([
+            listPendingIpRequestsForUser(userId).catch(() => []),
+            getVisiblePendingMutations().catch(() => []),
+          ])
           if (cancelled) return
-          setLiveEntries(
-            rows.map((row) => ({
-              id: `live-ip-${row.id}`,
-              kind: 'ip',
-              title: 'Access pending on another device',
-              message: `Your login from IP ${row.ip} is waiting for admin approval.`,
-              unread: true,
-            }))
-          )
+          const outboxEntries: LiveEntry[] =
+            outboxList.length > 0
+              ? [
+                  {
+                    id: 'live-outbox-pending',
+                    kind: 'ip',
+                    title: 'Offline edits pending verification',
+                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on your device. Click to verify & sync to server.`,
+                    linkTo: '/offline-outbox',
+                    unread: true,
+                  },
+                ]
+              : []
+          const userIpEntries: LiveEntry[] = rows.map((row) => ({
+            id: `live-ip-${row.id}`,
+            kind: 'ip',
+            title: 'Access pending on another device',
+            message: `Your login from IP ${row.ip} is waiting for admin approval.`,
+            unread: true,
+          }))
+          setLiveEntries([...outboxEntries, ...userIpEntries])
         }
       } catch {
         // Best-effort — a failed poll must not break the bell.
@@ -119,9 +150,11 @@ export function NotificationBell() {
     }
 
     refreshLive()
+    window.addEventListener('clinicmx_outbox_updated', refreshLive)
     const interval = setInterval(refreshLive, LIVE_POLL_MS)
     return () => {
       cancelled = true
+      window.removeEventListener('clinicmx_outbox_updated', refreshLive)
       clearInterval(interval)
     }
   }, [])

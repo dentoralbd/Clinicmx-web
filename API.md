@@ -10,7 +10,7 @@ ClinicMx has **no REST API of its own**. The client talks to Supabase directly w
 - **~198 direct callsites across ~30 files** (~92 selects, ~123 writes, 1 RPC, 3 storage calls). Every page fetches through a consolidated loader function (`loadDashboardData`, `loadPatients`, `loadAppointments`/`loadWeekAppointments`, `PatientProfile.loadPatientData` — an 8-query `Promise.all` re-invoked after every write). Writes are inline in page/modal handlers.
 - RPC: `generate_patient_code` (via `lib/patientCode.ts`).
 - Storage: `patient-files` bucket, upload/list/delete from `PatientProfile.tsx` only.
-- React Query: mounted app-wide, currently used only by `components/admin/UsersTab.tsx`.
+- React Query: mounted app-wide. As of branch `offline-m1` (2026-08-07), also used by `src/repositories/` for Dashboard/Patients/Appointments/patient-bundle reads (see `src/lib/queryClient.ts`, `src/repositories/keys.ts`), on top of its original use in `components/admin/UsersTab.tsx`.
 
 ### Shared write-path helpers (call these, don't reimplement)
 
@@ -23,6 +23,8 @@ ClinicMx has **no REST API of its own**. The client talks to Supabase directly w
 | `lib/billingAlerts.ts` (2026-07-20) | `listRecentBillingAlerts()` — recent invoice/payment edits/deletes (last 7 days, any actor) for the admin notification bell's live poll; never throws. `getBillingAlertsSeen`/`setBillingAlertsSeen` — per-device localStorage watermark for the bell's unread state, advanced only when the bell is opened. |
 | `lib/patients.ts`, `lib/patientCode.ts` | Patient create + unified search (name/phone/code, phone-normalized); server code assignment. |
 | `lib/appUsers.ts` | Staff CRUD + PBKDF2 hash/verify + identifier normalization. |
+| `lib/offlineSync.ts` (2026-08-07, branch `offline-m1`) | `enqueueMutation`/`syncMutationById`/`syncGroup`/`syncAll`/`discardMutation` — the offline outbox. Mutations optionally share a `groupId` + `seq` to sync as an ordered, all-or-blocked unit (e.g. invoice → treatment link → payment). Manual sync only — nothing auto-syncs on reconnect. Account-scoped: `getVisiblePendingMutations`/`syncVisiblePending`/`clearVisiblePending` restrict to the current session's own queued edits unless admin (`canActOn()`); `syncMutationById`/`discardMutation`/`syncGroup` all no-op for a mutation the caller isn't allowed to touch. See file header comments for the specific bugs this rewrite fixes vs. the redesign prototype it was ported from. |
+| `lib/invoiceNumbering.ts` (2026-08-07) → `insertInvoiceWithAutoNumber` | The 3-tier auto-number-with-retry insert, extracted from `InvoiceModal`'s online submit so the offline sync path (finalizing a provisional `INV-TMP-*` invoice) uses the exact same numbering contract instead of a separate, potentially racy implementation. |
 | `lib/ipAccess.ts` | Per-user login network gate (`authorized_ips`): `fetchClientIp` (ipify, 3s, null on failure), `checkIpAccess`, `requestIpApproval` (never call on a denied row), admin approve/deny/remove (approve trims to 5 per user). Decisions log to `activity_log` as `ip_access`. |
 | `lib/doctorProfile.ts` | Upsert + encrypted local mirror + offline fallback — the template for future repo design. |
 

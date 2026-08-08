@@ -2,7 +2,7 @@
 
 **App:** ClinicMx — dental clinic management system for a solo dental clinic in Bangladesh.
 **Live site:** https://clinicmx-web.pages.dev/ (Cloudflare Pages, auto-deploys from `main`).
-**Status of this doc:** describes the codebase as of 2026-07-18. This is the broad technical reference; for the offline/Android implementation plan see [OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md) (authoritative for that work).
+**Status of this doc:** describes the codebase as of 2026-07-18. This is the broad technical reference; for the offline/Android implementation plan see [OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md) (authoritative for that work — as of 2026-08-07 that work is implemented on branch `offline-m1`, not yet merged; see its status note and [FEATURES.md](FEATURES.md) §1b for the current behavior contract).
 
 **Documentation set:**
 | Doc | Purpose |

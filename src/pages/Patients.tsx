@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Eye, Users, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
 import { SuggestTextarea } from '@/components/SuggestField'
 import { supabase } from '@/lib/supabase'
+import { qk } from '@/repositories/keys'
+import { fetchPatientsList } from '@/repositories/patientsRepo'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
@@ -34,8 +37,10 @@ function calculateAgeFromDate(dateOfBirth: string) {
 
 export function Patients() {
   const navigate = useNavigate()
-  const [patients, setPatients] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: patients = [], isLoading: loading, refetch: loadPatients } = useQuery({
+    queryKey: qk.patients.list,
+    queryFn: fetchPatientsList,
+  })
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingPatientCode, setEditingPatientCode] = useState<string | null>(null)
@@ -54,26 +59,6 @@ export function Patients() {
     medical_history: '',
     notes: '',
   })
-
-  useEffect(() => {
-    loadPatients()
-  }, [])
-
-  async function loadPatients() {
-    try {
-      setLoading(true)
-      const { data } = await supabase
-        .from('patients')
-        .select('*')
-        .neq('patient_type', 'consultation')
-        .order('created_at', { ascending: false })
-      setPatients(data || [])
-    } catch (error) {
-      console.error('Error loading patients:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

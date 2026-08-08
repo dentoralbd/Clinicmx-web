@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2 } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, canAccessStaffAnalytics, type AppPageKey } from '@/lib/appSession'
+import { getVisiblePendingMutations } from '@/lib/offlineSync'
 
 interface SidebarProps {
   isOpen: boolean
@@ -38,6 +39,7 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
           { icon: Stethoscope, label: 'Consultation', path: '/consultations', page: 'patients' },
           { icon: Activity, label: 'Treatments', path: '/treatments', page: 'treatments' },
           { icon: FlaskConical, label: 'Lab', path: '/lab', page: 'lab' },
+          { icon: FileCheck2, label: 'Verify Offline Edits', path: '/offline-outbox', page: 'patients' },
         ],
       },
       { icon: Calendar, label: 'Appointments', path: '/appointments', page: 'appointments' },
@@ -94,6 +96,23 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
         ),
     }))
     .filter((group) => group.items.length > 0)
+  const [outboxCount, setOutboxCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      getVisiblePendingMutations().then((list) => {
+        if (!cancelled) setOutboxCount(list.length)
+      })
+    }
+    refresh()
+    window.addEventListener('clinicmx_outbox_updated', refresh)
+    return () => {
+      cancelled = true
+      window.removeEventListener('clinicmx_outbox_updated', refresh)
+    }
+  }, [])
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {}
     for (const group of menuGroups) {
@@ -196,6 +215,11 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                                       <child.icon className="w-5 h-5" />
                                     </span>
                                     <span>{child.label}</span>
+                                    {child.path === '/offline-outbox' && outboxCount > 0 && (
+                                      <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white animate-pulse">
+                                        {outboxCount}
+                                      </span>
+                                    )}
                                   </>
                                 )}
                               </NavLink>

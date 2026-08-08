@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock, List, LayoutGrid } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { qk } from '@/repositories/keys'
+import { fetchDayAppointments, fetchWeekAppointments } from '@/repositories/appointmentsRepo'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { RescheduleModal } from '@/components/RescheduleModal'
@@ -47,11 +50,36 @@ export function Appointments() {
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+  const selectedDateIso = format(selectedDate, 'yyyy-MM-dd')
+  const weekStartIso = format(weekStart, 'yyyy-MM-dd')
+
+  const {
+    data: dayAppointmentsData,
+    isLoading: dayLoading,
+    isError: dayIsError,
+    refetch: refetchDayAppointments,
+  } = useQuery({
+    queryKey: qk.appointments.day(selectedDateIso),
+    queryFn: () => fetchDayAppointments(selectedDateIso),
+  })
+
+  const {
+    data: weekAppointmentsData,
+    refetch: refetchWeekAppointments,
+  } = useQuery({
+    queryKey: qk.appointments.week(weekStartIso),
+    queryFn: () => fetchWeekAppointments(weekStartIso),
+  })
 
   useEffect(() => {
-    loadAppointments()
-    loadWeekAppointments()
-  }, [selectedDate])
+    setAppointments((dayAppointmentsData as any) || [])
+    setLoading(dayLoading)
+    setError(dayIsError ? 'Failed to load appointments' : null)
+  }, [dayAppointmentsData, dayLoading, dayIsError])
+
+  useEffect(() => {
+    setWeekAppointments((weekAppointmentsData as any) || [])
+  }, [weekAppointmentsData])
 
   useEffect(() => {
     loadScheduleContext(selectedDate, selectedDate)
@@ -60,52 +88,11 @@ export function Appointments() {
   }, [selectedDate])
 
   async function loadWeekAppointments() {
-    try {
-      const weekEnd = addDays(weekStart, 6)
-      weekEnd.setHours(23, 59, 59, 999)
-      const { data, error: err } = await supabase
-        .from('appointments')
-        .select('date_time, status')
-        .gte('date_time', weekStart.toISOString())
-        .lte('date_time', weekEnd.toISOString())
-      if (err) throw err
-      setWeekAppointments((data as any) || [])
-    } catch (err) {
-      console.error('Error loading week appointments:', err)
-      setError('Failed to load week appointments')
-    }
+    await refetchWeekAppointments()
   }
 
   async function loadAppointments() {
-    try {
-      setLoading(true)
-      setError(null)
-       
-      const startOfDay = new Date(selectedDate)
-      startOfDay.setHours(0, 0, 0, 0)
-       
-      const endOfDay = new Date(selectedDate)
-      endOfDay.setHours(23, 59, 59, 999)
-
-      const { data, error: err } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          patients (first_name, last_name, date_of_birth, phone)
-        `)
-        .gte('date_time', startOfDay.toISOString())
-        .lte('date_time', endOfDay.toISOString())
-        .order('date_time')
-
-      if (err) throw err
-      setAppointments(data || [])
-    } catch (err) {
-      console.error('Error loading appointments:', err)
-      setError('Failed to load appointments')
-      setAppointments([])
-    } finally {
-      setLoading(false)
-    }
+    await refetchDayAppointments()
   }
 
   async function updateStatus(id: string, newStatus: string) {

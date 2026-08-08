@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { qk } from '@/repositories/keys'
+import { fetchPatientBundle } from '@/repositories/patientProfileRepo'
+import { saveTreatmentPlan, deleteTreatmentRow as deleteTreatmentRowRepo } from '@/repositories/treatmentsRepo'
+import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
+import { queryClient } from '@/lib/queryClient'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
@@ -547,9 +553,44 @@ export function PatientProfile() {
   // falls back to the 30% clinic default wherever this is read.
   const [doctorSharePctMap, setDoctorSharePctMap] = useState<Record<string, number>>({})
 
+  const { data: bundleData, isError: bundleIsError, error: bundleError, refetch: refetchBundle } = useQuery({
+    queryKey: qk.patients.bundle(id || ''),
+    queryFn: () => fetchPatientBundle(id || ''),
+    enabled: !!id,
+    // The bundle is a single atomic 8-way fetch (+ a payments follow-up) keyed
+    // on this specific patient id — a rejection here is either "patient not
+    // found"/RLS-denied (retrying won't help) or a real network drop (which
+    // networkMode: 'online' already pauses-and-resumes on reconnect without
+    // needing retry's backoff loop on top). Retrying on top of that backoff
+    // risks the query settling into a permanently "paused" fetchStatus if the
+    // online check flaps mid-retry, which would spin the loading skeleton
+    // forever instead of ever reaching an error/"Patient not found" state.
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (bundleData) {
+      setPatient(bundleData.patient)
+      setVisits(bundleData.visits)
+      setDentalRecords(bundleData.dental)
+      setTreatments(bundleData.treatments)
+      setPrescriptions(bundleData.prescriptions)
+      setAppointments(bundleData.appointments)
+      setInvoices(bundleData.invoices)
+      setPayments(bundleData.payments)
+      setFiles(bundleData.files)
+      setLoading(false)
+    } else if (bundleIsError) {
+      // Matches the original try/catch/finally: a failed fetch still clears
+      // the spinner so the page can render its "not found"/empty state
+      // instead of loading forever.
+      console.error('Error loading patient:', bundleError)
+      setLoading(false)
+    }
+  }, [bundleData, bundleIsError, bundleError])
+
   useEffect(() => {
     if (id) {
-      loadPatientData()
       loadTemplates()
     }
     setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
@@ -622,73 +663,7 @@ export function PatientProfile() {
   }, [searchParams])
 
   async function loadPatientData() {
-    if (!id) return
-    try {
-      setLoading(true)
-      
-      const [
-        { data: patientData },
-        { data: visitsData },
-        { data: dentalData },
-        { data: treatmentsData },
-        { data: prescriptionsData },
-        { data: appointmentsData },
-        { data: invoicesData },
-        { data: filesData },
-      ] = await Promise.all([
-        supabase.from('patients').select('*').eq('id', id).single(),
-        supabase
-          .from('patient_visits')
-          .select('*')
-          .eq('patient_id', id)
-          .order('visit_date', { ascending: false }),
-        supabase.from('dental_records').select('*').eq('patient_id', id),
-        supabase
-          .from('treatments')
-          .select('*')
-          .eq('patient_id', id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('prescriptions')
-          .select('*')
-          .eq('patient_id', id)
-          .order('prescribed_date', { ascending: false }),
-        supabase
-          .from('appointments')
-          .select('*')
-          .eq('patient_id', id)
-          .order('date_time', { ascending: false }),
-        supabase
-          .from('invoices')
-          .select('*')
-          .eq('patient_id', id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('patient_files')
-          .select('*')
-          .eq('patient_id', id)
-          .order('created_at', { ascending: false }),
-      ])
-
-      const invoiceIds = (invoicesData || []).map((inv: any) => inv.id)
-      const { data: paymentsData } = invoiceIds.length
-        ? await supabase.from('payments').select('*').in('invoice_id', invoiceIds)
-        : { data: [] }
-
-      setPatient(patientData)
-      setVisits(visitsData || [])
-      setDentalRecords(dentalData || [])
-      setTreatments(treatmentsData || [])
-      setPrescriptions(prescriptionsData || [])
-      setAppointments(appointmentsData || [])
-      setInvoices(invoicesData || [])
-      setPayments(paymentsData || [])
-      setFiles(filesData || [])
-    } catch (error) {
-      console.error('Error loading patient:', error)
-    } finally {
-      setLoading(false)
-    }
+    await refetchBundle()
   }
 
   async function loadTemplates() {
@@ -779,21 +754,11 @@ export function PatientProfile() {
           treatment_plan_group_id: planGroupId,
         }))
       })
-      const { error } = await supabase.from('treatments').insert(rows)
-      if (error) throw error
-
-      // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
-      // lab-related items in this plan (Crown, Bridge, Denture, etc.). Never
-      // throws and never blocks — the treatments above are already committed.
-      autoCreateLabWorkForTreatments({ patientId: id, planGroupId, rows })
-
-      logActivity({
-        action: 'create',
-        entityType: 'treatment',
-        entityLabel: treatmentPlanForm.items.map((item) => item.treatment_type).filter(Boolean).join(', '),
+      await saveTreatmentPlan({
         patientId: id,
+        planGroupId,
+        rows,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
-        details: `${rows.length} planned item(s)`,
       })
       setShowTreatmentPlanForm(false)
       setTreatmentPlanForm({
@@ -967,18 +932,16 @@ export function PatientProfile() {
       ? 'Delete this treatment? Its invoice will be updated to remove it.'
       : 'Delete this treatment?')) return
     try {
-      await logDeletion({
-        entityType: 'treatment',
-        entityId: treatment.id,
-        entityLabel: treatment.treatment_type,
-        patientId: treatment.patient_id,
+      const { isOffline } = await deleteTreatmentRowRepo({
+        treatment,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
-        payload: treatment,
       })
-      const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
-      if (error) throw error
       setTreatments((prev) => prev.filter((t) => t.id !== treatment.id))
-      await handleInvoiceSyncForTreatment(treatment, 'deleted')
+      if (isOffline) {
+        if (linkedToInvoice) alert('Treatment deleted offline. Its linked invoice will be updated once this syncs.')
+      } else {
+        await handleInvoiceSyncForTreatment(treatment, 'deleted')
+      }
     } catch (error) {
       console.error('Error deleting treatment:', error)
       alert('Failed to delete treatment')
@@ -1049,6 +1012,16 @@ export function PatientProfile() {
       return
     }
 
+    const isOffline = !navigator.onLine
+    // Recording a payment here can touch several existing invoices at once
+    // (see existingInvoicesWithDue below) — too much branching to replicate
+    // safely as a queued offline mutation without risking a billing mistake.
+    // Save the clinical part offline; ask for payment once back online.
+    if (isOffline && paymentAmount > 0) {
+      alert("Payment collection isn't available for visits while offline. Save the visit without a payment now, then record the payment separately once you're back online.")
+      return
+    }
+
     // Capture what was done/billed/paid this visit as text inside notes, mirroring
     // the payment routing below (new invoice first, remainder to previous due).
     const hasNewBillable = doneEntries.length > 0 || billableFromPlan.length > 0
@@ -1067,22 +1040,41 @@ export function PatientProfile() {
       .join('\n')
 
     try {
-      const { data: insertedVisit, error: visitInsertError } = await supabase
-        .from('patient_visits')
-        .insert([{
-          patient_id: id,
-          ...visitForm,
-          notes: notesWithSummary || null,
-        }])
-        .select('id')
-        .single()
-      if (visitInsertError) throw visitInsertError
+      const visitGroupId = isOffline ? newGroupId() : undefined
+      let visitSeq = 0
+      const patientLabel = patient ? `${patient.first_name} ${patient.last_name}`.trim() : null
+      const visitPayload = { patient_id: id, ...visitForm, notes: notesWithSummary || null }
+
+      let insertedVisitId: string
+      if (isOffline) {
+        insertedVisitId = crypto.randomUUID()
+        await enqueueMutation({
+          table: 'patient_visits',
+          action: 'insert',
+          payload: { id: insertedVisitId, ...visitPayload },
+          meta: { patientId: id, label: `Visit: ${visitForm.chief_complaint || 'Visit'}` },
+          groupId: visitGroupId,
+          seq: visitSeq++,
+        })
+        queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+          if (!old) return old
+          return { ...old, visits: [{ id: insertedVisitId, ...visitPayload }, ...(old.visits || [])] }
+        })
+      } else {
+        const { data: insertedVisit, error: visitInsertError } = await supabase
+          .from('patient_visits')
+          .insert([visitPayload])
+          .select('id')
+          .single()
+        if (visitInsertError) throw visitInsertError
+        insertedVisitId = insertedVisit.id
+      }
       logActivity({
         action: 'create',
         entityType: 'patient_visit',
         entityLabel: visitForm.chief_complaint || 'Visit',
         patientId: id,
-        patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        patientName: patientLabel,
       })
       rememberItem(MEMORY_KEYS.VISIT_NOTES, visitForm.notes)
 
@@ -1095,19 +1087,43 @@ export function PatientProfile() {
           entityId: treatment.id,
           entityLabel: treatment.treatment_type,
           patientId: treatment.patient_id,
-          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+          patientName: patientLabel,
           previousPayload: treatment,
+          offlineGroup: isOffline ? { groupId: visitGroupId!, seq: visitSeq++ } : undefined,
         })
         // Cost is read-only in this modal (set at treatment-plan creation, or by the
         // linked invoice once billed), so only status is writable here.
-        const { error: planUpdateError } = await supabase
-          .from('treatments')
-          .update({ status: selection.status })
-          .eq('id', treatment.id)
-        if (planUpdateError) throw planUpdateError
+        if (isOffline) {
+          await enqueueMutation({
+            table: 'treatments',
+            action: 'update',
+            payload: { id: treatment.id, status: selection.status },
+            meta: { patientId: treatment.patient_id, label: `Mark done: ${treatment.treatment_type || 'treatment'}` },
+            groupId: visitGroupId,
+            seq: visitSeq++,
+          })
+        } else {
+          const { error: planUpdateError } = await supabase
+            .from('treatments')
+            .update({ status: selection.status })
+            .eq('id', treatment.id)
+          if (planUpdateError) throw planUpdateError
+        }
         if (billablePlanIds.has(treatment.id)) {
           updatedPlanTreatments.push({ ...treatment, status: selection.status })
         }
+      }
+      if (isOffline && doneFromPlan.length > 0) {
+        queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+          if (!old) return old
+          const statusById = new Map(doneFromPlan.map(({ treatment, selection }) => [treatment.id, selection.status]))
+          return {
+            ...old,
+            treatments: (old.treatments || []).map((t: any) =>
+              statusById.has(t.id) ? { ...t, status: statusById.get(t.id) } : t
+            ),
+          }
+        })
       }
 
       let insertedTreatments: any[] = []
@@ -1124,17 +1140,36 @@ export function PatientProfile() {
             notes: null,
           }))
         })
-        const { data, error } = await supabase
-          .from('treatments')
-          .insert(rows)
-          .select('id, treatment_type, description, tooth_number, cost')
-        if (error) throw error
-        insertedTreatments = data || []
+
+        if (isOffline) {
+          insertedTreatments = rows.map((r) => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))
+          await enqueueMutation({
+            table: 'treatments',
+            action: 'insert',
+            payload: insertedTreatments,
+            meta: { patientId: id, label: `Treatments done at visit: ${insertedTreatments.map((t) => t.treatment_type).filter(Boolean).join(', ') || 'treatment'}` },
+            groupId: visitGroupId,
+            seq: visitSeq++,
+          })
+          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+            if (!old) return old
+            return { ...old, treatments: [...insertedTreatments, ...(old.treatments || [])] }
+          })
+        } else {
+          const { data, error } = await supabase
+            .from('treatments')
+            .insert(rows)
+            .select('id, treatment_type, description, tooth_number, cost')
+          if (error) throw error
+          insertedTreatments = data || []
+        }
 
         // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
         // lab-related items done at this visit. Never throws and never blocks —
         // the treatments above are already committed. No plan group here, so a
-        // fresh group id is generated internally for this submission.
+        // fresh group id is generated internally for this submission. Offline,
+        // this itself fails silently against the network — no lab record is
+        // created for an offline visit; the treatments still save.
         autoCreateLabWorkForTreatments({ patientId: id, planGroupId: null, rows: insertedTreatments })
 
         logActivity({
@@ -1142,7 +1177,7 @@ export function PatientProfile() {
           entityType: 'treatment',
           entityLabel: insertedTreatments.map((t) => t.treatment_type).filter(Boolean).join(', '),
           patientId: id,
-          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+          patientName: patientLabel,
           details: `${insertedTreatments.length} item(s) done at visit`,
         })
       }
@@ -1172,8 +1207,8 @@ export function PatientProfile() {
           touchedTotalPaid += newPaid
           remaining -= applied
         }
-        if (linkedInvoiceId && insertedVisit?.id) {
-          await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisit.id)
+        if (linkedInvoiceId && insertedVisitId) {
+          await supabase.from('patient_visits').update({ invoice_id: linkedInvoiceId }).eq('id', insertedVisitId)
         }
         if (patient?.phone) {
           setVisitPaymentThanks({ firstName: patient.first_name, phone: patient.phone, amount: paymentAmount, totalPaid: touchedTotalPaid })
@@ -1392,6 +1427,8 @@ export function PatientProfile() {
     e.preventDefault()
     if (!editingVisit) return
     try {
+      const isOffline = !navigator.onLine
+      const groupId = isOffline ? newGroupId() : undefined
       await logEdit({
         entityType: 'patient_visit',
         entityId: editingVisit.id,
@@ -1399,6 +1436,7 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         previousPayload: editingVisit,
+        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
       })
       // Re-attach the fixed Treatment Done / Payment lines unchanged — they are
       // display-only in this form and were never editable here.
@@ -1407,15 +1445,33 @@ export function PatientProfile() {
         editingVisitFixedSummary.payment ? `${PAYMENT_LINE_PREFIX} ${editingVisitFixedSummary.payment}` : null,
       ].filter((line): line is string => !!line)
       const notes = [visitEditForm.notes?.trim(), ...fixedLines].filter(Boolean).join('\n')
-      const { error } = await supabase.from('patient_visits').update({
+      const fields = {
         visit_date: visitEditForm.visit_date ? new Date(visitEditForm.visit_date).toISOString() : editingVisit.visit_date,
         chief_complaint: visitEditForm.chief_complaint || null,
         examination_findings: visitEditForm.examination_findings || null,
         diagnosis: visitEditForm.diagnosis || null,
         treatment_plan: visitEditForm.treatment_plan || null,
         notes: notes || null,
-      }).eq('id', editingVisit.id)
-      if (error) throw error
+      }
+      if (isOffline) {
+        await enqueueMutation({
+          table: 'patient_visits',
+          action: 'update',
+          payload: { id: editingVisit.id, ...fields },
+          meta: { patientId: id, label: `Edit visit: ${fields.chief_complaint || 'Visit'}` },
+          groupId,
+          seq: 1,
+        })
+        if (id) {
+          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+            if (!old) return old
+            return { ...old, visits: (old.visits || []).map((v: any) => (v.id === editingVisit.id ? { ...v, ...fields } : v)) }
+          })
+        }
+      } else {
+        const { error } = await supabase.from('patient_visits').update(fields).eq('id', editingVisit.id)
+        if (error) throw error
+      }
       setEditingVisit(null)
       loadPatientData()
     } catch (error) {
@@ -1428,6 +1484,8 @@ export function PatientProfile() {
     if (!canDelete()) return
     if (!confirm('Delete this visit record? Treatments and invoices from this visit are separate records and will NOT be deleted.')) return
     try {
+      const isOffline = !navigator.onLine
+      const groupId = isOffline ? newGroupId() : undefined
       await logDeletion({
         entityType: 'patient_visit',
         entityId: visit.id,
@@ -1435,8 +1493,26 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: visit,
+        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
       })
-      await supabase.from('patient_visits').delete().eq('id', visit.id)
+      if (isOffline) {
+        await enqueueMutation({
+          table: 'patient_visits',
+          action: 'delete',
+          payload: { id: visit.id },
+          meta: { patientId: id, label: `Delete visit: ${visit.chief_complaint || 'Visit'}` },
+          groupId,
+          seq: 1,
+        })
+        if (id) {
+          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+            if (!old) return old
+            return { ...old, visits: (old.visits || []).filter((v: any) => v.id !== visit.id) }
+          })
+        }
+      } else {
+        await supabase.from('patient_visits').delete().eq('id', visit.id)
+      }
       loadPatientData()
     } catch (error) {
       console.error('Error deleting visit:', error)
@@ -1472,8 +1548,186 @@ export function PatientProfile() {
     setRxCostDialogEntries(planEntries)
   }
 
+  /**
+   * Offline path for a brand-new prescription only — editing an existing one
+   * reconciles its linked treatment rows against a fresh DB read (has this
+   * entry's row already been invoiced, does it still exist, etc.) that isn't
+   * safe to fake from a stale cache, so that stays online-only (see the
+   * caller's guard). New-prescription group: medical_history update →
+   * prescription insert → linked treatment inserts → best-effort auto-visit,
+   * same as online, but all queued together so sync preserves the order.
+   */
+  async function saveNewPrescriptionOffline(entryCosts: Record<string, string>) {
+    if (!id) return
+    const patientLabel = patient ? `${patient.first_name} ${patient.last_name}`.trim() : null
+    const groupId = newGroupId()
+    let seq = 0
+
+    const payload: any = {
+      patient_id: id,
+      prescribed_date: format(new Date(), 'yyyy-MM-dd'),
+      chief_complaint: entriesToText(prescriptionForm.chief_complaint_entries),
+      chief_complaint_entries: prescriptionForm.chief_complaint_entries,
+      on_examination: entriesToText(prescriptionForm.on_examination_entries),
+      on_examination_entries: prescriptionForm.on_examination_entries,
+      diagnosis: entriesToText(prescriptionForm.diagnosis_entries),
+      diagnosis_entries: prescriptionForm.diagnosis_entries,
+      treatment_plan: entriesToText(prescriptionForm.treatment_plan_entries),
+      treatment_plan_entries: prescriptionForm.treatment_plan_entries,
+      medications: prescriptionForm.medications.filter((m) => m.name.trim()),
+      investigations: prescriptionForm.investigations.filter((i) => i.name.trim()),
+      notes: prescriptionForm.notes,
+      weight_at_prescription: prescriptionForm.weight ? Number.parseFloat(prescriptionForm.weight) : null,
+      language: prescriptionForm.language,
+    }
+    const prescriptionId = crypto.randomUUID()
+
+    await enqueueMutation({
+      table: 'patients',
+      action: 'update',
+      payload: { id, medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) },
+      meta: { patientId: id, label: 'Update medical history' },
+      groupId,
+      seq: seq++,
+    })
+
+    await enqueueMutation({
+      table: 'prescriptions',
+      action: 'insert',
+      payload: { ...payload, id: prescriptionId },
+      meta: { patientId: id, label: `Prescription: ${payload.diagnosis || 'Prescription'}` },
+      groupId,
+      seq: seq++,
+    })
+
+    const currentEntries = prescriptionForm.treatment_plan_entries.filter((entry) => entry.text.trim())
+    const treatmentRows: any[] = []
+    for (const entry of currentEntries) {
+      const teethList = entry.teeth.length > 0 ? entry.teeth : [null]
+      const enteredCost = entryCosts[entry.id]
+      const costPatch = enteredCost?.trim() ? { cost: parseFloat(enteredCost) || 0 } : {}
+      for (const tooth of teethList) {
+        treatmentRows.push({
+          id: crypto.randomUUID(),
+          created_at: new Date().toISOString(),
+          patient_id: id,
+          prescription_id: prescriptionId,
+          prescription_entry_id: entry.id,
+          status: 'Planned',
+          notes: 'Added from prescription treatment plan',
+          ...mapEntryToOperation(entry, tooth),
+          ...costPatch,
+        })
+      }
+    }
+    if (treatmentRows.length > 0) {
+      await enqueueMutation({
+        table: 'treatments',
+        action: 'insert',
+        payload: treatmentRows,
+        meta: { patientId: id, label: `${treatmentRows.length} item(s) from prescription treatment plan` },
+        groupId,
+        seq: seq++,
+      })
+    }
+
+    let autoVisit: any = null
+    const flatChiefComplaint = entriesToText(prescriptionForm.chief_complaint_entries)
+    const flatOnExamination = entriesToText(prescriptionForm.on_examination_entries)
+    if (flatChiefComplaint.trim() || flatOnExamination.trim()) {
+      autoVisit = {
+        id: crypto.randomUUID(),
+        patient_id: id,
+        visit_date: new Date().toISOString(),
+        chief_complaint: flatChiefComplaint,
+        examination_findings: flatOnExamination,
+        diagnosis: entriesToText(prescriptionForm.diagnosis_entries),
+      }
+      await enqueueMutation({
+        table: 'patient_visits',
+        action: 'insert',
+        payload: autoVisit,
+        meta: { patientId: id, label: 'Visit (auto-saved from prescription)' },
+        groupId,
+        seq: seq++,
+      })
+    }
+
+    queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+      if (!old) return old
+      return {
+        ...old,
+        prescriptions: [{ ...payload, id: prescriptionId }, ...(old.prescriptions || [])],
+        treatments: [...treatmentRows, ...(old.treatments || [])],
+        visits: autoVisit ? [autoVisit, ...(old.visits || [])] : old.visits,
+      }
+    })
+
+    logActivity({
+      action: 'create',
+      entityType: 'prescription',
+      entityId: prescriptionId,
+      entityLabel: payload.diagnosis || 'Prescription',
+      patientId: id,
+      patientName: patientLabel,
+      details: `${(payload.medications || []).length} medication(s) (Saved Offline)`,
+    })
+
+    for (const med of prescriptionForm.medications) {
+      if (med.name.trim()) saveLocalItem(LOCAL_MEDS_KEY, med)
+    }
+    for (const inv of prescriptionForm.investigations) {
+      if (inv.name.trim()) saveLocalItem(LOCAL_INVS_KEY, inv)
+    }
+    setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
+    setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
+    for (const entry of prescriptionForm.chief_complaint_entries) {
+      if (entry.text.trim()) rememberItem(MEMORY_KEYS.COMPLAINTS, entry.text)
+    }
+    for (const entry of prescriptionForm.on_examination_entries) {
+      if (entry.text.trim()) rememberItem(MEMORY_KEYS.EXAMINATIONS, entry.text)
+    }
+    for (const med of prescriptionForm.medications) {
+      if (med.name.trim()) rememberItem(MEMORY_KEYS.MEDICATIONS, med.name)
+    }
+    for (const inv of prescriptionForm.investigations) {
+      if (inv.name.trim()) rememberItem(MEMORY_KEYS.INVESTIGATIONS, inv.name)
+    }
+
+    setShowPrescriptionForm(false)
+    setEditingPrescriptionId(null)
+    setShowMedTemplates(false)
+    setShowInvTemplates(false)
+    setPrescriptionForm({
+      chief_complaint_entries: [createEmptyEntry()],
+      on_examination_entries: [createEmptyEntry()],
+      diagnosis_entries: [createEmptyEntry()],
+      treatment_plan_entries: [createEmptyEntry()],
+      medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+      investigations: [{ name: '', description: '' }],
+      notes: '',
+      weight: '',
+      language: 'bn',
+    } as any)
+    setAiPanelOpenIndex(null)
+  }
+
   async function savePrescriptionWithCosts(entryCosts: Record<string, string>) {
     if (!id) return
+
+    if (!navigator.onLine) {
+      if (editingPrescriptionId) {
+        alert("Editing an existing prescription isn't available offline — it needs to check the prescription's current billed items first. Please reconnect to make this edit.")
+        return
+      }
+      try {
+        await saveNewPrescriptionOffline(entryCosts)
+      } catch (error) {
+        console.error('Error saving prescription offline:', error)
+        alert('Failed to save prescription')
+      }
+      return
+    }
 
     try {
       const payload: any = {
@@ -1742,6 +1996,8 @@ export function PatientProfile() {
     if (!confirm('Are you sure you want to delete this prescription?')) return
     try {
       const prescription = prescriptions.find((p: any) => p.id === prescriptionId)
+      const isOffline = !navigator.onLine
+      const groupId = isOffline ? newGroupId() : undefined
       await logDeletion({
         entityType: 'prescription',
         entityId: prescriptionId,
@@ -1749,8 +2005,26 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: prescription || { id: prescriptionId },
+        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
       })
-      await supabase.from('prescriptions').delete().eq('id', prescriptionId)
+      if (isOffline) {
+        await enqueueMutation({
+          table: 'prescriptions',
+          action: 'delete',
+          payload: { id: prescriptionId },
+          meta: { patientId: id, label: `Delete prescription: ${prescription?.diagnosis || 'Prescription'}` },
+          groupId,
+          seq: 1,
+        })
+        if (id) {
+          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+            if (!old) return old
+            return { ...old, prescriptions: (old.prescriptions || []).filter((p: any) => p.id !== prescriptionId) }
+          })
+        }
+      } else {
+        await supabase.from('prescriptions').delete().eq('id', prescriptionId)
+      }
       loadPatientData()
     } catch (error) {
       console.error('Error deleting prescription:', error)
@@ -6548,6 +6822,14 @@ function PatientInvoiceRow({
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>
                 {invoice.status}
               </span>
+              {typeof invoice.invoice_number === 'string' && invoice.invoice_number.startsWith('INV-TMP-') && (
+                <span
+                  className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
+                  title="Created offline — the invoice number will be adjusted automatically once this syncs."
+                >
+                  Offline draft
+                </span>
+              )}
               {items.length > 0 && (
                 <span className="text-xs text-text-secondary">{items.length} item{items.length !== 1 ? 's' : ''}</span>
               )}
