@@ -5,6 +5,7 @@ import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
 import { queryClient } from '@/lib/queryClient'
 import { qk } from '@/repositories/keys'
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
+import { isOfflineFailure } from '@/lib/supabaseErrors'
 
 export interface TreatmentPlanRow {
   patient_id: string
@@ -68,11 +69,26 @@ export async function saveTreatmentPlan({
     await enqueueOffline()
   } else {
     try {
-      const { data, error } = await supabase.from('treatments').insert(withIds).select()
-      if (error) throw error
-      if (data && data.length > 0) insertedRows = data
+      const { data, error, status } = await supabase.from('treatments').insert(withIds).select()
+      if (error) {
+        // postgrest-js RESOLVES on a dead network (status 0, message
+        // prefixed "TypeError: Failed to fetch") — it never throws, so this
+        // must be routed here, on the resolved error, not only in the catch
+        // below. See supabaseErrors.ts for why the old catch-only check
+        // never actually caught this.
+        if (isOfflineFailure(error, status)) {
+          isOffline = true
+          await enqueueOffline()
+        } else {
+          throw error
+        }
+      } else if (data && data.length > 0) {
+        insertedRows = data
+      }
     } catch (err: any) {
-      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+      // Backstop for a genuine throw (e.g. supabase-js failing before the
+      // request is even made).
+      if (isOfflineFailure(err)) {
         isOffline = true
         await enqueueOffline()
       } else {
@@ -150,10 +166,17 @@ export async function deleteTreatmentRow({
     await enqueueOffline()
   } else {
     try {
-      const { error } = await supabase.from('treatments').delete().eq('id', treatment.id)
-      if (error) throw error
+      const { error, status } = await supabase.from('treatments').delete().eq('id', treatment.id)
+      if (error) {
+        if (isOfflineFailure(error, status)) {
+          isOffline = true
+          await enqueueOffline()
+        } else {
+          throw error
+        }
+      }
     } catch (err: any) {
-      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+      if (isOfflineFailure(err)) {
         isOffline = true
         await enqueueOffline()
       } else {

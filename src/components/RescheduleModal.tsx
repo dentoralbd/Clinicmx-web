@@ -86,14 +86,16 @@ export function RescheduleModal({
         details: `Rescheduled to ${format(startDateTime, 'MMM d, yyyy h:mm a')}`,
       })
 
-      if (appointment.patients?.phone) {
-        setWhatsAppPrompt({
-          dateStr: format(startDateTime, 'MMMM d, yyyy'),
-          timeStr: format(startDateTime, 'h:mm a'),
-        })
-      } else {
-        onSave()
-      }
+      // Always show the confirmation prompt, even with no phone on file —
+      // it previously fell straight to onSave() in that case, so the modal
+      // just closed with zero feedback and a reschedule with no phone
+      // looked like it hadn't done anything. The prompt itself now handles
+      // the no-dialable-number case (disabled Send), mirroring
+      // ReminderQueue.tsx's visible "No phone" button.
+      setWhatsAppPrompt({
+        dateStr: format(startDateTime, 'MMMM d, yyyy'),
+        timeStr: format(startDateTime, 'h:mm a'),
+      })
     } catch (error) {
       console.error('Error rescheduling appointment:', error)
       alert('Failed to reschedule appointment')

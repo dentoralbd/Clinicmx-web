@@ -4,6 +4,7 @@ import { getAuditActor } from './appSession'
 import { logActivity } from './activityLog'
 import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from './entityTables'
 import { enqueueMutation } from './offlineSync'
+import { isOfflineFailure } from './supabaseErrors'
 
 export interface EditLogInput {
   entityType: TrackedEntityType
@@ -56,7 +57,12 @@ export async function logEdit(input: EditLogInput) {
       const { error } = await supabase.from('edit_history').insert(payload)
       if (error) throw error
     } catch (err: any) {
-      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+      // postgrest-js RESOLVES (never rejects) on a dead network, so `err`
+      // here is either that resolved error re-thrown above, or a genuine
+      // throw — isOfflineFailure's message-regex check catches both (see
+      // supabaseErrors.ts). Replaces a catch-only check that only ever
+      // fired via !navigator.onLine.
+      if (isOfflineFailure(err)) {
         await enqueueOffline()
       } else {
         throw new Error(`Failed to record edit history: ${err.message}`)

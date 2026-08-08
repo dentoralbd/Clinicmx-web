@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
+import { isOfflineFailure } from '@/lib/supabaseErrors'
 import { queryClient } from '@/lib/queryClient'
 import { qk } from '@/repositories/keys'
 import { formatBDT } from '@/lib/utils'
@@ -137,7 +138,14 @@ export async function recordInvoicePayment({
       .eq('id', invoiceId)
     if (invoiceError) throw invoiceError
   } catch (err: any) {
-    if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+    // postgrest-js RESOLVES (never rejects) on a dead network, so the
+    // thrown value here is that resolved error object — its message is
+    // prefixed ("TypeError: Failed to fetch") and status is unavailable at
+    // this point, but isOfflineFailure's message-regex check still catches
+    // it (see supabaseErrors.ts). Replaces a check that only ever fired via
+    // !navigator.onLine. isSchemaCompatibilityError above doesn't match
+    // network wording, so this ordering is unaffected.
+    if (isOfflineFailure(err)) {
       await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName })
       return { paymentStored: true, newPaidAmount, newStatus }
     }

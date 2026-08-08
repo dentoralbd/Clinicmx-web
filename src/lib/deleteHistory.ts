@@ -6,6 +6,7 @@ import { ENTITY_TABLE_COLUMNS, sanitizeSnapshot, type TrackedEntityType } from '
 import { extractTreatmentIdsFromInvoiceItems } from './billing'
 import { advanceTreatmentStatusOnBilling } from './invoiceSync'
 import { enqueueMutation } from './offlineSync'
+import { isOfflineFailure } from './supabaseErrors'
 
 export type DeletedEntityType = TrackedEntityType | 'patient_file'
 
@@ -62,7 +63,12 @@ export async function logDeletion(input: DeletionLogInput) {
       const { error } = await supabase.from('delete_history').insert(payload)
       if (error) throw error
     } catch (err: any) {
-      if (!navigator.onLine || err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+      // postgrest-js RESOLVES (never rejects) on a dead network, so `err`
+      // here is either that resolved error re-thrown above, or a genuine
+      // throw — isOfflineFailure's message-regex check catches both (see
+      // supabaseErrors.ts). Replaces a catch-only check that only ever
+      // fired via !navigator.onLine.
+      if (isOfflineFailure(err)) {
         await enqueueOffline()
       } else {
         throw new Error(`Failed to record delete history: ${err.message}`)
