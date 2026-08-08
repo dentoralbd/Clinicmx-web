@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CloudOff, RefreshCw, Trash2, ChevronDown, ChevronUp, Clock, User, AlertTriangle, Layers, Wifi, WifiOff, Smartphone } from 'lucide-react'
+import { CloudOff, RefreshCw, Trash2, ChevronDown, ChevronUp, Clock, User, AlertTriangle, Layers, Wifi, WifiOff, Smartphone, CheckCircle2 } from 'lucide-react'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
 import {
   getVisiblePendingMutations,
@@ -11,8 +11,10 @@ import {
   cleanUpOptimisticEntry,
   reportPendingToServer,
   fetchSitewidePendingEdits,
+  listRecentOfflineSyncAlerts,
   type PendingMutation,
   type SitewidePendingRow,
+  type OfflineSyncAlertRow,
 } from '@/lib/offlineSync'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { formatAuditActor } from '@/lib/appSession'
@@ -102,6 +104,7 @@ export function OfflineEditsTab() {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [remoteRows, setRemoteRows] = useState<SitewidePendingRow[]>([])
+  const [syncedRows, setSyncedRows] = useState<OfflineSyncAlertRow[]>([])
 
   async function loadMutations() {
     setLoading(true)
@@ -118,6 +121,10 @@ export function OfflineEditsTab() {
     setRemoteRows(await fetchSitewidePendingEdits())
   }
 
+  async function loadSynced() {
+    setSyncedRows(await listRecentOfflineSyncAlerts())
+  }
+
   useEffect(() => {
     loadMutations()
     // Push this device's own queued edits up (in case they haven't been
@@ -125,9 +132,13 @@ export function OfflineEditsTab() {
     // block the local list from showing immediately.
     void reportPendingToServer().then(loadRemote)
     loadRemote()
+    loadSynced()
     const handleUpdate = () => {
       loadMutations()
       loadRemote()
+      // A sync just happened somewhere — reportSyncedForReview() is
+      // fire-and-forget, so give its insert a moment to land before refetching.
+      setTimeout(loadSynced, 1200)
     }
     window.addEventListener('clinicmx_outbox_updated', handleUpdate)
     return () => window.removeEventListener('clinicmx_outbox_updated', handleUpdate)
@@ -462,8 +473,53 @@ export function OfflineEditsTab() {
           </p>
         </div>
       )}
+
+      {syncedRows.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-gray-100">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
+            Recently Synced — last 7 days ({syncedRows.length})
+          </h3>
+          <div className="divide-y divide-gray-100">
+            {syncedRows.map((row) => (
+              <div key={row.id} className="py-3 flex items-start gap-3">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-700 truncate">
+                    {ENTITY_LABELS[row.entity_type] || row.entity_type}
+                    {row.entity_label ? `: ${row.entity_label}` : ''}
+                  </p>
+                  {(row.patient_name || row.details) && (
+                    <p className="text-xs text-gray-500 truncate">
+                      {row.patient_name}
+                      {row.patient_name && row.details ? ' · ' : ''}
+                      {row.details?.replace(/^\[Offline Sync\]\s*/, '')}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400">{format_(row.occurred_at)}</p>
+                </div>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
+                  <User className="w-3 h-3 mr-1" />
+                  {formatAuditActor(row.actor || 'doctor')}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 px-1">
+            Approved &amp; synced to the server — who originally made the edit while offline, not who pressed Approve.
+          </p>
+        </div>
+      )}
     </div>
   )
+}
+
+const ENTITY_LABELS: Record<string, string> = {
+  treatment: 'Treatment',
+  invoice: 'Invoice',
+  payment: 'Payment',
+  patient_visit: 'Visit',
+  prescription: 'Prescription',
+  patient: 'Patient',
 }
 
 function format_(iso: string): string {

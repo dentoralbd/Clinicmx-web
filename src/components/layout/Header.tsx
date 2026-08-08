@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { User, Menu, LogOut, ChevronDown } from 'lucide-react'
+import { User, Menu, LogOut, ChevronDown, WifiOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { clearSecureStorageSession } from '@/lib/secureLocalStorage'
 import { canDelete, canEditClinicProfile, canRevert, clearAppRole, clearAppUser, getAppRole, getAppUser } from '@/lib/appSession'
 import { supabase } from '@/lib/supabase'
+import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { NotificationBell } from './NotificationBell'
 
 interface HeaderProps {
@@ -14,6 +15,7 @@ const BUILD_VERSION = 'a26fa94'
 
 export function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
+  const isOnline = useOnlineStatus()
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const role = getAppRole()
@@ -44,8 +46,14 @@ export function Header({ onMenuClick }: HeaderProps) {
   }
 
   return (
-    <header className="bg-white/95 border-b border-gray-100 shadow-elevation-low px-4 lg:px-6 py-3.5 sticky top-0 z-30">
-      <div className="flex items-center justify-between gap-4">
+    <header className="bg-white/95 border-b border-gray-100 shadow-elevation-low sticky top-0 z-30">
+      {!isOnline && (
+        <div className="bg-amber-500 text-white text-[11px] font-semibold px-4 py-1 flex items-center justify-center gap-1.5">
+          <WifiOff className="w-3.5 h-3.5" />
+          <span>Offline — showing saved data. Changes cannot be saved to server until back online.</span>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4 px-4 lg:px-6 py-3.5">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button
             onClick={onMenuClick}
