@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { Bell, CalendarDays, Receipt, Wifi, X } from 'lucide-react'
+import { Bell, CalendarDays, CloudOff, Receipt, Wifi, X } from 'lucide-react'
 import {
   getNotifications,
   markAllRead,
@@ -12,7 +12,12 @@ import {
 import { getAppRole, getAppUser, formatAuditActor } from '@/lib/appSession'
 import { countPendingIpRequests, listPendingIpRequestsForUser } from '@/lib/ipAccess'
 import { listRecentBillingAlerts, getBillingAlertsSeen, setBillingAlertsSeen } from '@/lib/billingAlerts'
-import { getVisiblePendingMutations } from '@/lib/offlineSync'
+import {
+  getVisiblePendingMutations,
+  listRecentOfflineSyncAlerts,
+  getOfflineSyncAlertsSeen,
+  setOfflineSyncAlertsSeen,
+} from '@/lib/offlineSync'
 import { getPendingLeaveCount } from '@/lib/leaveAlerts'
 
 /** Synthetic, never-persisted entry derived live from Supabase (network
@@ -21,7 +26,7 @@ import { getPendingLeaveCount } from '@/lib/leaveAlerts'
  * per-browser. */
 interface LiveEntry {
   id: string
-  kind: 'ip' | 'billing' | 'leave'
+  kind: 'ip' | 'billing' | 'leave' | 'offlineSync'
   title: string
   message: string
   linkTo?: string
@@ -41,6 +46,8 @@ export function NotificationBell() {
   /** Newest occurred_at seen across billing-alert polls, used to advance the
    * per-device "seen" watermark when the bell is opened. */
   const latestBillingIsoRef = useRef<string | null>(null)
+  /** Same idea as latestBillingIsoRef, for offline-sync-completed alerts. */
+  const latestOfflineSyncIsoRef = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -70,15 +77,19 @@ export function NotificationBell() {
     const refreshLive = async () => {
       try {
         if (role === 'admin') {
-          const [count, billingRows, leaveCount] = await Promise.all([
+          const [count, billingRows, leaveCount, offlineSyncRows] = await Promise.all([
             countPendingIpRequests(),
             listRecentBillingAlerts(),
             getPendingLeaveCount().catch(() => 0),
+            listRecentOfflineSyncAlerts(),
           ])
           if (cancelled) return
 
           const seen = getBillingAlertsSeen()
           if (billingRows[0]) latestBillingIsoRef.current = billingRows[0].occurred_at
+
+          const offlineSyncSeen = getOfflineSyncAlertsSeen()
+          if (offlineSyncRows[0]) latestOfflineSyncIsoRef.current = offlineSyncRows[0].occurred_at
 
           const ipEntries: LiveEntry[] =
             count > 0
@@ -117,6 +128,21 @@ export function NotificationBell() {
             unread: row.occurred_at > seen,
           }))
 
+          // Invoice/payment offline-syncs already surface above via
+          // billingEntries (same activity_log rows, generic "edited"
+          // wording) — skip those two entity types here so they don't show
+          // twice, and phrase the rest as an explicit sync notification.
+          const offlineSyncEntries: LiveEntry[] = offlineSyncRows
+            .filter((row) => row.entity_type !== 'invoice' && row.entity_type !== 'payment')
+            .map((row) => ({
+              id: `live-offline-sync-${row.id}`,
+              kind: 'offlineSync' as const,
+              title: 'Offline edit synced',
+              message: `${formatAuditActor(row.actor)} — ${row.patient_name ? `${row.patient_name}: ` : ''}${row.entity_label || row.entity_type}`,
+              linkTo: row.patient_id ? `/patients/${row.patient_id}?section=ptlog` : '/admin?tab=offline',
+              unread: row.occurred_at > offlineSyncSeen,
+            }))
+
           const outboxList = await getVisiblePendingMutations().catch(() => [])
           const outboxEntries: LiveEntry[] =
             outboxList.length > 0
@@ -135,7 +161,7 @@ export function NotificationBell() {
                 ]
               : []
 
-          setLiveEntries([...outboxEntries, ...leaveEntries, ...ipEntries, ...billingEntries])
+          setLiveEntries([...outboxEntries, ...offlineSyncEntries, ...leaveEntries, ...ipEntries, ...billingEntries])
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
@@ -203,6 +229,10 @@ export function NotificationBell() {
           setBillingAlertsSeen(latestBillingIsoRef.current)
           setLiveEntries((prev) => prev.map((entry) => (entry.kind === 'billing' ? { ...entry, unread: false } : entry)))
         }
+        if (latestOfflineSyncIsoRef.current) {
+          setOfflineSyncAlertsSeen(latestOfflineSyncIsoRef.current)
+          setLiveEntries((prev) => prev.map((entry) => (entry.kind === 'offlineSync' ? { ...entry, unread: false } : entry)))
+        }
         // Fixed-position, computed from the button's actual on-screen rect
         // rather than a CSS anchor — the bell isn't the header's rightmost
         // icon (profile/logout follow it), so a plain `right-0` dropdown can
@@ -254,7 +284,7 @@ export function NotificationBell() {
               {liveEntries.map((n) => (
                 <div
                   key={n.id}
-                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : n.kind === 'leave' ? 'bg-teal-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
+                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : n.kind === 'leave' ? 'bg-teal-50/60' : n.kind === 'offlineSync' ? 'bg-emerald-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
                   onClick={() => {
                     if (n.linkTo) {
                       setOpen(false)
@@ -266,6 +296,8 @@ export function NotificationBell() {
                     <Receipt className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   ) : n.kind === 'leave' ? (
                     <CalendarDays className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                  ) : n.kind === 'offlineSync' ? (
+                    <CloudOff className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   ) : (
                     <Wifi className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   )}
