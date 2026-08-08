@@ -611,40 +611,66 @@ export function PatientProfile() {
     const appUser = getAppUser()
     if ((role === 'doctor' || role === 'admin') && appUser?.name) set.add(appUser.name)
 
-    // Requires migration 043's app_users_select_roster policy to return
-    // more than the caller's own row for non-admins (039_rls_lockdown.sql
-    // otherwise scopes app_users to auth_user_id = auth.uid() OR
-    // is_app_admin()). Until that migration runs, non-admins only see
-    // names already present on existing treatments below — a newly added
-    // doctor with no treatments yet stays invisible to them.
-    // role='doctor' only — admin accounts (including test/dev logins) are
-    // never a valid "procedure done by" choice; the current session's own
-    // name was already added above if it's a doctor/admin self-attribution.
-    const { data: users, error: usersError } = await supabase
-      .from('app_users')
-      .select('full_name, role, default_share_pct')
-      .eq('role', 'doctor')
-    const sharePctMap: Record<string, number> = {}
-    if (usersError) {
-      console.warn('Could not load doctor roster from app_users:', usersError)
-    } else if (users) {
-      users.forEach((u: any) => {
-        if (u.full_name && u.full_name.trim()) {
-          const name = u.full_name.trim()
-          set.add(name)
-          if (u.default_share_pct != null) sharePctMap[name] = Number(u.default_share_pct)
-        }
-      })
-    }
-    setDoctorSharePctMap(sharePctMap)
-
-    const { data: txs, error: txsError } = await supabase.from('treatments').select('doctor_name')
-    if (txsError) {
-      console.warn('Could not load doctor names from treatments:', txsError)
-    } else if (txs) {
-      txs.forEach((t: any) => {
+    // Offline (or on a genuine connectivity failure below — navigator.onLine
+    // can lie), there's no way to fetch the full app_users roster or every
+    // patient's treatment history. Fall back to doctor names already present
+    // on THIS patient's cached treatments instead of leaving the dropdown
+    // empty — narrower than the online list, but usable. Without this the
+    // two awaits below reject outright when offline (a real fetch failure,
+    // not a resolved {error}), which skipped setDoctorsList entirely and
+    // left the "Attending Doctor" field with no options at all.
+    const addNamesFromCachedTreatments = () => {
+      const cached = id ? queryClient.getQueryData<any>(qk.patients.bundle(id)) : null
+      for (const t of cached?.treatments || []) {
         if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
-      })
+      }
+    }
+
+    if (!navigator.onLine) {
+      addNamesFromCachedTreatments()
+      setDoctorsList(Array.from(set))
+      return
+    }
+
+    try {
+      // Requires migration 043's app_users_select_roster policy to return
+      // more than the caller's own row for non-admins (039_rls_lockdown.sql
+      // otherwise scopes app_users to auth_user_id = auth.uid() OR
+      // is_app_admin()). Until that migration runs, non-admins only see
+      // names already present on existing treatments below — a newly added
+      // doctor with no treatments yet stays invisible to them.
+      // role='doctor' only — admin accounts (including test/dev logins) are
+      // never a valid "procedure done by" choice; the current session's own
+      // name was already added above if it's a doctor/admin self-attribution.
+      const { data: users, error: usersError } = await supabase
+        .from('app_users')
+        .select('full_name, role, default_share_pct')
+        .eq('role', 'doctor')
+      const sharePctMap: Record<string, number> = {}
+      if (usersError) {
+        console.warn('Could not load doctor roster from app_users:', usersError)
+      } else if (users) {
+        users.forEach((u: any) => {
+          if (u.full_name && u.full_name.trim()) {
+            const name = u.full_name.trim()
+            set.add(name)
+            if (u.default_share_pct != null) sharePctMap[name] = Number(u.default_share_pct)
+          }
+        })
+      }
+      setDoctorSharePctMap(sharePctMap)
+
+      const { data: txs, error: txsError } = await supabase.from('treatments').select('doctor_name')
+      if (txsError) {
+        console.warn('Could not load doctor names from treatments:', txsError)
+      } else if (txs) {
+        txs.forEach((t: any) => {
+          if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
+        })
+      }
+    } catch (err) {
+      console.warn('Doctor roster fetch failed, falling back to this patient’s treatment history:', err)
+      addNamesFromCachedTreatments()
     }
 
     setDoctorsList(Array.from(set))
@@ -667,13 +693,20 @@ export function PatientProfile() {
   }
 
   async function loadTemplates() {
-    const [{ data: medTemplates }, { data: invTemplates }] = await Promise.all([
-      supabase.from('medication_templates').select('*').order('usage_count', { ascending: false }),
-      supabase.from('investigation_templates').select('*').order('usage_count', { ascending: false }),
-    ])
-
-    setMedicationTemplates(medTemplates || [])
-    setInvestigationTemplates(invTemplates || [])
+    // Offline (or a genuine connectivity failure — navigator.onLine can lie),
+    // Promise.all rejects on the first failed fetch with no {data,error}
+    // resolution to check, so this must be wrapped or the template lists
+    // silently never populate (same failure mode fixed in fetchDoctorsList).
+    try {
+      const [{ data: medTemplates }, { data: invTemplates }] = await Promise.all([
+        supabase.from('medication_templates').select('*').order('usage_count', { ascending: false }),
+        supabase.from('investigation_templates').select('*').order('usage_count', { ascending: false }),
+      ])
+      setMedicationTemplates(medTemplates || [])
+      setInvestigationTemplates(invTemplates || [])
+    } catch (err) {
+      console.warn('Could not load medication/investigation templates:', err)
+    }
   }
 
   async function loadDoctorProfile() {
