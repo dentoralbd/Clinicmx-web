@@ -299,6 +299,13 @@ export function OfflineEditsTab() {
                           <span className="ml-1.5 text-[10px] font-bold uppercase text-primary">{row.items.length} steps</span>
                         )}
                       </p>
+                      {(first.meta.patientName || first.meta.detail) && (
+                        <p className="text-xs font-medium text-gray-600 truncate">
+                          {first.meta.patientName}
+                          {first.meta.patientName && first.meta.detail ? ' · ' : ''}
+                          {first.meta.detail}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-400 truncate">
                         {format_(first.timestamp)}
                       </p>

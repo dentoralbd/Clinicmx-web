@@ -125,8 +125,11 @@ export function NotificationBell() {
                     id: 'live-outbox-pending',
                     kind: 'ip',
                     title: 'Offline edits pending verification',
-                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on your device. Click to verify & sync to server.`,
-                    linkTo: '/offline-outbox',
+                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on this device. Click to review in Admin → Offline Edits.`,
+                    // Admins get the full sitewide audit log, deep-linked
+                    // straight to the right tab instead of /offline-outbox
+                    // (that page is the "my own edits" quick-action view).
+                    linkTo: '/admin?tab=offline',
                     unread: true,
                   },
                 ]

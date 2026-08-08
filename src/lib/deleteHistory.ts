@@ -50,7 +50,7 @@ export async function logDeletion(input: DeletionLogInput) {
       table: 'delete_history',
       action: 'insert',
       payload,
-      meta: { patientId: input.patientId, label: `Delete audit: ${input.entityLabel || input.entityType}` },
+      meta: { patientId: input.patientId, patientName: input.patientName, label: `Delete audit: ${input.entityLabel || input.entityType}` },
       groupId: input.offlineGroup?.groupId,
       seq: input.offlineGroup?.seq ?? 0,
     })

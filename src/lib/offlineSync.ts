@@ -20,7 +20,7 @@ export interface PendingMutation {
   table: string
   action: MutationAction
   payload: any
-  meta: { patientId?: string | null; label: string }
+  meta: { patientId?: string | null; patientName?: string | null; label: string; detail?: string | null }
   timestamp: string
   actor?: string | null
   attempts: number
@@ -32,7 +32,7 @@ export type EnqueueInput = {
   table: string
   action: MutationAction
   payload: any
-  meta: { patientId?: string | null; label: string }
+  meta: { patientId?: string | null; patientName?: string | null; label: string; detail?: string | null }
   groupId?: string
   seq?: number
   actor?: string | null

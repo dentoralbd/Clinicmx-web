@@ -529,7 +529,12 @@ export function InvoiceModal({
       table: 'invoices',
       action: 'insert',
       payload: offlineInvoice,
-      meta: { patientId: formData.patient_id, label: `Invoice ${provisionalNumber}${patientLabel ? ` for ${patientLabel}` : ''}` },
+      meta: {
+        patientId: formData.patient_id,
+        patientName: patientLabel,
+        label: `Invoice ${provisionalNumber}`,
+        detail: formatBDT(totalAmount),
+      },
       groupId,
       seq: 0,
     })
@@ -539,7 +544,11 @@ export function InvoiceModal({
         table: 'treatments',
         action: 'update_many',
         payload: { ids: linkedIds, fields: { is_invoiced: true, invoice_id: clientInvoiceId } },
-        meta: { patientId: formData.patient_id, label: `Link ${linkedIds.length} treatment(s) to ${provisionalNumber}` },
+        meta: {
+          patientId: formData.patient_id,
+          patientName: patientLabel,
+          label: `Link ${linkedIds.length} treatment(s) to ${provisionalNumber}`,
+        },
         groupId,
         seq: 1,
       })

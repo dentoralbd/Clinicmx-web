@@ -3,6 +3,7 @@ import { isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
 import { queryClient } from '@/lib/queryClient'
 import { qk } from '@/repositories/keys'
+import { formatBDT } from '@/lib/utils'
 
 export interface RecordInvoicePaymentArgs {
   invoiceId: string
@@ -37,7 +38,8 @@ async function enqueueOfflinePayment(args: {
   patientName?: string | null
 }) {
   const groupId = newGroupId()
-  const label = args.patientName ? `Payment for ${args.patientName}` : 'Payment'
+  const label = 'Payment'
+  const detail = `${formatBDT(args.amount)} via ${args.method}`
   await enqueueMutation({
     table: 'payments',
     action: 'insert',
@@ -49,7 +51,7 @@ async function enqueueOfflinePayment(args: {
       payment_date: args.dateIso,
       notes: args.notes,
     },
-    meta: { patientId: args.patientId, label },
+    meta: { patientId: args.patientId, patientName: args.patientName, label, detail },
     groupId,
     seq: 0,
   })
@@ -57,7 +59,7 @@ async function enqueueOfflinePayment(args: {
     table: 'invoices',
     action: 'update',
     payload: { id: args.invoiceId, paid_amount: args.newPaidAmount, status: args.newStatus },
-    meta: { patientId: args.patientId, label: `${label} — update invoice balance` },
+    meta: { patientId: args.patientId, patientName: args.patientName, label: 'Update invoice balance', detail },
     groupId,
     seq: 1,
   })
