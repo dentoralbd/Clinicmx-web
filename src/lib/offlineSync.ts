@@ -4,11 +4,15 @@ import { get, set } from 'idb-keyval'
 import { getAppRole, getAuditActor } from '@/lib/appSession'
 import { qk } from '@/repositories/keys'
 import { insertInvoiceWithAutoNumber } from '@/lib/invoiceNumbering'
+import { encryptPayload, decryptPayload } from '@/lib/payloadCrypto'
 
 const OUTBOX_KEY = 'clinicmx_offline_mutations_v1'
 const MAX_ATTEMPTS = 5
 const MAX_SCHEMA_FALLBACK_RETRIES = 6
 const DEVICE_ID_KEY = 'clinicmx_device_id'
+// A claim older than this is stealable — recovers rows whose claiming
+// device died mid-sync instead of wedging them forever.
+const CLAIM_STALE_MS = 10 * 60 * 1000
 
 /** Stable per-browser id, diagnostics only — lets a sitewide report be traced back to "which of my devices" without being security-relevant (RLS never checks this). */
 function getDeviceId(): string {
@@ -22,21 +26,59 @@ function getDeviceId(): string {
 }
 
 /**
- * Best-effort: remove this mutation's sitewide visibility report once it's
- * no longer pending locally (synced or discarded) — so it disappears from
- * Admin > Offline Edits at the same time it disappears from this device's
- * own outbox. Never throws; a stale report just means the sitewide view
- * shows something briefly longer than it should, which the next successful
- * report-and-cleanup cycle corrects.
+ * Marks a sitewide report as terminal (synced or discarded) instead of
+ * deleting it — a DELETE would let the row resurrect the next time
+ * reportPendingToServer() re-upserts a stale copy from a device that hasn't
+ * caught up yet (see the offline_edit_queue_guard_update trigger, migration
+ * 055, which makes this sticky and nulls the ciphertext at the same time).
+ * Best-effort: never throws; returns whether the update actually landed so
+ * callers that need to know (remote discard) can surface a failure.
  */
-function deleteStagedReport(clientMutationId: string): void {
-  void supabase
-    .from('offline_edit_queue')
-    .delete()
-    .eq('client_mutation_id', clientMutationId)
-    .then(({ error }) => {
-      if (error) console.warn('[OfflineSync] Could not clear sitewide report:', error.message)
-    })
+async function markStagedReport(clientMutationId: string, status: 'synced' | 'discarded'): Promise<boolean> {
+  const { error } = await supabase.from('offline_edit_queue').update({ status }).eq('client_mutation_id', clientMutationId)
+  if (error) {
+    console.warn('[OfflineSync] Could not update sitewide report status:', error.message)
+    return false
+  }
+  return true
+}
+
+export type ClaimResult = 'claimed' | 'taken' | 'absent' | 'network-error'
+
+/**
+ * Atomic compare-and-swap so two devices (or a user + admin) can never both
+ * execute the same offline edit — replaces a check-then-execute read, which
+ * is a race (both read 'pending', both execute) rather than a guard.
+ * Postgres row-locks serialize concurrent claim attempts; the loser sees
+ * zero rows updated. 'absent' means this mutation was never reported
+ * server-side (or was already purged) — the only device that can possibly
+ * hold it is this one, so the caller should proceed as normal.
+ */
+async function claimMutation(clientMutationId: string): Promise<ClaimResult> {
+  try {
+    const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString()
+    const { data, error } = await supabase
+      .from('offline_edit_queue')
+      .update({ claimed_at: new Date().toISOString(), claimed_by_device: getDeviceId() })
+      .eq('client_mutation_id', clientMutationId)
+      .in('status', ['pending', 'blocked', 'failed'])
+      .or(`claimed_at.is.null,claimed_at.lt.${staleBefore}`)
+      .select('id')
+    if (error) return 'network-error'
+    if (data && data.length > 0) return 'claimed'
+
+    // Zero rows: either someone else holds an active claim, the row is
+    // terminal (synced/discarded), or it never existed. Disambiguate.
+    const { data: existing, error: lookupError } = await supabase
+      .from('offline_edit_queue')
+      .select('id')
+      .eq('client_mutation_id', clientMutationId)
+      .maybeSingle()
+    if (lookupError) return 'network-error'
+    return existing ? 'taken' : 'absent'
+  } catch {
+    return 'network-error'
+  }
 }
 
 export type MutationAction = 'insert' | 'update' | 'update_many' | 'delete'
@@ -201,7 +243,7 @@ export async function discardMutation(id: string): Promise<PendingMutation | nul
   const mut = all.find((m) => m.id === id) || null
   if (!mut || !canActOn(mut)) return null
   await removeMutation(id)
-  deleteStagedReport(mut.id)
+  void markStagedReport(mut.id, 'discarded')
   return mut
 }
 
@@ -213,7 +255,7 @@ export async function clearOutbox(scope?: (m: PendingMutation) => boolean): Prom
     const next = current.filter((m) => !scope(m))
     return { next, result: removed }
   })
-  for (const mut of removed) deleteStagedReport(mut.id)
+  for (const mut of removed) void markStagedReport(mut.id, 'discarded')
   return removed
 }
 
@@ -355,13 +397,30 @@ function reportSyncedForReview(mut: PendingMutation): void {
     })
 }
 
-async function syncOne(mut: PendingMutation): Promise<boolean> {
+/**
+ * 'ok' = executed here. 'skipped' = someone else already approved (or
+ * discarded) this edit from another device — dropped locally without
+ * executing, no duplicate [Offline Sync] notification (the other device
+ * already wrote one). 'failed' = genuinely failed; attempts/lastError
+ * recorded as before.
+ */
+type SyncOutcome = 'ok' | 'skipped' | 'failed'
+
+async function syncOne(mut: PendingMutation): Promise<SyncOutcome> {
   try {
+    const claim = await claimMutation(mut.id)
+    if (claim === 'network-error') {
+      throw new Error('Could not verify this edit was not already approved elsewhere — try again once online.')
+    }
+    if (claim === 'taken') {
+      await removeMutation(mut.id)
+      return 'skipped'
+    }
     await executeMutation(mut)
     await removeMutation(mut.id)
     reportSyncedForReview(mut)
-    deleteStagedReport(mut.id)
-    return true
+    await markStagedReport(mut.id, 'synced')
+    return 'ok'
   } catch (err: any) {
     const attempts = mut.attempts + 1
     const message = err?.message || String(err)
@@ -371,7 +430,7 @@ async function syncOne(mut: PendingMutation): Promise<boolean> {
       status: attempts >= MAX_ATTEMPTS ? 'failed' : 'pending',
     })
     console.error('[OfflineSync] mutation failed', mut, err)
-    return false
+    return 'failed'
   }
 }
 
@@ -393,9 +452,9 @@ export async function syncMutationById(id: string): Promise<boolean> {
   const all = await getPendingMutations()
   const mut = all.find((m) => m.id === id)
   if (!mut || !canActOn(mut)) return false
-  const ok = await syncOne({ ...mut, status: 'pending' })
+  const outcome = await syncOne({ ...mut, status: 'pending' })
   invalidateAfterSync([mut.meta.patientId])
-  return ok
+  return outcome !== 'failed'
 }
 
 /** Syncs every mutation sharing a groupId, in seq order; a failure blocks (not fails) the rest of that group. No-ops if the current session may not act on this group (a group is always created by one account, so checking the first item is sufficient). */
@@ -413,11 +472,12 @@ export async function syncGroup(groupId: string): Promise<{ succeeded: number; f
       await updateMutation(m.id, { status: 'blocked' })
       continue
     }
-    const ok = await syncOne(m)
-    if (ok) succeeded++
-    else {
+    const outcome = await syncOne(m)
+    if (outcome === 'failed') {
       failed++
       blocked = true
+    } else {
+      succeeded++
     }
   }
   invalidateAfterSync(patientIds)
@@ -445,9 +505,9 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
 
   for (const m of solo) {
     patientIds.push(m.meta.patientId)
-    const ok = await syncOne(m)
-    if (ok) succeeded++
-    else failed++
+    const outcome = await syncOne(m)
+    if (outcome === 'failed') failed++
+    else succeeded++
   }
 
   for (const items of groups.values()) {
@@ -459,11 +519,12 @@ export async function syncAll(scope?: (m: PendingMutation) => boolean): Promise<
         await updateMutation(m.id, { status: 'blocked' })
         continue
       }
-      const ok = await syncOne(m)
-      if (ok) succeeded++
-      else {
+      const outcome = await syncOne(m)
+      if (outcome === 'failed') {
         failed++
         blocked = true
+      } else {
+        succeeded++
       }
     }
   }
@@ -534,42 +595,58 @@ export function setOfflineSyncAlertsSeen(iso: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Sitewide visibility (offline_edit_queue, migration 054) — metadata only,
-// no payload. A device can't tell the server anything while genuinely
-// offline; the moment it has any connectivity again, it reports a summary
-// of what's still queued so Admin > Offline Edits (and, for a non-admin,
-// their own other devices) can see it before it's actually approved &
-// synced. Approving/syncing itself is unchanged — it only ever happens
-// against the local outbox on the device that holds the real data; this
-// table is never read from to execute anything.
+// Sitewide visibility + cross-device approval (offline_edit_queue, migration
+// 054 for metadata, 055 for the encrypted payload). A device can't tell the
+// server anything while genuinely offline; the moment it has any
+// connectivity again, it reports what's still queued — encrypted, so the
+// creator (or admin) can approve it from a different device if the
+// originating one is lost, replaced, or simply not at hand. See
+// payloadCrypto.ts for the encryption and the honest security note there;
+// see claimMutation() above for how two devices are kept from ever
+// executing the same edit twice.
 // ---------------------------------------------------------------------------
 
 /**
- * Best-effort: upsert a metadata-only report for every mutation still in
- * the local outbox. Call whenever the device might have just gained
- * connectivity (the 'online' event, or on mount of a page that cares).
- * Silently does nothing useful if genuinely offline — the upsert just fails
- * and is swallowed, exactly like any other best-effort network call in this
- * file. Never throws, never blocks a caller.
+ * Best-effort: upsert a report for every mutation still in the local
+ * outbox, encrypting the payload when a session key is available. Call
+ * whenever the device might have just gained connectivity (the 'online'
+ * event, or on mount of a page that cares). Silently does nothing useful if
+ * genuinely offline — the upsert just fails and is swallowed, exactly like
+ * any other best-effort network call in this file. Never throws, never
+ * blocks a caller.
  */
 export async function reportPendingToServer(): Promise<void> {
   try {
-    const pending = await getPendingMutations()
+    // Only this account's own items — reporting the whole device outbox
+    // would let the BEFORE INSERT trigger stamp another account's queued
+    // edits as created by whoever happens to be logged in right now (e.g.
+    // after a shared clinic device changes hands), which RLS would then
+    // treat as truth.
+    const pending = (await getPendingMutations()).filter((m) => (m.actor || 'doctor') === getAuditActor())
     if (pending.length === 0) return
     const deviceId = getDeviceId()
-    const rows = pending.map((m) => ({
-      client_mutation_id: m.id,
-      group_id: m.groupId ?? null,
-      seq: m.seq ?? 0,
-      table_name: m.table,
-      action: m.action,
-      meta: m.meta as any,
-      actor: m.actor || 'doctor',
-      status: m.status === 'failed' ? 'failed' : m.status === 'blocked' ? 'blocked' : 'pending',
-      attempts: m.attempts,
-      last_error: m.lastError ?? null,
-      device_id: deviceId,
-    }))
+    const rows = await Promise.all(
+      pending.map(async (m) => {
+        // Omitted entirely (not sent as null) when there's no session key —
+        // the offline_edit_queue_guard_update trigger still protects a mixed
+        // batch, but this keeps the common single-row case from ever asking.
+        const encrypted = await encryptPayload(m.payload, m.id)
+        return {
+          client_mutation_id: m.id,
+          group_id: m.groupId ?? null,
+          seq: m.seq ?? 0,
+          table_name: m.table,
+          action: m.action,
+          meta: m.meta as any,
+          actor: m.actor || 'doctor',
+          status: m.status === 'failed' ? 'failed' : m.status === 'blocked' ? 'blocked' : 'pending',
+          attempts: m.attempts,
+          last_error: m.lastError ?? null,
+          device_id: deviceId,
+          ...(encrypted ?? {}),
+        }
+      })
+    )
     // created_by_user_id/status/attempts/last_error on a fresh insert are
     // re-stamped server-side by offline_edit_queue_fill_creator() — the
     // status here matters for the UPDATE half of this upsert (re-reporting
@@ -595,9 +672,20 @@ export interface SitewidePendingRow {
   status: string
   attempts: number
   last_error: string | null
+  payload_encrypted: string | null
+  payload_iv: string | null
+  payload_alg: string | null
+  claimed_at: string | null
+  claimed_by_device: string | null
+  synced_at: string | null
   created_at: string
   updated_at: string
 }
+
+// Only still-actionable rows — once migration 055's guard trigger tombstones
+// a row (synced/discarded) it's done, and without this filter every synced
+// edit would count forever toward "pending" in the admin bell/badge.
+const ACTIVE_STATUSES = ['pending', 'blocked', 'failed']
 
 /**
  * Sitewide list of still-pending offline edits — admin sees every account's;
@@ -612,7 +700,9 @@ export async function fetchSitewidePendingEdits(): Promise<SitewidePendingRow[]>
     const { data, error } = await supabase
       .from('offline_edit_queue')
       .select('*')
+      .in('status', ACTIVE_STATUSES)
       .order('created_at', { ascending: false })
+      .limit(200)
     if (error) return []
     return (data || []) as unknown as SitewidePendingRow[]
   } catch {
@@ -620,12 +710,155 @@ export async function fetchSitewidePendingEdits(): Promise<SitewidePendingRow[]>
   }
 }
 
+/**
+ * Same rows as fetchSitewidePendingEdits, narrowed to ones that actually
+ * carry a decryptable payload — i.e. can be approved from here, not just
+ * viewed. A row can be pending with no payload if it was reported by a
+ * session that had no encryption key at the time (e.g. logged out); those
+ * are metadata-only stragglers with nothing to execute.
+ */
+export async function fetchRemoteApprovableEdits(): Promise<SitewidePendingRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from('offline_edit_queue')
+      .select('*')
+      .in('status', ACTIVE_STATUSES)
+      .not('payload_encrypted', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) return []
+    return (data || []) as unknown as SitewidePendingRow[]
+  } catch {
+    return []
+  }
+}
+
+function rowToPendingMutation(row: SitewidePendingRow, payload: any): PendingMutation {
+  return {
+    id: row.client_mutation_id,
+    groupId: row.group_id ?? undefined,
+    seq: row.seq,
+    table: row.table_name,
+    action: row.action as MutationAction,
+    payload,
+    meta: row.meta,
+    timestamp: row.created_at,
+    actor: row.actor,
+    attempts: row.attempts,
+    lastError: row.last_error,
+    status: 'pending',
+  }
+}
+
+export type RemoteSyncOutcome = 'ok' | 'skipped' | 'failed' | 'no-key' | 'key-mismatch' | 'corrupt'
+
+/**
+ * Approves one edit reported by ANY device tied to this account (or, for
+ * admin, any account) — decrypts the staged payload, claims it (see
+ * claimMutation), executes it, and tombstones the row. This is what makes a
+ * lost/replaced device recoverable: the creator (or admin) can finish
+ * Approve & Sync from wherever they're logged in next, not just the
+ * originating device.
+ */
+export async function syncRemoteMutation(row: SitewidePendingRow): Promise<{ outcome: RemoteSyncOutcome; error?: string }> {
+  if (!row.payload_encrypted || !row.payload_iv) {
+    return { outcome: 'failed', error: 'This edit has no staged payload to approve from here yet.' }
+  }
+  const decrypted = await decryptPayload<any>(row.payload_encrypted, row.payload_iv, row.payload_alg, row.client_mutation_id)
+  if (!decrypted.ok) return { outcome: decrypted.reason }
+
+  const mut = rowToPendingMutation(row, decrypted.value)
+  const claim = await claimMutation(mut.id)
+  if (claim === 'network-error') {
+    return { outcome: 'failed', error: 'Could not reach the server to claim this edit — try again.' }
+  }
+  if (claim === 'taken') return { outcome: 'skipped' }
+
+  try {
+    await executeMutation(mut)
+    await markStagedReport(mut.id, 'synced')
+    reportSyncedForReview(mut)
+    invalidateAfterSync([mut.meta.patientId])
+    return { outcome: 'ok' }
+  } catch (err: any) {
+    const message = err?.message || String(err)
+    // Release the claim on failure so a retry (from this device or another)
+    // isn't blocked by our own stale claim until CLAIM_STALE_MS passes.
+    await supabase
+      .from('offline_edit_queue')
+      .update({ status: 'failed', last_error: message, claimed_at: null, claimed_by_device: null })
+      .eq('client_mutation_id', mut.id)
+    return { outcome: 'failed', error: message }
+  }
+}
+
+/** Approves every step of a group reported by another device, in seq order — mirrors syncGroup's blocking rules. */
+export async function syncRemoteGroup(groupId: string): Promise<{ succeeded: number; failed: number }> {
+  const { data, error } = await supabase
+    .from('offline_edit_queue')
+    .select('*')
+    .eq('group_id', groupId)
+    .in('status', ACTIVE_STATUSES)
+    .order('seq', { ascending: true })
+  if (error || !data || data.length === 0) return { succeeded: 0, failed: 0 }
+
+  let succeeded = 0
+  let failed = 0
+  let blocked = false
+  const patientIds: (string | null | undefined)[] = []
+  for (const row of data as unknown as SitewidePendingRow[]) {
+    patientIds.push(row.meta.patientId)
+    if (blocked) {
+      await supabase.from('offline_edit_queue').update({ status: 'blocked' }).eq('client_mutation_id', row.client_mutation_id)
+      continue
+    }
+    const result = await syncRemoteMutation(row)
+    if (result.outcome === 'ok' || result.outcome === 'skipped') succeeded++
+    else {
+      failed++
+      blocked = true
+    }
+  }
+  invalidateAfterSync(patientIds)
+  return { succeeded, failed }
+}
+
+/** Discards an edit reported by another device — tombstones it so the originating device drops it without executing, without ever downloading/decrypting the payload here. */
+export async function discardRemoteMutation(clientMutationId: string): Promise<boolean> {
+  return markStagedReport(clientMutationId, 'discarded')
+}
+
+/**
+ * Drops local outbox items the server already knows are terminal (synced or
+ * discarded from another device) — lets a device that's been offline for a
+ * while catch up without attempting to execute something someone else
+ * already handled. Best-effort cleanup, not a safety mechanism — the actual
+ * guard against double-execution is the claim in syncOne(). Call on mount of
+ * pages that show the outbox.
+ */
+export async function reconcileOutboxWithServer(): Promise<void> {
+  try {
+    const pending = await getPendingMutations()
+    if (pending.length === 0) return
+    const { data, error } = await supabase
+      .from('offline_edit_queue')
+      .select('client_mutation_id')
+      .in('client_mutation_id', pending.map((m) => m.id))
+      .in('status', ['synced', 'discarded'])
+    if (error || !data) return
+    for (const row of data as { client_mutation_id: string }[]) {
+      await removeMutation(row.client_mutation_id)
+    }
+  } catch (err) {
+    console.warn('[OfflineSync] Could not reconcile outbox with server:', err)
+  }
+}
+
 // Reporting on reconnect is NOT auto-sync: it never applies a mutation to
-// any real table, it only lets other devices/accounts SEE that something is
-// still queued (see the section above). Actually approving/syncing an edit
-// still always requires a human pressing Approve & Sync on the device that
-// holds the real data — that stays 100% manual, unchanged from the rest of
-// this file's design.
+// any real table on its own, it only lets other devices/accounts SEE (and,
+// with a decryptable payload, approve) something that's still queued — see
+// the section above. A human still always presses Approve & Sync somewhere;
+// that stays 100% manual.
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     void reportPendingToServer()

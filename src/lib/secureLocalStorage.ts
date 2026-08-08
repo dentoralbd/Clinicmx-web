@@ -36,7 +36,7 @@ async function importStoredKey(rawKey: string) {
   return crypto.subtle.importKey('raw', base64ToBuffer(rawKey), 'AES-GCM', true, ['encrypt', 'decrypt'])
 }
 
-async function getStoredSessionKey() {
+export async function getStoredSessionKey() {
   if (typeof window === 'undefined') return null
 
   const rawKey = sessionStorage.getItem(SESSION_ENCRYPTION_KEY)

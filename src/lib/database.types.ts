@@ -407,6 +407,12 @@ export interface Database {
           attempts: number
           last_error: string | null
           device_id: string | null
+          payload_encrypted: string | null
+          payload_iv: string | null
+          payload_alg: string | null
+          claimed_at: string | null
+          claimed_by_device: string | null
+          synced_at: string | null
           created_at: string
           updated_at: string
         }
@@ -424,6 +430,12 @@ export interface Database {
           attempts?: number
           last_error?: string | null
           device_id?: string | null
+          payload_encrypted?: string | null
+          payload_iv?: string | null
+          payload_alg?: string | null
+          claimed_at?: string | null
+          claimed_by_device?: string | null
+          synced_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -441,6 +453,12 @@ export interface Database {
           attempts?: number
           last_error?: string | null
           device_id?: string | null
+          payload_encrypted?: string | null
+          payload_iv?: string | null
+          payload_alg?: string | null
+          claimed_at?: string | null
+          claimed_by_device?: string | null
+          synced_at?: string | null
           created_at?: string
           updated_at?: string
         }

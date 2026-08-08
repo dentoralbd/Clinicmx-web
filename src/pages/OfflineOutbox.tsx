@@ -17,6 +17,7 @@ import {
   User,
   Clock,
   Layers,
+  Smartphone,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import {
@@ -27,7 +28,14 @@ import {
   syncGroup,
   syncVisiblePending,
   cleanUpOptimisticEntry,
+  reportPendingToServer,
+  reconcileOutboxWithServer,
+  fetchRemoteApprovableEdits,
+  syncRemoteMutation,
+  syncRemoteGroup,
+  discardRemoteMutation,
   type PendingMutation,
+  type SitewidePendingRow,
 } from '@/lib/offlineSync'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { formatAuditActor, getAppRole } from '@/lib/appSession'
@@ -38,12 +46,27 @@ interface DisplayGroup {
   items: PendingMutation[]
 }
 
+interface RemoteDisplayGroup {
+  key: string
+  groupId: string | null
+  items: SitewidePendingRow[]
+}
+
+const DECRYPT_ERROR_COPY: Record<string, string> = {
+  'no-key': 'Log in again on this device to approve this — the session that would decrypt it has expired.',
+  'key-mismatch': 'This was encrypted with a previous app key and can\'t be approved here — approve it from the device that originally queued it.',
+  corrupt: 'This edit\'s staged data is unreadable and can\'t be approved from here.',
+}
+
 export function OfflineOutbox() {
   const isOnline = useOnlineStatus()
   const [mutations, setMutations] = useState<PendingMutation[]>([])
   const [loading, setLoading] = useState(true)
   const [syncingKey, setSyncingKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [remoteRows, setRemoteRows] = useState<SitewidePendingRow[]>([])
+  const [remoteBusyKey, setRemoteBusyKey] = useState<string | null>(null)
+  const [remoteErrors, setRemoteErrors] = useState<Record<string, string>>({})
 
   const isAdmin = getAppRole() === 'admin'
 
@@ -58,12 +81,51 @@ export function OfflineOutbox() {
     }
   }
 
+  async function loadRemote() {
+    setRemoteRows(await fetchRemoteApprovableEdits())
+  }
+
   useEffect(() => {
     loadMutations()
-    const handleUpdate = () => loadMutations()
+    // Drop anything the server already knows is done elsewhere, then report
+    // what's still ours before reading what other devices have staged.
+    void reconcileOutboxWithServer().then(loadMutations)
+    void reportPendingToServer().then(loadRemote)
+    loadRemote()
+    const handleUpdate = () => {
+      loadMutations()
+      loadRemote()
+    }
     window.addEventListener('clinicmx_outbox_updated', handleUpdate)
     return () => window.removeEventListener('clinicmx_outbox_updated', handleUpdate)
   }, [])
+
+  // Rows reported from a device other than this one — anything already in
+  // this device's own outbox is excluded so it isn't shown (and approvable)
+  // twice.
+  const remoteGroups = useMemo<RemoteDisplayGroup[]>(() => {
+    const localIds = new Set(mutations.map((m) => m.id))
+    const byGroup = new Map<string, SitewidePendingRow[]>()
+    const solo: RemoteDisplayGroup[] = []
+    for (const row of remoteRows) {
+      if (localIds.has(row.client_mutation_id)) continue
+      if (row.group_id) {
+        const arr = byGroup.get(row.group_id) || []
+        arr.push(row)
+        byGroup.set(row.group_id, arr)
+      } else {
+        solo.push({ key: row.id, groupId: null, items: [row] })
+      }
+    }
+    const grouped: RemoteDisplayGroup[] = Array.from(byGroup.entries()).map(([groupId, items]) => ({
+      key: groupId,
+      groupId,
+      items: items.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)),
+    }))
+    return [...grouped, ...solo].sort(
+      (a, b) => new Date(a.items[0].created_at).getTime() - new Date(b.items[0].created_at).getTime()
+    )
+  }, [remoteRows, mutations])
 
   const groups = useMemo<DisplayGroup[]>(() => {
     const byGroup = new Map<string, PendingMutation[]>()
@@ -146,6 +208,38 @@ export function OfflineOutbox() {
     await loadMutations()
   }
 
+  async function handleSyncRemoteGroup(group: RemoteDisplayGroup) {
+    if (!isOnline) {
+      alert('You must be online to sync data to the server.')
+      return
+    }
+    setRemoteBusyKey(group.key)
+    setRemoteErrors((prev) => ({ ...prev, [group.key]: '' }))
+    try {
+      if (group.groupId) {
+        const { failed } = await syncRemoteGroup(group.groupId)
+        if (failed > 0) setRemoteErrors((prev) => ({ ...prev, [group.key]: 'Some items in this group failed to sync.' }))
+      } else {
+        const { outcome, error } = await syncRemoteMutation(group.items[0])
+        if (outcome !== 'ok' && outcome !== 'skipped') {
+          setRemoteErrors((prev) => ({ ...prev, [group.key]: DECRYPT_ERROR_COPY[outcome] || error || 'Failed to sync.' }))
+        }
+      }
+      await loadRemote()
+      await loadMutations()
+    } finally {
+      setRemoteBusyKey(null)
+    }
+  }
+
+  async function handleDiscardRemoteGroup(group: RemoteDisplayGroup) {
+    if (!confirm('Discard this offline edit? It will be deleted permanently and not sent to the server.')) return
+    for (const row of group.items) {
+      await discardRemoteMutation(row.client_mutation_id)
+    }
+    await loadRemote()
+  }
+
   function getTableIcon(table: string) {
     switch (table) {
       case 'treatments':
@@ -190,8 +284,8 @@ export function OfflineOutbox() {
             Nothing here uploads automatically. Review each offline edit and press Approve &amp; Sync — or Approve &amp;
             Sync All — when you're ready to send it to the server.{' '}
             {isAdmin
-              ? "As admin, you're seeing and can act on offline edits from every account on this device."
-              : 'Only your own account\'s offline edits are shown here — an admin can review and sync edits from any account.'}
+              ? "As admin, you're seeing and can act on offline edits from every account, on this device and any other."
+              : "Only your own account's offline edits are shown here — including ones queued on your other devices — plus an admin can review and sync any account's."}
           </p>
         </div>
 
@@ -230,7 +324,7 @@ export function OfflineOutbox() {
           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-3" />
           <p className="text-sm font-medium text-text-secondary">Loading offline outbox items...</p>
         </div>
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 && remoteGroups.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 shadow-sm space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-6 h-6" />
@@ -242,12 +336,15 @@ export function OfflineOutbox() {
         </div>
       ) : (
         <div className="space-y-4">
+          {groups.length > 0 && (
           <div className="flex items-center justify-between px-2">
             <h2 className="text-sm font-bold uppercase tracking-wider text-text-secondary">
               Pending Drafts ({groups.length})
             </h2>
           </div>
+          )}
 
+          {groups.length > 0 && (
           <div className="grid gap-4">
             {groups.map((group) => {
               const first = group.items[0]
@@ -371,6 +468,112 @@ export function OfflineOutbox() {
               )
             })}
           </div>
+          )}
+
+          {remoteGroups.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-2">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-text-secondary">
+                  Pending on your other devices ({remoteGroups.length})
+                </h2>
+              </div>
+
+              <div className="grid gap-4">
+                {remoteGroups.map((group) => {
+                  const first = group.items[0]
+                  const hasBlocked = group.items.some((m) => m.status === 'blocked')
+                  const failedItem = group.items.find((m) => m.status === 'failed' || m.last_error)
+                  const isGroupSyncing = remoteBusyKey === group.key
+                  const groupError = remoteErrors[group.key]
+
+                  return (
+                    <div
+                      key={group.key}
+                      className="bg-white rounded-2xl p-5 border border-dashed border-gray-200 shadow-elevation-low hover:shadow-elevation-md transition-all flex flex-col gap-4"
+                    >
+                      <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-gray-50 rounded-xl flex-shrink-0">
+                            {group.groupId ? <Layers className="w-5 h-5 text-primary" /> : <Smartphone className="w-5 h-5 text-gray-500" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-text-primary">{first.meta.label}</span>
+                              {group.items.length > 1 && (
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-primary/10 text-primary">
+                                  {group.items.length} steps
+                                </span>
+                              )}
+                            </div>
+                            {(first.meta.patientName || first.meta.detail) && (
+                              <p className="text-xs font-medium text-text-secondary pt-0.5">
+                                {first.meta.patientName}
+                                {first.meta.patientName && first.meta.detail ? ' · ' : ''}
+                                {first.meta.detail}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-1.5 text-xs text-text-muted pt-0.5">
+                              <Clock className="w-3 h-3" />
+                              <span>{new Date(first.created_at).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs font-medium bg-primary/5 text-primary px-3 py-1.5 rounded-xl border border-primary/10">
+                          <User className="w-3.5 h-3.5 text-primary" />
+                          <span>
+                            Created by: <strong>{formatAuditActor(first.actor || 'doctor')}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {hasBlocked && !failedItem && (
+                        <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                          <span>An earlier step in this group failed, so the rest is on hold.</span>
+                        </div>
+                      )}
+
+                      {groupError && (
+                        <div className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                          <span>{groupError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2 border-t pt-3 border-gray-100">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDiscardRemoteGroup(group)}
+                          disabled={remoteBusyKey !== null}
+                          className="text-rose-600 hover:bg-rose-50 border-rose-200"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1.5" />
+                          Discard
+                        </Button>
+
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={!isOnline || remoteBusyKey !== null}
+                          onClick={() => handleSyncRemoteGroup(group)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-1.5 ${isGroupSyncing ? 'animate-spin' : ''}`} />
+                          Approve & Sync
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-text-muted px-1">
+                Queued on a different device tied to your account (or, for admin, any account) and now approvable from
+                here — the payload is encrypted at rest and only decryptable while logged in.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
