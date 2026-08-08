@@ -17,6 +17,7 @@ import {
   listRecentOfflineSyncAlerts,
   getOfflineSyncAlertsSeen,
   setOfflineSyncAlertsSeen,
+  fetchSitewidePendingEdits,
 } from '@/lib/offlineSync'
 import { getPendingLeaveCount } from '@/lib/leaveAlerts'
 
@@ -31,6 +32,18 @@ interface LiveEntry {
   message: string
   linkTo?: string
   unread: boolean
+}
+
+/** "2 from Dr. Jane, 1 from Operator Alex" — who the pending sitewide offline edits belong to, for the admin bell entry. Caps at 3 named actors so the message doesn't run on forever with a busy clinic. */
+function summarizeByActor(rows: Array<{ actor: string }>): string {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const name = formatAuditActor(row.actor || 'doctor')
+    counts.set(name, (counts.get(name) || 0) + 1)
+  }
+  const parts = Array.from(counts.entries()).map(([name, count]) => `${count} from ${name}`)
+  if (parts.length <= 3) return parts.join(', ')
+  return `${parts.slice(0, 3).join(', ')}, and ${parts.length - 3} more`
 }
 
 const LIVE_POLL_MS = 20000
@@ -143,15 +156,19 @@ export function NotificationBell() {
               unread: row.occurred_at > offlineSyncSeen,
             }))
 
-          const outboxList = await getVisiblePendingMutations().catch(() => [])
+          // Sitewide (offline_edit_queue, migration 054) rather than just
+          // this device's own local outbox — admin should know about
+          // pending edits queued on ANY device/account, not just the one
+          // they happen to be looking at right now.
+          const sitewideRows = await fetchSitewidePendingEdits().catch(() => [])
           const outboxEntries: LiveEntry[] =
-            outboxList.length > 0
+            sitewideRows.length > 0
               ? [
                   {
                     id: 'live-outbox-pending',
                     kind: 'ip',
                     title: 'Offline edits pending verification',
-                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on this device. Click to review in Admin → Offline Edits.`,
+                    message: `${sitewideRows.length} offline edit${sitewideRows.length > 1 ? 's' : ''} staged clinic-wide — ${summarizeByActor(sitewideRows)}. Click to review in Admin → Offline Edits.`,
                     // Admins get the full sitewide audit log, deep-linked
                     // straight to the right tab instead of /offline-outbox
                     // (that page is the "my own edits" quick-action view).
