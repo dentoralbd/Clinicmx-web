@@ -79,6 +79,7 @@ These are also the PWA manifest colors (theme `#0D9488`, background `#F0FDFB`) w
 - **Dates/times:** `date-fns`, local clinic time, no timezone display.
 - **Forms:** modals for create/edit; patients creatable inline wherever a patient is selected (appointments, prescriptions) — never dead-end a flow to another page.
 - **Language:** UI chrome in English; clinical output (prescriptions) bilingual English/Bengali.
+- **Offline staging (branch `offline-m1`):** amber = "staged locally, not yet on the server" everywhere — the online/offline connectivity pill, an invoice's "Offline draft" badge (`INV-TMP-*` number), the sidebar's outbox badge, and blocked/failed rows in the outbox/Offline Edits log all use the same amber pill convention already used for pending IP requests. Emerald/green is reserved for "synced"/successful, matching existing status-pill usage elsewhere. Admin → Offline Edits reuses the Delete/Edit History row pattern (collapsed summary → expand for full record via `SnapshotDetails` → action in the expanded panel) rather than inventing a new one — extend that shared pattern instead of forking it.
 
 ## 9. Accessibility
 

@@ -28,17 +28,17 @@ A sibling repo, `sk-dental`, is a white-labeled fork for a second clinic. **It i
 
 ## 2. Tech stack
 
-- **React 18 + TypeScript (strict) + Vite 5** — plain SPA; no SSR, no PWA/service worker yet (that's milestone M1 of the offline roadmap).
+- **React 18 + TypeScript (strict) + Vite 5** — SPA; no SSR. On branch `offline-m1` (2026-08-07, not yet merged) it's also a PWA — service worker via `vite-plugin-pwa`, offline-capable — see [OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md) and FEATURES.md §1b.
 - **react-router-dom v6** — `BrowserRouter`; all pages lazy-loaded except Login.
 - **Tailwind CSS 3** — custom teal/pink theme in `tailwind.config.cjs` (see [UI-UX.md](UI-UX.md)).
-- **@tanstack/react-query 5** — installed and mounted, but currently used by only one component (`components/admin/UsersTab.tsx`); everything else fetches imperatively. Full adoption is part of the offline roadmap.
+- **@tanstack/react-query 5** — mounted app-wide. On `main` today still only used by `components/admin/UsersTab.tsx`; on `offline-m1` it's fully adopted for reads via `src/repositories/` (Dashboard/Patients/Appointments/PatientProfile) plus a 7-day IndexedDB persister (`src/lib/queryClient.ts`).
 - **Supabase** (`@supabase/supabase-js`) — PostgreSQL + Storage; the only backend. No custom server except a few Cloudflare Pages Functions (backup upload/download).
 - **PDF/print:** `jspdf` + `jspdf-autotable` + `html2canvas` (`src/lib/domToPdf.ts`, `invoicePdf.ts`, `estimatePdf.ts`, `sharePdf.ts`).
 - **QR:** `qrcode.react` (generation on prescriptions), `html5-qrcode` (camera scanning on the QR Search page).
 - **Icons:** `lucide-react`. **Dates:** `date-fns`.
 - **Charts:** `recharts` — used only by the admin Analytics page (`pages/Analytics.tsx` + `components/analytics/`), so it code-splits into that lazy chunk.
 
-No test suite, no linter; npm scripts are `dev` / `build` / `preview` only. Verification is `vite build` + manual flows (a `typecheck` script is planned in roadmap M0).
+No test suite, no linter; npm scripts are `dev` / `build` / `preview` on `main`, plus `typecheck` on `offline-m1` (roadmap M0). Verification is `vite build` (+ `npm run typecheck` where available) + manual flows.
 
 ## 3. Deployment & environments
 
@@ -66,7 +66,8 @@ Clinicmx-web/
     ├── index.css           Tailwind layers + mobile/touch/print/global styles
     ├── components/         Feature components & modals (invoice/payment modals, DrugPicker,
     │   │                   print layouts, selectors, panels, ErrorBoundary…)
-    │   ├── admin/          UsersTab, ActivityLogTab (Admin zone inside DoctorProfile)
+    │   ├── admin/          UsersTab, ActivityLogTab, AccessRequestsTab, ClinicHoursTab
+    │   │                   (Admin zone inside DoctorProfile)
     │   ├── layout/         DashboardLayout, Header, Sidebar, NotificationBell
     │   └── ui/             Button, Card primitives
     ├── lib/                Business logic & data helpers (see below)
@@ -74,6 +75,8 @@ Clinicmx-web/
     ├── services/           google/ + sync/ — Google Sheets/Drive sync. DEAD CODE: no importers.
     └── workers/            backupWorker.ts (web worker for device backup)
 ```
+
+**Branch `offline-m1` (2026-08-07, not yet merged)** adds: `src/repositories/` (React Query read repos — `keys.ts`, `patientsRepo.ts`, `appointmentsRepo.ts`, `dashboardRepo.ts`, `patientProfileRepo.ts`, `treatmentsRepo.ts`), `src/lib/offlineSync.ts` + `queryClient.ts` + `useOnlineStatus.ts` + `invoiceNumbering.ts`, `src/pages/OfflineOutbox.tsx`, `src/components/admin/OfflineEditsTab.tsx`, `src/components/SnapshotDetails.tsx` (extracted out of `DoctorProfile.tsx`, now also shared by Delete/Edit History), `public/_headers` + `public/icons/`. See FEATURES.md §1b and OFFLINE_ROADMAP.md for the behavior contract.
 
 Key `src/lib/` modules:
 
@@ -165,15 +168,15 @@ Print layouts are React components (`PrescriptionPrint`, `InvoicePrint`, `Invoic
 ## 13. Known quirks & technical debt
 
 - Dead code (removal needs user approval): `src/routes.tsx` + `pages/DentalChart.tsx`; `src/services/` (Google Drive/Sheets sync — never imported) + `GOOGLE_INTEGRATION_SETUP.md`; legacy `netlify.toml`; duplicate root-level `logo.png`.
-- `main.tsx` has an unconditional reload on `vite:preloadError` (stale-chunk recovery after deploys) — must gain a loop guard before a service worker exists (roadmap M1).
+- `main.tsx` has an unconditional reload on `vite:preloadError` on `main` — **fixed on branch `offline-m1`** (loop-guarded, max once/minute, part of the PWA work; will resolve once that branch merges).
 - Two pairs of duplicate migration numbers (`003`, `014`) — see [DATABASE.md](DATABASE.md).
 - `database.types.ts` and `entityTables.ts` are hand-maintained and drift-prone — update both with every schema change.
-- React Query mounted but unused outside UsersTab; no typecheck/lint/test scripts.
-- 1.1 MB logo is the single icon asset and favicon; PWA icon generation planned in M1.
+- React Query mounted but unused outside UsersTab on `main`; no typecheck/lint/test scripts on `main` — **both addressed on `offline-m1`** (repository-layer adoption + `npm run typecheck`), pending merge.
+- 1.1 MB logo is the single icon asset and favicon on `main`; `offline-m1` adds proper PWA icons (`public/icons/`).
 
 ## 14. Future architecture & phases (pointer)
 
 The forward plan lives in two places:
 
-- **[OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md)** — the approved, authoritative implementation plan: M0 prep → M1 installable PWA + offline read cache → M2 complete repository layer → M3 Supabase Auth + real RLS → M4 PowerSync offline writes → M5 conditional Capacitor APK → M6 features. Locked decisions: PowerSync (not hand-rolled sync), last-write-wins, server-assigned provisional codes, Supabase Auth before sync, PWA-first with APK only if triggers fire.
+- **[OFFLINE_ROADMAP.md](OFFLINE_ROADMAP.md)** — the approved implementation plan: M0 prep → M1 installable PWA + offline read cache → M2 complete repository layer → M3 Supabase Auth + real RLS → M4 offline writes → M5 conditional Capacitor APK → M6 features. **M0–M2 and a working M4 are implemented on branch `offline-m1` (2026-08-07, not yet merged)** — see that doc's status note. One locked decision changed during implementation: **M4 shipped as a custom IndexedDB outbox (`src/lib/offlineSync.ts`), not PowerSync** — PowerSync was evaluated in the `Clinicmx-web-redesign` prototype this was ported from but never actually wired up there, so the port didn't adopt it either. M3 (Supabase Auth + RLS) was already live in production before this work started. PWA-first with APK only if triggers fire is unchanged and already true — see CLAUDE.md's APK note.
 - **Phase 6 feature layer** (after the foundation, reorder by clinic need): inventory auto-deduction from treatments, per-tooth treatment timeline, drug-interaction/allergy checks, expense tracking/cashbook, WhatsApp/SMS invoice & appointment reminders, AI assist modules (assist only — never auto-apply clinical decisions), re-enabled image uploads with client-side compression, and multi-clinic `clinic_id` scoping last. Product-level view in [PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md); architecture principles in [CLINICMX-GPT.md](CLINICMX-GPT.md).
