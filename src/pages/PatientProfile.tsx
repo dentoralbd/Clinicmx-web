@@ -1106,7 +1106,7 @@ export function PatientProfile() {
           table: 'patient_visits',
           action: 'insert',
           payload: { id: insertedVisitId, ...visitPayload },
-          meta: { patientId: id, label: `Visit: ${visitForm.chief_complaint || 'Visit'}` },
+          meta: { patientId: id, patientName: patientLabel, label: `Visit: ${visitForm.chief_complaint || 'Visit'}` },
           groupId: visitGroupId,
           seq: visitSeq++,
         })
@@ -1152,7 +1152,12 @@ export function PatientProfile() {
             table: 'treatments',
             action: 'update',
             payload: { id: treatment.id, status: selection.status },
-            meta: { patientId: treatment.patient_id, label: `Mark done: ${treatment.treatment_type || 'treatment'}` },
+            meta: {
+              patientId: treatment.patient_id,
+              patientName: patientLabel,
+              label: `Mark done: ${treatment.treatment_type || 'treatment'}`,
+              detail: treatment.tooth_number != null ? `Tooth #${treatment.tooth_number}` : undefined,
+            },
             groupId: visitGroupId,
             seq: visitSeq++,
           })
@@ -1197,11 +1202,21 @@ export function PatientProfile() {
 
         if (isOffline) {
           insertedTreatments = rows.map((r) => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))
+          const doneTeeth = Array.from(new Set(insertedTreatments.map((t) => t.tooth_number).filter((n) => n != null)))
+          const doneCost = insertedTreatments.reduce((sum, t) => sum + (Number(t.cost) || 0), 0)
           await enqueueMutation({
             table: 'treatments',
             action: 'insert',
             payload: insertedTreatments,
-            meta: { patientId: id, label: `Treatments done at visit: ${insertedTreatments.map((t) => t.treatment_type).filter(Boolean).join(', ') || 'treatment'}` },
+            meta: {
+              patientId: id,
+              patientName: patientLabel,
+              label: `Treatments done at visit: ${insertedTreatments.map((t) => t.treatment_type).filter(Boolean).join(', ') || 'treatment'}`,
+              detail: [
+                doneTeeth.length > 0 ? `Tooth ${doneTeeth.map((n) => `#${n}`).join(', ')}` : '',
+                doneCost > 0 ? formatBDT(doneCost) : '',
+              ].filter(Boolean).join(' · '),
+            },
             groupId: visitGroupId,
             seq: visitSeq++,
           })
@@ -1512,7 +1527,11 @@ export function PatientProfile() {
           table: 'patient_visits',
           action: 'update',
           payload: { id: editingVisit.id, ...fields },
-          meta: { patientId: id, label: `Edit visit: ${fields.chief_complaint || 'Visit'}` },
+          meta: {
+            patientId: id,
+            patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+            label: `Edit visit: ${fields.chief_complaint || 'Visit'}`,
+          },
           groupId,
           seq: 1,
         })
@@ -1554,7 +1573,11 @@ export function PatientProfile() {
           table: 'patient_visits',
           action: 'delete',
           payload: { id: visit.id },
-          meta: { patientId: id, label: `Delete visit: ${visit.chief_complaint || 'Visit'}` },
+          meta: {
+            patientId: id,
+            patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+            label: `Delete visit: ${visit.chief_complaint || 'Visit'}`,
+          },
           groupId,
           seq: 1,
         })
@@ -1640,7 +1663,7 @@ export function PatientProfile() {
       table: 'patients',
       action: 'update',
       payload: { id, medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) },
-      meta: { patientId: id, label: 'Update medical history' },
+      meta: { patientId: id, patientName: patientLabel, label: 'Update medical history' },
       groupId,
       seq: seq++,
     })
@@ -1649,7 +1672,7 @@ export function PatientProfile() {
       table: 'prescriptions',
       action: 'insert',
       payload: { ...payload, id: prescriptionId },
-      meta: { patientId: id, label: `Prescription: ${payload.diagnosis || 'Prescription'}` },
+      meta: { patientId: id, patientName: patientLabel, label: `Prescription: ${payload.diagnosis || 'Prescription'}` },
       groupId,
       seq: seq++,
     })
@@ -1675,11 +1698,17 @@ export function PatientProfile() {
       }
     }
     if (treatmentRows.length > 0) {
+      const rxTeeth = Array.from(new Set(treatmentRows.map((t) => t.tooth_number).filter((n) => n != null)))
       await enqueueMutation({
         table: 'treatments',
         action: 'insert',
         payload: treatmentRows,
-        meta: { patientId: id, label: `${treatmentRows.length} item(s) from prescription treatment plan` },
+        meta: {
+          patientId: id,
+          patientName: patientLabel,
+          label: `${treatmentRows.length} item(s) from prescription treatment plan`,
+          detail: rxTeeth.length > 0 ? `Tooth ${rxTeeth.map((n) => `#${n}`).join(', ')}` : undefined,
+        },
         groupId,
         seq: seq++,
       })
@@ -1701,7 +1730,7 @@ export function PatientProfile() {
         table: 'patient_visits',
         action: 'insert',
         payload: autoVisit,
-        meta: { patientId: id, label: 'Visit (auto-saved from prescription)' },
+        meta: { patientId: id, patientName: patientLabel, label: 'Visit (auto-saved from prescription)' },
         groupId,
         seq: seq++,
       })
@@ -2066,7 +2095,11 @@ export function PatientProfile() {
           table: 'prescriptions',
           action: 'delete',
           payload: { id: prescriptionId },
-          meta: { patientId: id, label: `Delete prescription: ${prescription?.diagnosis || 'Prescription'}` },
+          meta: {
+            patientId: id,
+            patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+            label: `Delete prescription: ${prescription?.diagnosis || 'Prescription'}`,
+          },
           groupId,
           seq: 1,
         })

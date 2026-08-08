@@ -279,6 +279,13 @@ export function OfflineOutbox() {
                             </span>
                           )}
                         </div>
+                        {(first.meta.patientName || first.meta.detail) && (
+                          <p className="text-xs font-medium text-text-secondary pt-0.5">
+                            {first.meta.patientName}
+                            {first.meta.patientName && first.meta.detail ? ' · ' : ''}
+                            {first.meta.detail}
+                          </p>
+                        )}
                         <div className="flex items-center gap-1.5 text-xs text-text-muted pt-0.5">
                           <Clock className="w-3 h-3" />
                           <span>{new Date(first.timestamp).toLocaleString()}</span>
@@ -297,9 +304,12 @@ export function OfflineOutbox() {
                   {group.items.length > 1 && (
                     <div className="grid gap-1.5 text-xs text-text-secondary">
                       {group.items.map((m) => (
-                        <div key={m.id} className="flex items-center gap-2">
+                        <div key={m.id} className="flex items-center gap-2 flex-wrap">
                           {getTableIcon(m.table)}
-                          <span className="flex-1">{m.meta.label}</span>
+                          <span className="flex-1 min-w-[8rem]">
+                            {m.meta.label}
+                            {m.meta.detail ? <span className="text-text-muted"> · {m.meta.detail}</span> : null}
+                          </span>
                           <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${actionBadgeClass(m.action)}`}>
                             {m.action}
                           </span>

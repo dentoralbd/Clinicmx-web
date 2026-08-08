@@ -20,6 +20,16 @@ export interface TreatmentPlanRow {
   treatment_plan_group_id: string
 }
 
+/** "Tooth #12, #14" (or omitted if none of the rows have a tooth number) — used so an outbox/Offline Edits card shows this without needing to expand it. */
+function summarizeTeeth(rows: Array<{ tooth_number: number | null }>): string {
+  const teeth = Array.from(new Set(rows.map((r) => r.tooth_number).filter((n): n is number => n != null)))
+  return teeth.length > 0 ? `Tooth ${teeth.map((n) => `#${n}`).join(', ')}` : ''
+}
+
+function formatBDTShort(amount: number): string {
+  return `BDT ${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+}
+
 /**
  * Inserts a treatment plan's rows (already built by the caller via the same
  * discount math the form preview uses — see `computeTreatmentPlanDiscount`
@@ -40,6 +50,8 @@ export async function saveTreatmentPlan({
 }): Promise<{ insertedRows: any[]; isOffline: boolean }> {
   const withIds = rows.map((r) => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))
   const label = `Treatment plan: ${rows.map((r) => r.treatment_type).filter(Boolean).join(', ') || 'treatment'}`
+  const totalCost = rows.reduce((sum, r) => sum + (Number(r.cost) || 0), 0)
+  const detail = [summarizeTeeth(rows), totalCost > 0 ? formatBDTShort(totalCost) : ''].filter(Boolean).join(' · ')
   let insertedRows: any[] = withIds
   let isOffline = false
 
@@ -48,7 +60,7 @@ export async function saveTreatmentPlan({
       table: 'treatments',
       action: 'insert',
       payload: withIds,
-      meta: { patientId, label },
+      meta: { patientId, patientName, label, detail },
     })
 
   if (!navigator.onLine) {
@@ -107,6 +119,10 @@ export async function deleteTreatmentRow({
 }): Promise<{ isOffline: boolean }> {
   const groupId = newGroupId()
   const label = `Delete treatment: ${treatment.treatment_type || 'treatment'}`
+  const detail = [
+    treatment.tooth_number != null ? `Tooth #${treatment.tooth_number}` : '',
+    (Number(treatment.cost) || 0) > 0 ? formatBDTShort(Number(treatment.cost)) : '',
+  ].filter(Boolean).join(' · ')
 
   await logDeletion({
     entityType: 'treatment',
@@ -124,7 +140,7 @@ export async function deleteTreatmentRow({
       table: 'treatments',
       action: 'delete',
       payload: { id: treatment.id },
-      meta: { patientId: treatment.patient_id, label },
+      meta: { patientId: treatment.patient_id, patientName, label, detail },
       groupId,
       seq: 1,
     })

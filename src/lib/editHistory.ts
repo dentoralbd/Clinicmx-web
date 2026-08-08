@@ -44,7 +44,7 @@ export async function logEdit(input: EditLogInput) {
       table: 'edit_history',
       action: 'insert',
       payload,
-      meta: { patientId: input.patientId, label: `Edit audit: ${input.entityLabel || input.entityType}` },
+      meta: { patientId: input.patientId, patientName: input.patientName, label: `Edit audit: ${input.entityLabel || input.entityType}` },
       groupId: input.offlineGroup?.groupId,
       seq: input.offlineGroup?.seq ?? 0,
     })

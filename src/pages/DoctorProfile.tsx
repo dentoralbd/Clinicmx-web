@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import {
   Stethoscope,
@@ -202,7 +202,16 @@ export function DoctorProfile() {
   const logoInputRef = useRef<HTMLInputElement>(null)
 
   const availableTabs = getAvailableTabs()
-  const [activeTab, setActiveTab] = useState<ZoneTab>(() => getAvailableTabs()[0]?.id ?? 'profile')
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<ZoneTab>(() => {
+    // Deep-link support: the notification bell's "offline edits pending"
+    // entry (and the sidebar badge) link here with ?tab=offline so admin
+    // lands directly on the right tab instead of having to click it manually.
+    const requested = searchParams.get('tab') as ZoneTab | null
+    const tabs = getAvailableTabs()
+    if (requested && tabs.some((t) => t.id === requested)) return requested
+    return tabs[0]?.id ?? 'profile'
+  })
   const [pendingIpCount, setPendingIpCount] = useState(0)
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0)
   const [deleteHistory, setDeleteHistory] = useState<DeleteHistoryRow[]>([])
