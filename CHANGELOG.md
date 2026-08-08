@@ -4,6 +4,11 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-08 — CORS for the Tauri desktop build's /api/* calls
+Anti-Gravity wrapped a fork of this app (`D:\Claude\Clinicmx-web-redesign`) into a Windows exe with Tauri v2. The exe bundles the built UI and serves it from the `tauri.localhost` origin, so its calls to this deployment's `/api/*` endpoints (admin 2FA, Users management, Drive backup) were blocked by the browser as cross-origin.
+
+- Added `functions/api/_middleware.ts`: adds `Access-Control-Allow-Origin` only for `Origin: http://tauri.localhost` / `https://tauri.localhost`, on every `/api/*` route. Every endpoint's existing auth (PIN, device token, staff session) is unchanged — this only unblocks the cross-origin fetch itself. See API.md §2.
+
 ## 2026-08-08 — Offline Edits: cross-device approval, sitewide log, admin fixes
 Built out Admin → Offline Edits (`src/components/admin/OfflineEditsTab.tsx`) from a placeholder into a real sitewide audit log, then closed the gap it exposed: approving your own offline edit required being back on the exact device that queued it.
 

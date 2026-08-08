@@ -42,6 +42,8 @@ Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev 
 | `/api/download-backup` | GET | Streams a chosen Drive backup's actual **content** back for restore. **Requires admin auth.** |
 | `/api/admin-otp` | POST | Admin login second factor: `action:'request'` (PIN + optional trusted-device token → Telegram OTP or `trusted`/`unconfigured`), `action:'verify'` (code or recovery code → 7-day signed device token) |
 
+**CORS for the Tauri desktop build (added 2026-08-08):** `functions/api/_middleware.ts` runs in front of every route above and adds `Access-Control-Allow-Origin` only for `Origin: http://tauri.localhost` / `https://tauri.localhost` — the origin the Windows exe (`D:\Claude\Clinicmx-web-redesign`, packaged with Tauri v2) serves its UI from. That lets the desktop app reach this deployment's `/api/*` for admin 2FA, Users management, and Drive backup, since it has no Functions layer of its own. All existing per-endpoint auth (PIN, device token, staff session) is unchanged — this only unblocks the cross-origin fetch at the browser/WebView2 level; every other origin gets no CORS headers and is still blocked as before.
+
 **Auth on the backup endpoints (added 2026-07-25, Phase 1 of `SECURITY-HARDENING.md`; revised
 2026-08-03):** until 2026-07-25 all three were unauthenticated at the HTTP layer and reachable by
 anyone who could reach the deployed site — confirmed live (`GET /api/list-backups` returned real
