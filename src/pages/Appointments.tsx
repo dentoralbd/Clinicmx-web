@@ -489,22 +489,33 @@ function DaySlotGrid({
               {slot.label}
             </div>
             {occupying ? (
-              <button
-                type="button"
-                onClick={() => onAppointmentClick(occupying)}
-                className={`flex-1 text-left py-3.5 px-4 border-l-4 transition-all ${
-                  SLOT_STATUS_STYLES[occupying.status] || 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm">
-                    {occupying.patients?.first_name} {occupying.patients?.last_name}
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-white/70 shadow-sm border border-black/5">
-                    {occupying.type}
-                  </span>
+              occupying.patients ? (
+                <button
+                  type="button"
+                  onClick={() => onAppointmentClick(occupying)}
+                  className={`flex-1 text-left py-3.5 px-4 border-l-4 transition-all ${
+                    SLOT_STATUS_STYLES[occupying.status] || 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm">
+                      {occupying.patients?.first_name} {occupying.patients?.last_name}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-md bg-white/70 shadow-sm border border-black/5">
+                      {occupying.type}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                // Mirrors AppointmentRow's guard above: an appointment whose
+                // patient record is gone can't meaningfully be rescheduled.
+                // Previously this rendered a clickable tile that opened
+                // RescheduleModal with patients undefined, which silently
+                // fell into the no-phone path with no prompt shown at all.
+                <div className="flex-1 py-3.5 px-4 text-xs text-text-muted italic bg-surface-subtle/30 flex items-center border-l-4 border-gray-300">
+                  Invalid appointment entry
                 </div>
-              </button>
+              )
             ) : isPastSlot(slot) ? (
               <div className="flex-1 py-3.5 px-4 text-xs text-text-muted italic bg-surface-subtle/30 flex items-center">
                 Past slot

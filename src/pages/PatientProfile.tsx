@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { qk } from '@/repositories/keys'
@@ -6,6 +6,7 @@ import { fetchPatientBundle } from '@/repositories/patientProfileRepo'
 import { saveTreatmentPlan, deleteTreatmentRow as deleteTreatmentRowRepo } from '@/repositories/treatmentsRepo'
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
 import { queryClient } from '@/lib/queryClient'
+import { isOfflineFailure } from '@/lib/supabaseErrors'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
@@ -424,6 +425,19 @@ function resolveDefaultDoctorName(doctorProfile: { full_name?: string } | null):
   return (selfName || doctorProfile?.full_name || '').trim()
 }
 
+/** Doctor names + last-used share % present on a patient's cached treatments — the offline/connectivity-failure fallback source for the roster (see fetchDoctorsList). */
+function collectDoctorsFromTreatments(treatments: any[] | undefined | null): { names: string[]; sharePctMap: Record<string, number> } {
+  const names: string[] = []
+  const sharePctMap: Record<string, number> = {}
+  for (const t of treatments || []) {
+    const name = typeof t?.doctor_name === 'string' ? t.doctor_name.trim() : ''
+    if (!name) continue
+    names.push(name)
+    if (t.doctor_share_pct != null) sharePctMap[name] = Number(t.doctor_share_pct)
+  }
+  return { names, sharePctMap }
+}
+
 export function PatientProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -552,6 +566,14 @@ export function PatientProfile() {
   // Only role='doctor' accounts with a value set are present; everyone else
   // falls back to the 30% clinic default wherever this is read.
   const [doctorSharePctMap, setDoctorSharePctMap] = useState<Record<string, number>>({})
+  // fetchDoctorsList fell back to this patient's cached treatments (offline,
+  // or navigator.onLine lied about a dead network). The bundle cache
+  // restores ASYNCHRONOUSLY from IndexedDB (App.tsx's
+  // PersistQueryClientProvider), so on a cold offline launch the fallback
+  // can run before there's anything to read. This flag lets the retry
+  // effect below re-run it once — and only once — the bundle actually
+  // arrives, without a second `online` listener or a full roster re-fetch.
+  const [doctorRosterFellBack, setDoctorRosterFellBack] = useState(false)
 
   const { data: bundleData, isError: bundleIsError, error: bundleError, refetch: refetchBundle } = useQuery({
     queryKey: qk.patients.bundle(id || ''),
@@ -601,6 +623,32 @@ export function PatientProfile() {
     })
   }, [id])
 
+  // Offline (or on a genuine connectivity failure — navigator.onLine can
+  // lie), there's no way to fetch the full app_users roster or every
+  // patient's treatment history. Fall back to doctor names AND share
+  // percentages already present on THIS patient's cached treatments instead
+  // of leaving the dropdown/percent field empty — narrower and less
+  // authoritative than the admin-configured default (it's whatever
+  // percentage was last used for that doctor on this specific patient), but
+  // not empty. Merges into whatever state already has rather than replacing
+  // it, so a fetch that already succeeded earlier this session (e.g. loaded
+  // online, then went offline) isn't downgraded. Promoted out of
+  // fetchDoctorsList (and memoized) so the hydration-race retry effect below
+  // can call it standalone once the bundle cache actually has data.
+  const applyCachedDoctorFallback = useCallback((bundle?: any) => {
+    const cached = bundle ?? (id ? queryClient.getQueryData<any>(qk.patients.bundle(id)) : null)
+    const { names, sharePctMap } = collectDoctorsFromTreatments(cached?.treatments)
+    if (names.length > 0) {
+      setDoctorsList((prev) => {
+        const merged = Array.from(new Set([...prev, ...names]))
+        return merged.length === prev.length ? prev : merged
+      })
+    }
+    if (Object.keys(sharePctMap).length > 0) {
+      setDoctorSharePctMap((prev) => ({ ...sharePctMap, ...prev }))
+    }
+  }, [id])
+
   async function fetchDoctorsList(profile: any) {
     const set = new Set<string>()
     if (profile?.full_name) set.add(profile.full_name)
@@ -611,34 +659,10 @@ export function PatientProfile() {
     const appUser = getAppUser()
     if ((role === 'doctor' || role === 'admin') && appUser?.name) set.add(appUser.name)
 
-    // Offline (or on a genuine connectivity failure below — navigator.onLine
-    // can lie), there's no way to fetch the full app_users roster or every
-    // patient's treatment history. Fall back to doctor names AND share
-    // percentages already present on THIS patient's cached treatments
-    // instead of leaving the dropdown/percent field empty — narrower and
-    // less authoritative than the admin-configured default (it's whatever
-    // percentage was last used for that doctor on this specific patient),
-    // but not empty. Merges into whatever doctorSharePctMap already has
-    // rather than replacing it, so a fetch that already succeeded earlier
-    // this session (e.g. loaded online, then went offline) isn't downgraded.
-    const applyCachedTreatmentFallback = () => {
-      const cached = id ? queryClient.getQueryData<any>(qk.patients.bundle(id)) : null
-      const sharePctMap: Record<string, number> = {}
-      for (const t of cached?.treatments || []) {
-        if (t.doctor_name && t.doctor_name.trim()) {
-          const name = t.doctor_name.trim()
-          set.add(name)
-          if (t.doctor_share_pct != null) sharePctMap[name] = Number(t.doctor_share_pct)
-        }
-      }
-      if (Object.keys(sharePctMap).length > 0) {
-        setDoctorSharePctMap((prev) => ({ ...sharePctMap, ...prev }))
-      }
-    }
-
     if (!navigator.onLine) {
-      applyCachedTreatmentFallback()
       setDoctorsList(Array.from(set))
+      setDoctorRosterFellBack(true)
+      applyCachedDoctorFallback()
       return
     }
 
@@ -652,14 +676,27 @@ export function PatientProfile() {
       // role='doctor' only — admin accounts (including test/dev logins) are
       // never a valid "procedure done by" choice; the current session's own
       // name was already added above if it's a doctor/admin self-attribution.
-      const { data: users, error: usersError } = await supabase
+      const { data: users, error: usersError, status: usersStatus } = await supabase
         .from('app_users')
         .select('full_name, role, default_share_pct')
         .eq('role', 'doctor')
-      const sharePctMap: Record<string, number> = {}
       if (usersError) {
         console.warn('Could not load doctor roster from app_users:', usersError)
+        if (isOfflineFailure(usersError, usersStatus)) {
+          // navigator.onLine lied (captive portal / clinic wifi / Android
+          // WebView) — behave exactly like the explicit-offline branch
+          // above instead of falling through to a real-error path.
+          setDoctorsList(Array.from(set))
+          setDoctorRosterFellBack(true)
+          applyCachedDoctorFallback()
+          return
+        }
+        // A real server-side roster failure (e.g. the 2026-08-02 missing-
+        // GRANT incident) — leave whatever share-% map already loaded alone
+        // rather than blanking it to {}; that wipe is what made every
+        // Share % field fall back to the hardcoded 30 on any roster error.
       } else if (users) {
+        const sharePctMap: Record<string, number> = {}
         users.forEach((u: any) => {
           if (u.full_name && u.full_name.trim()) {
             const name = u.full_name.trim()
@@ -667,12 +704,19 @@ export function PatientProfile() {
             if (u.default_share_pct != null) sharePctMap[name] = Number(u.default_share_pct)
           }
         })
+        setDoctorSharePctMap(sharePctMap)
+        setDoctorRosterFellBack(false)
       }
-      setDoctorSharePctMap(sharePctMap)
 
-      const { data: txs, error: txsError } = await supabase.from('treatments').select('doctor_name')
+      const { data: txs, error: txsError, status: txsStatus } = await supabase.from('treatments').select('doctor_name')
       if (txsError) {
         console.warn('Could not load doctor names from treatments:', txsError)
+        if (isOfflineFailure(txsError, txsStatus)) {
+          setDoctorsList(Array.from(set))
+          setDoctorRosterFellBack(true)
+          applyCachedDoctorFallback()
+          return
+        }
       } else if (txs) {
         txs.forEach((t: any) => {
           if (t.doctor_name && t.doctor_name.trim()) set.add(t.doctor_name.trim())
@@ -680,11 +724,28 @@ export function PatientProfile() {
       }
     } catch (err) {
       console.warn('Doctor roster fetch failed, falling back to this patient’s treatment history:', err)
-      applyCachedTreatmentFallback()
+      setDoctorRosterFellBack(true)
+      applyCachedDoctorFallback()
     }
 
     setDoctorsList(Array.from(set))
   }
+
+  // Hydration-race retry: if fetchDoctorsList fell back because the bundle
+  // cache wasn't hydrated from IndexedDB yet (a cold offline launch — the
+  // cache restore is async, this component's mount effect isn't), re-run
+  // the fallback once real bundle data shows up. No network call in this
+  // effect body (so no refetch loop is possible), neither doctorsList nor
+  // doctorSharePctMap is a dependency (so the state writes below can't
+  // re-trigger it), and applyCachedDoctorFallback is stable per `id` — the
+  // only way this fires again is a genuinely new bundleData identity
+  // (hydration, or any later refetch), which is exactly when re-applying is
+  // wanted. Also gives reconnect coverage for free: a paused bundle query
+  // resuming produces new bundleData without a second `online` listener.
+  useEffect(() => {
+    if (!doctorRosterFellBack || !bundleData) return
+    applyCachedDoctorFallback(bundleData)
+  }, [doctorRosterFellBack, bundleData, applyCachedDoctorFallback])
 
   // Deep-link support: Appointments' "Add visit now" prompt lands here with
   // ?openVisit=1 to auto-open the Add Visit modal instead of requiring a
