@@ -699,6 +699,17 @@ export function PatientProfile() {
   }, [searchParams])
 
   async function loadPatientData() {
+    // With networkMode: 'online' (queryClient.ts), refetch() while genuinely
+    // offline doesn't fail fast — it "pauses" and the returned promise never
+    // settles until connectivity returns. Every offline write flow calls
+    // loadPatientData() right after a successful save; several of those
+    // (InvoiceModal's onSave, in particular) `await` it before closing their
+    // modal, so an offline caller would hang forever with the modal stuck
+    // open — looking exactly like the save silently failed, even though the
+    // mutation was already queued and the bundle cache already updated
+    // optimistically. Nothing to refetch anyway while offline (the cache is
+    // authoritative until reconnect), so just skip it.
+    if (!navigator.onLine) return
     await refetchBundle()
   }
 
@@ -4757,7 +4768,18 @@ export function PatientProfile() {
             setShowInvoiceForm(false)
             setInvoicePlanGroupId(null)
             if (invoiceId) {
-              const { data } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
+              // Offline, the invoice only exists in the optimistic bundle
+              // cache (see createInvoiceOffline in InvoiceModal.tsx) — a live
+              // select() would just reject. Read the cache first; only hit
+              // the network if it's not there (the normal online case).
+              const cachedInvoice = queryClient
+                .getQueryData<any>(qk.patients.bundle(id))
+                ?.invoices?.find((inv: any) => inv.id === invoiceId)
+              const data = cachedInvoice || (
+                navigator.onLine
+                  ? (await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()).data
+                  : null
+              )
               if (data && confirm('Invoice created. Print or share it now?')) {
                 setInvoicePrintJob({ invoices: [data] })
               }
@@ -4816,7 +4838,17 @@ export function PatientProfile() {
             setPayingInvoice(null)
             await loadPatientData()
             if (confirm('Payment recorded. Print the updated invoice?')) {
-              const { data } = await supabase.from('invoices').select('*').eq('id', paidInvoiceId).maybeSingle()
+              // Same cache-first fallback as the New Invoice onSave above —
+              // an offline payment only updates the bundle cache, a live
+              // select() would just reject.
+              const cachedInvoice = id
+                ? queryClient.getQueryData<any>(qk.patients.bundle(id))?.invoices?.find((inv: any) => inv.id === paidInvoiceId)
+                : null
+              const data = cachedInvoice || (
+                navigator.onLine
+                  ? (await supabase.from('invoices').select('*').eq('id', paidInvoiceId).maybeSingle()).data
+                  : null
+              )
               if (data) setInvoicePrintJob({ invoices: [data] })
             }
           }}
