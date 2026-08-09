@@ -130,10 +130,10 @@ export function BackupRestore() {
     getBackupEncryption().then(({ enabled, passphrase }) => {
       setEncryptEnabled(enabled)
       setHasPassphrase(!!passphrase)
-      // Encryption defaults to on for a device that's never configured it,
-      // but nothing is actually encrypted until a passphrase exists — open
-      // the editor right away so setting one is a single, obvious step
-      // instead of requiring a checkbox hunt first.
+      // Sitewide default is off; nothing is actually encrypted until a
+      // passphrase exists. If an admin previously turned it on but never
+      // finished setting one, open the editor right away so finishing that
+      // is a single, obvious step instead of requiring a checkbox hunt.
       if (enabled && !passphrase) setShowPassphraseEditor(true)
     })
   }, [])
@@ -160,6 +160,11 @@ export function BackupRestore() {
   // admin-only, matching /admin). Doctor accounts still redirect.
   const appRole = getAppRole()
   if (appRole !== 'admin' && appRole !== 'operator') return <Navigate to="/dashboard" replace />
+  // The encryption passphrase itself stays admin-only to view/change (see
+  // the sitewide encryption UI below) — operators' devices still fetch and
+  // use it automatically in the background for Smart upload/restore, they
+  // just can't see or edit it on screen.
+  const isAdmin = appRole === 'admin'
 
   const busy =
     backingUp ||
@@ -422,66 +427,79 @@ export function BackupRestore() {
         </label>
 
         <div className="mt-3 border-t border-gray-100 pt-3">
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={encryptEnabled}
-              onChange={(e) => handleSaveEncryption(e.target.checked)}
-            />
-            <span className="text-sm text-text-secondary">
-              Encrypt backups with a passphrase before they leave this device.{' '}
-              <span className="font-medium text-amber-700">
-                If you lose the passphrase, encrypted backups cannot be recovered by anyone — write it down
-                somewhere safe.
-              </span>{' '}
-              The passphrase is never synced between devices — to restore one of these backups on a
-              different device, type this exact passphrase there when prompted.
-            </span>
-          </label>
-          {hasPassphrase && encryptEnabled && !showPassphraseEditor && (
-            <div className="mt-2 ml-6 flex items-center gap-3">
-              <span className="text-xs text-green-700 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Passphrase set
-              </span>
-              <button
-                type="button"
-                className="text-xs underline text-text-secondary hover:text-gray-700"
-                onClick={() => setShowPassphraseEditor(true)}
-              >
-                Change passphrase
-              </button>
-            </div>
-          )}
-          {showPassphraseEditor && (
-            <div className="mt-2 ml-6">
-              {!hasPassphrase && (
-                <p className="text-xs text-text-secondary mb-1.5">
-                  Encryption is on by default — set a passphrase to activate it. Backups stay unencrypted
-                  until you do.
-                </p>
-              )}
-              <div className="flex items-center gap-2">
+          {isAdmin ? (
+            <>
+              <label className="flex items-start gap-2 cursor-pointer">
                 <input
-                  type="password"
-                  value={passphraseDraft}
-                  onChange={(e) => setPassphraseDraft(e.target.value)}
-                  placeholder="New passphrase"
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={encryptEnabled}
+                  onChange={(e) => handleSaveEncryption(e.target.checked)}
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleSaveEncryption(true)}
-                  disabled={!passphraseDraft.trim()}
-                >
-                  Save
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => { setShowPassphraseEditor(false); setPassphraseDraft('') }}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
+                <span className="text-sm text-text-secondary">
+                  Encrypt backups with a passphrase before they leave any device.{' '}
+                  <span className="font-medium text-amber-700">
+                    If you lose the passphrase, encrypted backups cannot be recovered by anyone — write it
+                    down somewhere safe.
+                  </span>{' '}
+                  Shared across every staff device automatically — set it once here, no need to re-enter it
+                  elsewhere.
+                </span>
+              </label>
+              {hasPassphrase && encryptEnabled && !showPassphraseEditor && (
+                <div className="mt-2 ml-6 flex items-center gap-3">
+                  <span className="text-xs text-green-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Passphrase set
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs underline text-text-secondary hover:text-gray-700"
+                    onClick={() => setShowPassphraseEditor(true)}
+                  >
+                    Change passphrase
+                  </button>
+                </div>
+              )}
+              {showPassphraseEditor && (
+                <div className="mt-2 ml-6">
+                  {!hasPassphrase && (
+                    <p className="text-xs text-text-secondary mb-1.5">
+                      Set a passphrase to activate encryption. Backups stay unencrypted until you do.
+                    </p>
+                  )}
+                  {hasPassphrase && (
+                    <p className="text-xs text-amber-700 mb-1.5">
+                      Changing this replaces the shared passphrase everywhere. Backups already encrypted
+                      with the old one will still need it to restore — keep a note of it if unsure.
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={passphraseDraft}
+                      onChange={(e) => setPassphraseDraft(e.target.value)}
+                      placeholder="New passphrase"
+                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveEncryption(true)}
+                      disabled={!passphraseDraft.trim()}
+                    >
+                      Save
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setShowPassphraseEditor(false); setPassphraseDraft('') }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-text-secondary">
+              Backup encryption: {encryptEnabled ? 'on' : 'off'} (sitewide setting — an admin can change this).
+            </p>
           )}
         </div>
 

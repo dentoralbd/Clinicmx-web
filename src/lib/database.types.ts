@@ -1026,6 +1026,8 @@ export interface Database {
           daily: Json
           weekly: Json
           monthly: Json
+          encrypt_enabled: boolean
+          passphrase: string | null
           updated_at: string
         }
         Insert: {
@@ -1033,6 +1035,8 @@ export interface Database {
           daily?: Json
           weekly?: Json
           monthly?: Json
+          encrypt_enabled?: boolean
+          passphrase?: string | null
           updated_at?: string
         }
         Update: {
@@ -1040,6 +1044,8 @@ export interface Database {
           daily?: Json
           weekly?: Json
           monthly?: Json
+          encrypt_enabled?: boolean
+          passphrase?: string | null
           updated_at?: string
         }
         Relationships: []

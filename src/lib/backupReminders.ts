@@ -17,6 +17,13 @@ export interface BackupSettings {
   daily: ScheduleSettings
   weekly: ScheduleSettings
   monthly: ScheduleSettings
+  /** Sitewide backup encryption — shared across every device (see
+   * deviceBackup.ts getBackupEncryption/setBackupEncryption). Was previously
+   * per-device (secureLocalStorage keyed to a random per-browser actor id),
+   * which meant two devices could disagree on whether to encrypt and with
+   * what passphrase — fixed 2026-08-10 by moving it into this same shared row. */
+  encryptEnabled: boolean
+  passphrase: string | null
   updated_at?: string
 }
 
@@ -37,6 +44,8 @@ export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
   daily: { ...DEFAULT_SCHEDULE },
   weekly: { ...DEFAULT_SCHEDULE },
   monthly: { ...DEFAULT_SCHEDULE },
+  encryptEnabled: false,
+  passphrase: null,
 }
 
 function isValidSchedule(value: unknown): value is ScheduleSettings {
@@ -55,6 +64,19 @@ function normalizeSettings(raw: unknown): BackupSettings {
     daily: isValidSchedule(parsed.daily) ? (parsed.daily as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
     weekly: isValidSchedule(parsed.weekly) ? (parsed.weekly as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
     monthly: isValidSchedule(parsed.monthly) ? (parsed.monthly as ScheduleSettings) : { ...DEFAULT_SCHEDULE },
+    // DB columns are snake_case (encrypt_enabled); the settings cache round-trips
+    // through JSON.stringify of this same normalized (camelCase) shape, so both
+    // spellings are accepted here.
+    encryptEnabled:
+      typeof parsed.encryptEnabled === 'boolean'
+        ? parsed.encryptEnabled
+        : typeof parsed.encrypt_enabled === 'boolean'
+          ? (parsed.encrypt_enabled as boolean)
+          : false,
+    passphrase:
+      typeof parsed.passphrase === 'string' && parsed.passphrase
+        ? parsed.passphrase
+        : null,
     updated_at: typeof parsed.updated_at === 'string' ? parsed.updated_at : undefined,
   }
 }
@@ -86,7 +108,7 @@ export async function getBackupSettings(): Promise<BackupSettings> {
   try {
     const { data, error } = await (supabase as any)
       .from('backup_settings')
-      .select('daily, weekly, monthly, updated_at')
+      .select('daily, weekly, monthly, encrypt_enabled, passphrase, updated_at')
       .eq('id', SETTINGS_ROW_ID)
       .maybeSingle()
     if (error) throw error
@@ -100,9 +122,18 @@ export async function getBackupSettings(): Promise<BackupSettings> {
 
 export async function saveBackupSettings(settings: Omit<BackupSettings, 'updated_at'>): Promise<BackupSettings> {
   const next: BackupSettings = { ...settings, updated_at: new Date().toISOString() }
-  const { error } = await (supabase as any)
-    .from('backup_settings')
-    .upsert({ id: SETTINGS_ROW_ID, ...next }, { onConflict: 'id' })
+  const { error } = await (supabase as any).from('backup_settings').upsert(
+    {
+      id: SETTINGS_ROW_ID,
+      daily: next.daily,
+      weekly: next.weekly,
+      monthly: next.monthly,
+      encrypt_enabled: next.encryptEnabled,
+      passphrase: next.passphrase,
+      updated_at: next.updated_at,
+    },
+    { onConflict: 'id' }
+  )
   if (error) throw new Error(`Could not save backup schedule: ${error.message}`)
   writeSettingsCache(next)
   return next

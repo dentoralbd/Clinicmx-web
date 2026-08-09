@@ -1,7 +1,7 @@
 import { format } from 'date-fns'
 import { supabase } from './supabase'
 import { getScopedStorageKey } from './appSession'
-import { readSecureJson, writeSecureJson } from './secureLocalStorage'
+import { writeSecureJson } from './secureLocalStorage'
 import { loadDoctorProfile, saveDoctorProfile, type DoctorProfileData } from './doctorProfile'
 import { MEMORY_KEYS, getMemory } from './prescriptionMemory'
 import {
@@ -10,7 +10,13 @@ import {
   getInvestigationSectionTemplates,
   getMedicationSectionTemplates,
 } from './prescriptionSectionTemplates'
-import { markBackupDone, markRestoreDrillDone, type BackupCategory } from './backupReminders'
+import {
+  markBackupDone,
+  markRestoreDrillDone,
+  getBackupSettings,
+  saveBackupSettings,
+  type BackupCategory,
+} from './backupReminders'
 import { sha256Hex } from './backupCrypto'
 import { getAdminDeviceToken } from './adminOtp'
 
@@ -154,38 +160,30 @@ export async function fetchAllRows(table: string, onPage?: (fetched: number) => 
 }
 
 // ---------------------------------------------------------------------------
-// Encryption setting (P3). The passphrase lives ONLY in this device's
-// encrypted secureLocalStorage; losing it makes encrypted backups unreadable.
-
-const ENCRYPT_ENABLED_KEY = 'clinicmx_backup_encrypt'
-const PASSPHRASE_STORAGE_KEY = 'clinicmx_backup_passphrase'
+// Encryption setting (P3). Sitewide (backup_settings, the same shared row as
+// the Daily/Weekly/Monthly schedule) since 2026-08-10 — every device reads
+// and writes the same on/off flag and passphrase, fixing an earlier bug
+// where each device had its own independent (per-browser) passphrase,
+// causing different devices to produce .json.gz vs .json.enc for the "same"
+// backup and a passphrase typed on one device to fail to restore a backup
+// encrypted on another. Off by default; a passphrase still has to be
+// explicitly set before anything is actually encrypted — see
+// buildSerializedBackup's `enabled && passphrase` check.
 
 export async function getBackupEncryption(): Promise<{ enabled: boolean; passphrase: string | null }> {
-  // Defaults to true on a device that's never touched this setting (nudges
-  // toward encryption being the norm), but a passphrase still has to be set
-  // before anything is actually encrypted — see buildSerializedBackup's
-  // `enabled && passphrase` check. An explicit 'false' (the user turned it
-  // off) is respected and distinguished from "never set".
-  let enabled = true
-  try {
-    const raw = localStorage.getItem(ENCRYPT_ENABLED_KEY)
-    if (raw !== null) enabled = raw === 'true'
-  } catch {
-    // ignore
-  }
-  const stored = await readSecureJson<{ passphrase: string }>(getScopedStorageKey(PASSPHRASE_STORAGE_KEY))
-  return { enabled, passphrase: stored?.passphrase ?? null }
+  const settings = await getBackupSettings()
+  return { enabled: settings.encryptEnabled, passphrase: settings.passphrase }
 }
 
 export async function setBackupEncryption(enabled: boolean, passphrase?: string) {
-  try {
-    localStorage.setItem(ENCRYPT_ENABLED_KEY, enabled ? 'true' : 'false')
-  } catch {
-    // ignore
-  }
-  if (passphrase !== undefined) {
-    await writeSecureJson(getScopedStorageKey(PASSPHRASE_STORAGE_KEY), { passphrase })
-  }
+  const current = await getBackupSettings()
+  await saveBackupSettings({
+    daily: current.daily,
+    weekly: current.weekly,
+    monthly: current.monthly,
+    encryptEnabled: enabled,
+    passphrase: passphrase !== undefined ? passphrase : current.passphrase,
+  })
 }
 
 // ---------------------------------------------------------------------------
