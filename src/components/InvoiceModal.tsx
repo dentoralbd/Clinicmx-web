@@ -525,8 +525,12 @@ export function InvoiceModal({
     const provisionalNumber = `INV-TMP-${clientInvoiceId.slice(0, 8)}`
     const groupId = newGroupId()
     const invoicePatient = patients.find((p) => p.id === formData.patient_id)
-    const patientLabel = invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null
+    // patients can be empty here on a genuinely offline load (loadPatients()
+    // has no offline fallback of its own) — fall back to the caller-supplied
+    // name, same as handleEditSubmit already does above.
+    const patientLabel = invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : defaultPatientName
     const linkedIds = Array.from(selectedTreatmentIds)
+    const itemsSummary = normalizedItems.map((item) => item.description).filter(Boolean).slice(0, 2).join(', ')
 
     const offlineInvoice = {
       id: clientInvoiceId,
@@ -557,7 +561,7 @@ export function InvoiceModal({
         patientId: formData.patient_id,
         patientName: patientLabel,
         label: `Invoice ${provisionalNumber}`,
-        detail: formatBDT(totalAmount),
+        detail: [itemsSummary, formatBDT(totalAmount)].filter(Boolean).join(' · '),
       },
       groupId,
       seq: 0,

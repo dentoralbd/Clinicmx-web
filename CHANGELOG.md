@@ -4,6 +4,10 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-09 — Offline invoice card details; sitewide vs. approvable pending-edit count
+- **Offline invoice cards showed no patient name or treatment detail** — `InvoiceModal.tsx`'s `loadPatients()` has no offline handling, so the patient picker list stays empty on a flaky connection; `createInvoiceOffline()` derived the display name only from that list with no fallback, even though a `defaultPatientName` prop existed for exactly this (already used correctly by the invoice-edit path). Now falls back to it, and the card's detail line includes a short item/treatment summary instead of just the total amount.
+- **Notification bell's "N offline edits staged clinic-wide" count could read higher than what's actually approvable from `/offline-outbox`'s "Pending on other devices" list** — not a bug, but confusing: the bell counts every pending row sitewide, while the approvable list excludes rows with no decryptable payload (staged by a session that had no encryption key at the time — metadata-only, viewable only in Admin → Offline Edits). The bell message now says `(N approvable now)` when the two counts differ.
+
 ## 2026-08-09 — Invoice creation, prescription silent-failure, visit-payment, and the offline banner
 Same `navigator.onLine`-lies theme, five more gaps — one of them (prescription save) worse than any found so far, since nothing in it ever threw.
 
