@@ -7,6 +7,7 @@ import { saveTreatmentPlan, deleteTreatmentRow as deleteTreatmentRowRepo } from 
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
 import { queryClient } from '@/lib/queryClient'
 import { isOfflineFailure } from '@/lib/supabaseErrors'
+import { get as idbGet, set as idbSet } from 'idb-keyval'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
@@ -438,6 +439,31 @@ function collectDoctorsFromTreatments(treatments: any[] | undefined | null): { n
   return { names, sharePctMap }
 }
 
+// Device-wide (not per-patient) doctor roster cache — the per-patient fallback
+// above only knows doctors who have already treated THIS patient, so a
+// doctor's first-ever treatment for a given patient still falls back to the
+// hardcoded 30% offline. This survives across patients and cold launches
+// (idb-keyval, same library the outbox already uses). Not a new sensitivity
+// category: name + share % already ride along on every cached treatment row
+// inside the allowlisted per-patient bundle — this just makes the same two
+// fields reachable before this patient has any history with that doctor.
+const DOCTOR_ROSTER_CACHE_KEY = 'clinicmx_doctor_roster_v1'
+
+/** Best-effort, fire-and-forget — never throws, never blocks a caller. */
+function persistDoctorRosterCache(roster: Record<string, number | null>): void {
+  if (Object.keys(roster).length === 0) return
+  idbSet(DOCTOR_ROSTER_CACHE_KEY, roster).catch(() => {})
+}
+
+async function readDoctorRosterCache(): Promise<Record<string, number | null> | null> {
+  try {
+    const value = await idbGet<Record<string, number | null>>(DOCTOR_ROSTER_CACHE_KEY)
+    return value && typeof value === 'object' ? value : null
+  } catch {
+    return null
+  }
+}
+
 export function PatientProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -647,6 +673,28 @@ export function PatientProfile() {
     if (Object.keys(sharePctMap).length > 0) {
       setDoctorSharePctMap((prev) => ({ ...sharePctMap, ...prev }))
     }
+
+    // Lower priority than this patient's own cached-treatment history above —
+    // `prev` is spread last in both setters below, so anything already known
+    // this session or from this patient's own history always wins over the
+    // device-wide default.
+    readDoctorRosterCache().then((roster) => {
+      if (!roster) return
+      const rosterNames = Object.keys(roster)
+      if (rosterNames.length > 0) {
+        setDoctorsList((prev) => {
+          const merged = Array.from(new Set([...prev, ...rosterNames]))
+          return merged.length === prev.length ? prev : merged
+        })
+      }
+      const rosterSharePct: Record<string, number> = {}
+      for (const [name, pct] of Object.entries(roster)) {
+        if (pct != null) rosterSharePct[name] = pct
+      }
+      if (Object.keys(rosterSharePct).length > 0) {
+        setDoctorSharePctMap((prev) => ({ ...rosterSharePct, ...prev }))
+      }
+    })
   }, [id])
 
   async function fetchDoctorsList(profile: any) {
@@ -697,15 +745,18 @@ export function PatientProfile() {
         // Share % field fall back to the hardcoded 30 on any roster error.
       } else if (users) {
         const sharePctMap: Record<string, number> = {}
+        const roster: Record<string, number | null> = {}
         users.forEach((u: any) => {
           if (u.full_name && u.full_name.trim()) {
             const name = u.full_name.trim()
             set.add(name)
             if (u.default_share_pct != null) sharePctMap[name] = Number(u.default_share_pct)
+            roster[name] = u.default_share_pct != null ? Number(u.default_share_pct) : null
           }
         })
         setDoctorSharePctMap(sharePctMap)
         setDoctorRosterFellBack(false)
+        persistDoctorRosterCache(roster)
       }
 
       const { data: txs, error: txsError, status: txsStatus } = await supabase.from('treatments').select('doctor_name')
@@ -726,6 +777,13 @@ export function PatientProfile() {
       console.warn('Doctor roster fetch failed, falling back to this patient’s treatment history:', err)
       setDoctorRosterFellBack(true)
       applyCachedDoctorFallback()
+      // Unlike the connectivity branches above (which return before reaching
+      // the plain replace below), this generic-exception path has no
+      // confirmed fresh data — `set` here only holds this session's own
+      // self-attribution name(s). A plain replace would clobber the merge
+      // applyCachedDoctorFallback() just queued, so merge instead.
+      setDoctorsList((prev) => Array.from(new Set([...prev, ...set])))
+      return
     }
 
     setDoctorsList(Array.from(set))
@@ -1127,7 +1185,7 @@ export function PatientProfile() {
       return
     }
 
-    const isOffline = !navigator.onLine
+    let isOffline = !navigator.onLine
     // Recording a payment here can touch several existing invoices at once
     // (see existingInvoicesWithDue below) — too much branching to replicate
     // safely as a queued offline mutation without risking a billing mistake.
@@ -1155,7 +1213,7 @@ export function PatientProfile() {
       .join('\n')
 
     try {
-      const visitGroupId = isOffline ? newGroupId() : undefined
+      const visitGroupId = newGroupId()
       let visitSeq = 0
       const patientLabel = patient ? `${patient.first_name} ${patient.last_name}`.trim() : null
       const visitPayload = { patient_id: id, ...visitForm, notes: notesWithSummary || null }
@@ -1176,13 +1234,32 @@ export function PatientProfile() {
           return { ...old, visits: [{ id: insertedVisitId, ...visitPayload }, ...(old.visits || [])] }
         })
       } else {
-        const { data: insertedVisit, error: visitInsertError } = await supabase
+        const { data: insertedVisit, error: visitInsertError, status: visitInsertStatus } = await supabase
           .from('patient_visits')
           .insert([visitPayload])
           .select('id')
           .single()
-        if (visitInsertError) throw visitInsertError
-        insertedVisitId = insertedVisit.id
+        if (visitInsertError) {
+          if (!isOfflineFailure(visitInsertError, visitInsertStatus)) throw visitInsertError
+          // navigator.onLine lied — promote this and every remaining write in
+          // this submission to the offline path instead of losing the visit.
+          isOffline = true
+          insertedVisitId = crypto.randomUUID()
+          await enqueueMutation({
+            table: 'patient_visits',
+            action: 'insert',
+            payload: { id: insertedVisitId, ...visitPayload },
+            meta: { patientId: id, patientName: patientLabel, label: `Visit: ${visitForm.chief_complaint || 'Visit'}` },
+            groupId: visitGroupId,
+            seq: visitSeq++,
+          })
+          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+            if (!old) return old
+            return { ...old, visits: [{ id: insertedVisitId, ...visitPayload }, ...(old.visits || [])] }
+          })
+        } else {
+          insertedVisitId = insertedVisit.id
+        }
       }
       logActivity({
         action: 'create',
@@ -1223,11 +1300,27 @@ export function PatientProfile() {
             seq: visitSeq++,
           })
         } else {
-          const { error: planUpdateError } = await supabase
+          const { error: planUpdateError, status: planUpdateStatus } = await supabase
             .from('treatments')
             .update({ status: selection.status })
             .eq('id', treatment.id)
-          if (planUpdateError) throw planUpdateError
+          if (planUpdateError) {
+            if (!isOfflineFailure(planUpdateError, planUpdateStatus)) throw planUpdateError
+            isOffline = true
+            await enqueueMutation({
+              table: 'treatments',
+              action: 'update',
+              payload: { id: treatment.id, status: selection.status },
+              meta: {
+                patientId: treatment.patient_id,
+                patientName: patientLabel,
+                label: `Mark done: ${treatment.treatment_type || 'treatment'}`,
+                detail: treatment.tooth_number != null ? `Tooth #${treatment.tooth_number}` : undefined,
+              },
+              groupId: visitGroupId,
+              seq: visitSeq++,
+            })
+          }
         }
         if (billablePlanIds.has(treatment.id)) {
           updatedPlanTreatments.push({ ...treatment, status: selection.status })
@@ -1261,11 +1354,11 @@ export function PatientProfile() {
           }))
         })
 
-        if (isOffline) {
+        const enqueueAdHocTreatments = () => {
           insertedTreatments = rows.map((r) => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))
           const doneTeeth = Array.from(new Set(insertedTreatments.map((t) => t.tooth_number).filter((n) => n != null)))
           const doneCost = insertedTreatments.reduce((sum, t) => sum + (Number(t.cost) || 0), 0)
-          await enqueueMutation({
+          return enqueueMutation({
             table: 'treatments',
             action: 'insert',
             payload: insertedTreatments,
@@ -1280,18 +1373,27 @@ export function PatientProfile() {
             },
             groupId: visitGroupId,
             seq: visitSeq++,
+          }).then(() => {
+            queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+              if (!old) return old
+              return { ...old, treatments: [...insertedTreatments, ...(old.treatments || [])] }
+            })
           })
-          queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
-            if (!old) return old
-            return { ...old, treatments: [...insertedTreatments, ...(old.treatments || [])] }
-          })
+        }
+        if (isOffline) {
+          await enqueueAdHocTreatments()
         } else {
-          const { data, error } = await supabase
+          const { data, error, status } = await supabase
             .from('treatments')
             .insert(rows)
             .select('id, treatment_type, description, tooth_number, cost')
-          if (error) throw error
-          insertedTreatments = data || []
+          if (error) {
+            if (!isOfflineFailure(error, status)) throw error
+            isOffline = true
+            await enqueueAdHocTreatments()
+          } else {
+            insertedTreatments = data || []
+          }
         }
 
         // Additive, fire-and-forget: auto-creates a placeholder Lab record for any
@@ -1313,7 +1415,16 @@ export function PatientProfile() {
       }
 
       const billableTreatments = [...updatedPlanTreatments, ...insertedTreatments]
-      if (paymentAmount > 0) {
+      // isOffline may have been promoted to true above (a write started online
+      // but the network died partway through). The :1135 guard above only
+      // catches "offline from the start" — this covers the network dying
+      // mid-submission. createVisitInvoiceWithPayment/applyPaymentToExistingInvoice
+      // have no offline path of their own, and the visit/treatments already
+      // saved (queued) above, so don't attempt a doomed payment write here.
+      let paymentSkippedDueToPromotion = false
+      if (paymentAmount > 0 && isOffline) {
+        paymentSkippedDueToPromotion = true
+      } else if (paymentAmount > 0) {
         // New unbilled treatments get a new invoice first; any remainder pays
         // down existing invoices of selected already-billed plan items. Either
         // way, link the visit to whichever invoice its payment actually went
@@ -1358,6 +1469,9 @@ export function PatientProfile() {
       setVisitPayment({ amount: '', method: 'Cash' })
       loadPatientData()
       setNextApptPrompt(true)
+      if (paymentSkippedDueToPromotion) {
+        alert("The connection dropped partway through saving — the visit was saved offline, but the payment couldn't be recorded. Please add it separately once you're back online.")
+      }
     } catch (error) {
       console.error('Error saving visit:', error)
       alert(`Failed to save visit: ${getFriendlySupabaseErrorMessage(error)}`)
@@ -1557,8 +1671,8 @@ export function PatientProfile() {
     e.preventDefault()
     if (!editingVisit) return
     try {
-      const isOffline = !navigator.onLine
-      const groupId = isOffline ? newGroupId() : undefined
+      let isOffline = !navigator.onLine
+      const groupId = newGroupId()
       await logEdit({
         entityType: 'patient_visit',
         entityId: editingVisit.id,
@@ -1566,7 +1680,7 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         previousPayload: editingVisit,
-        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
+        offlineGroup: { groupId, seq: 0 },
       })
       // Re-attach the fixed Treatment Done / Payment lines unchanged — they are
       // display-only in this form and were never editable here.
@@ -1583,7 +1697,7 @@ export function PatientProfile() {
         treatment_plan: visitEditForm.treatment_plan || null,
         notes: notes || null,
       }
-      if (isOffline) {
+      const enqueueVisitEdit = async () => {
         await enqueueMutation({
           table: 'patient_visits',
           action: 'update',
@@ -1602,9 +1716,16 @@ export function PatientProfile() {
             return { ...old, visits: (old.visits || []).map((v: any) => (v.id === editingVisit.id ? { ...v, ...fields } : v)) }
           })
         }
+      }
+      if (isOffline) {
+        await enqueueVisitEdit()
       } else {
-        const { error } = await supabase.from('patient_visits').update(fields).eq('id', editingVisit.id)
-        if (error) throw error
+        const { error, status } = await supabase.from('patient_visits').update(fields).eq('id', editingVisit.id)
+        if (error) {
+          if (!isOfflineFailure(error, status)) throw error
+          isOffline = true
+          await enqueueVisitEdit()
+        }
       }
       setEditingVisit(null)
       loadPatientData()
@@ -1618,8 +1739,8 @@ export function PatientProfile() {
     if (!canDelete()) return
     if (!confirm('Delete this visit record? Treatments and invoices from this visit are separate records and will NOT be deleted.')) return
     try {
-      const isOffline = !navigator.onLine
-      const groupId = isOffline ? newGroupId() : undefined
+      let isOffline = !navigator.onLine
+      const groupId = newGroupId()
       await logDeletion({
         entityType: 'patient_visit',
         entityId: visit.id,
@@ -1627,9 +1748,9 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: visit,
-        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
+        offlineGroup: { groupId, seq: 0 },
       })
-      if (isOffline) {
+      const enqueueVisitDelete = async () => {
         await enqueueMutation({
           table: 'patient_visits',
           action: 'delete',
@@ -1648,8 +1769,16 @@ export function PatientProfile() {
             return { ...old, visits: (old.visits || []).filter((v: any) => v.id !== visit.id) }
           })
         }
+      }
+      if (isOffline) {
+        await enqueueVisitDelete()
       } else {
-        await supabase.from('patient_visits').delete().eq('id', visit.id)
+        const { error, status } = await supabase.from('patient_visits').delete().eq('id', visit.id)
+        if (error) {
+          if (!isOfflineFailure(error, status)) throw error
+          isOffline = true
+          await enqueueVisitDelete()
+        }
       }
       loadPatientData()
     } catch (error) {
