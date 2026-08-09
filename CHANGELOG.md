@@ -4,6 +4,13 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-09 — Visit save, invoice line items, and doctor share % under a flaky/lying-online network
+Three more bugs from live testing, all downstream of the same `navigator.onLine`-lies class documented below — three more call sites never got `isOfflineFailure()`.
+
+- **New Visit save failing** (`alert("Failed to save visit: TypeError: Failed to fetch")`, work lost). `handleVisitSubmit`'s `const isOffline = !navigator.onLine` was decided once, before four sequential writes (visit insert, plan-item status updates, ad-hoc treatment insert, payment/invoice); a lying-online network meant the online branch ran, the very first write failed with a resolved connectivity error, and it threw straight to the alert with nothing queued. `isOffline` is now a `let` that can promote to `true` mid-submission — a connectivity failure at any of the first three write sites falls back to enqueueing (same `groupId`, so the whole submission still syncs as one ordered unit) instead of losing the save. The payment/invoice sub-flow has no offline path of its own; if the network dies before reaching it, it's now skipped (with a clear "payment couldn't be recorded, add it separately" message) rather than attempted and thrown. `handleVisitEditSubmit`/`handleDeleteVisit` got the equivalent single-write-site fix.
+- **Invoice line item blank (BDT 0.00) after saving a treatment plan offline.** `InvoiceModal.tsx`'s `loadPendingTreatments()` only checked a `navigator.onLine` snapshot; on a lying-online network both its primary query and its legacy-safe retry failed with resolved connectivity errors and fell through to returning `[]` instead of reading the (correctly populated) patient-bundle cache — so the invoice modal defaulted to a blank starter line item. Now checks `isOfflineFailure()` on both queries and falls back to the cache instead.
+- **Doctor Share % still showing the hardcoded 30, offline, even after the previous fix.** The only fallback source was this one patient's own cached treatment history — a doctor's first-ever treatment for a given patient had nothing to borrow a percentage from. Added a device-wide (`idb-keyval`, survives cold launches) doctor roster cache — written on every successful `app_users` fetch, consulted as a lower-priority fallback than this session's/this patient's own data. Also fixed an adjacent bug where the roster fetch's generic-exception handler clobbered the cached-fallback merge with an unconditional replace one line later.
+
 ## 2026-08-08 — Offline sync: silent data-loss fix, real connectivity detection, doctor roster fallback, reschedule prompt
 Four bugs found from live testing of the offline-first system, one of them severe.
 

@@ -27,6 +27,7 @@ import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 import { queryClient } from '@/lib/queryClient'
 import { qk } from '@/repositories/keys'
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
+import { isOfflineFailure } from '@/lib/supabaseErrors'
 
 export interface EditableInvoice {
   id: string
@@ -231,24 +232,32 @@ export function InvoiceModal({
     setPatients((data as PatientRow[]) || [])
   }
 
+  // Shared by the explicit-offline branch below and by both online query
+  // paths when they hit a connectivity failure (navigator.onLine lying) —
+  // same filtering rule everywhere so a fallback never shows different
+  // results than a genuine offline load would.
+  function readPendingTreatmentsFromCache(patientId: string): PendingTreatment[] {
+    const bundle = queryClient.getQueryData<any>(qk.patients.bundle(patientId))
+    const cachedInvoices: Array<{ items?: unknown }> = bundle?.invoices || []
+    const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
+      cachedInvoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
+    )
+    const cachedTreatments = ((bundle?.treatments as PendingTreatment[]) || []).filter(
+      (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id && !linkedTreatmentIds.has(treatment.id)
+    )
+    setPendingTreatments(cachedTreatments)
+    return cachedTreatments
+  }
+
   async function loadPendingTreatments(patientId: string): Promise<PendingTreatment[]> {
     if (!navigator.onLine) {
-      // Offline: the network round-trip below (and its own legacy-safe retry)
-      // would just fail twice. Read from whatever the patient bundle query
-      // already has cached instead — same filtering rule as the online path.
-      const bundle = queryClient.getQueryData<any>(qk.patients.bundle(patientId))
-      const cachedInvoices: Array<{ items?: unknown }> = bundle?.invoices || []
-      const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
-        cachedInvoices.flatMap((invoice) => (Array.isArray(invoice.items) ? invoice.items : []))
-      )
-      const cachedTreatments = ((bundle?.treatments as PendingTreatment[]) || []).filter(
-        (treatment) => treatment.status !== 'Cancelled' && !treatment.invoice_id && !linkedTreatmentIds.has(treatment.id)
-      )
-      setPendingTreatments(cachedTreatments)
-      return cachedTreatments
+      return readPendingTreatmentsFromCache(patientId)
     }
     try {
-      const [{ data, error }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+      const [
+        { data, error, status },
+        { data: invoicesData, error: invoicesError, status: invoicesStatus },
+      ] = await Promise.all([
         supabase
           .from('treatments')
           .select('id, treatment_type, description, tooth_number, status, cost, original_cost, is_invoiced, invoice_id, treatment_plan_group_id')
@@ -260,8 +269,14 @@ export function InvoiceModal({
           .eq('patient_id', patientId)
           .neq('status', 'Merged'),
       ])
-      if (error) throw error
-      if (invoicesError) throw invoicesError
+      if (error) {
+        if (isOfflineFailure(error, status)) return readPendingTreatmentsFromCache(patientId)
+        throw error
+      }
+      if (invoicesError) {
+        if (isOfflineFailure(invoicesError, invoicesStatus)) return readPendingTreatmentsFromCache(patientId)
+        throw invoicesError
+      }
 
       // invoice_id (not is_invoiced) is normally the source of truth — the FK's ON DELETE
       // SET NULL keeps it accurate even if an invoice was deleted by an older app version
@@ -278,7 +293,10 @@ export function InvoiceModal({
       return safeTreatments
     } catch (error) {
       try {
-        const [{ data: treatmentsData, error: treatmentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+        const [
+          { data: treatmentsData, error: treatmentsError, status: treatmentsStatus },
+          { data: invoicesData, error: invoicesError, status: invoicesStatus },
+        ] = await Promise.all([
           supabase
             .from('treatments')
             .select('id, treatment_type, description, tooth_number, status, cost, treatment_plan_group_id')
@@ -291,8 +309,14 @@ export function InvoiceModal({
             .neq('status', 'Merged'),
         ])
 
-        if (treatmentsError) throw treatmentsError
-        if (invoicesError) throw invoicesError
+        if (treatmentsError) {
+          if (isOfflineFailure(treatmentsError, treatmentsStatus)) return readPendingTreatmentsFromCache(patientId)
+          throw treatmentsError
+        }
+        if (invoicesError) {
+          if (isOfflineFailure(invoicesError, invoicesStatus)) return readPendingTreatmentsFromCache(patientId)
+          throw invoicesError
+        }
 
         const linkedTreatmentIds = extractTreatmentIdsFromInvoiceItems(
           (invoicesData || []).flatMap((invoice: { items?: unknown }) => (Array.isArray(invoice.items) ? invoice.items : []))
