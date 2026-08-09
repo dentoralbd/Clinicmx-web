@@ -56,3 +56,15 @@ Awaiting explicit user approval (see OFFLINE_ROADMAP §12): delete legacy `netli
 - Patient-facing portal or online booking — not planned.
 - Play Store distribution — sideload/PWA only.
 - Multi-tenant SaaS — ClinicMx serves this clinic; `sk-dental` (the second clinic's fork) is frozen and diverges freely.
+
+---
+
+## 7. Database & Platform Alternatives Note (Exploratory)
+
+Evaluated as an exploratory reference (e.g. for vendor lock-in or scale concerns). **Current decision: Stay on Supabase PostgreSQL.** Immediate priority remains Milestone M3 (Supabase Auth + RLS lockdown) followed by M4 (PowerSync offline writes).
+
+If a migration is ever required in the future:
+- **Neon + Clerk + Cloudflare R2**: Most natural modular stack (retains PostgreSQL engine, preserves RLS/schema concepts, integrates with planned R2 storage).
+- **Nhost**: Direct 1:1 Supabase alternative with minimal refactoring required.
+- **Firebase / Appwrite / PocketBase**: Not recommended for ClinicMx — loses PostgreSQL RLS semantics, requires NoSQL data model rewrites, or lacks multi-user concurrent write scaling.
+
