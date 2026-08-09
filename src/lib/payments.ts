@@ -18,6 +18,15 @@ export interface RecordInvoicePaymentArgs {
   /** Lets an offline-queued payment patch the right patient's cached bundle and label its outbox card. Omit only when the caller genuinely has no patient context (payment recording still works — just without that optimistic UI). */
   patientId?: string | null
   patientName?: string | null
+  /**
+   * Lets a caller that's already building a larger offline group (e.g.
+   * InvoiceModal.createInvoiceOffline queuing an invoice + treatment-link
+   * under one groupId) fold an offline-queued payment into that SAME group
+   * at the given seq (and seq+1 for the invoice balance update) instead of
+   * starting an independent group — avoids an FK violation if the payment
+   * group were manually synced before the invoice group.
+   */
+  group?: { groupId: string; seq: number }
 }
 
 export interface RecordInvoicePaymentResult {
@@ -37,8 +46,19 @@ async function enqueueOfflinePayment(args: {
   newStatus: RecordInvoicePaymentResult['newStatus']
   patientId?: string | null
   patientName?: string | null
+  /**
+   * Lets a caller that's already building a larger offline group (e.g.
+   * InvoiceModal.createInvoiceOffline, which queues the invoice insert and
+   * treatment-link under one groupId) fold this payment into that SAME
+   * group instead of starting an independent one. Without this, a payment
+   * queued alongside a not-yet-synced offline invoice could be manually
+   * synced first and hit an FK violation against an invoice id the server
+   * doesn't have yet.
+   */
+  group?: { groupId: string; seq: number }
 }) {
-  const groupId = newGroupId()
+  const groupId = args.group?.groupId ?? newGroupId()
+  const seq = args.group?.seq ?? 0
   const label = 'Payment'
   const detail = `${formatBDT(args.amount)} via ${args.method}`
   await enqueueMutation({
@@ -54,7 +74,7 @@ async function enqueueOfflinePayment(args: {
     },
     meta: { patientId: args.patientId, patientName: args.patientName, label, detail },
     groupId,
-    seq: 0,
+    seq,
   })
   await enqueueMutation({
     table: 'invoices',
@@ -62,7 +82,7 @@ async function enqueueOfflinePayment(args: {
     payload: { id: args.invoiceId, paid_amount: args.newPaidAmount, status: args.newStatus },
     meta: { patientId: args.patientId, patientName: args.patientName, label: 'Update invoice balance', detail },
     groupId,
-    seq: 1,
+    seq: seq + 1,
   })
   queryClient.setQueriesData({ queryKey: qk.patients.all }, (old: any) => {
     if (!old || !old.invoices) return old
@@ -95,6 +115,7 @@ export async function recordInvoicePayment({
   notes = null,
   patientId,
   patientName,
+  group,
 }: RecordInvoicePaymentArgs): Promise<RecordInvoicePaymentResult> {
   const dateIso = paymentDateIso || new Date().toISOString()
   const newPaidAmount = invoicePaid + amount
@@ -102,7 +123,7 @@ export async function recordInvoicePayment({
     newPaidAmount >= invoiceTotal && invoiceTotal > 0 ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
 
   if (!navigator.onLine) {
-    await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName })
+    await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, group })
     return { paymentStored: true, newPaidAmount, newStatus }
   }
 
@@ -146,7 +167,7 @@ export async function recordInvoicePayment({
     // !navigator.onLine. isSchemaCompatibilityError above doesn't match
     // network wording, so this ordering is unaffected.
     if (isOfflineFailure(err)) {
-      await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName })
+      await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, group })
       return { paymentStored: true, newPaidAmount, newStatus }
     }
     throw err

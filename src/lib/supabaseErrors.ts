@@ -20,6 +20,8 @@
  * straight at the live deployment — see CLAUDE.md).
  */
 
+import { markConnectivityFailureObserved } from './connectivityStatus'
+
 // Engine-specific wordings for "the request never reached a server":
 // Chromium/Android WebView "Failed to fetch"; Firefox "NetworkError when
 // attempting to fetch resource."; Safari/iOS "Load failed"; React Native/some
@@ -42,9 +44,16 @@ export function isConnectivityError(error: unknown, status?: number | null): boo
   // postgrest-js also resolves an aborted/timed-out request with status 0,
   // but tags it in `hint`. An abort is not "we are offline" — don't queue it.
   if (/aborterror|request was aborted/i.test(text)) return false
-  if ((status ?? e.status) === 0) return true
+  if ((status ?? e.status) === 0) {
+    markConnectivityFailureObserved()
+    return true
+  }
   if (!error) return false
-  return NETWORK_MESSAGE_RE.test(text)
+  if (NETWORK_MESSAGE_RE.test(text)) {
+    markConnectivityFailureObserved()
+    return true
+  }
+  return false
 }
 
 /**
