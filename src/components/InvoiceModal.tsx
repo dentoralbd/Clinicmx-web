@@ -600,7 +600,12 @@ export function InvoiceModal({
     })
 
     if (collectPayment && parsedPaymentAmount > 0) {
-      await recordImmediatePayment(clientInvoiceId, parsedPaymentAmount)
+      // Share this invoice's own group (rather than recordImmediatePayment's
+      // default of starting an independent one) — the invoice hasn't synced
+      // yet, so a payment queued in a separate group could be manually
+      // synced first and hit an FK violation against an invoice id the
+      // server doesn't have.
+      await recordImmediatePayment(clientInvoiceId, parsedPaymentAmount, { groupId, seq: 2 })
     }
 
     onSave(clientInvoiceId)
@@ -726,8 +731,12 @@ export function InvoiceModal({
           .single()
       }
 
-      const { data, error } = insertResult
-      if (error) throw error
+      const { data, error, status } = insertResult
+      if (error) {
+        if (!isOfflineFailure(error, status)) throw error
+        await createInvoiceOffline(normalizedItems, parsedPaymentAmount)
+        return
+      }
 
       // Advance the counter only when the auto number (or its +1 retry) was actually used
       if (auto && usedInvoiceNumber && (usedInvoiceNumber === autoValue || usedInvoiceNumber === `${auto.prefix}-${auto.next + 1}`)) {
@@ -751,28 +760,53 @@ export function InvoiceModal({
       })
 
       if (data?.id) {
-        // invoice_history table is added by a later migration — ignore if missing
-        await supabase.from('invoice_history').insert({
+        // invoice_history table is added by a later migration — ignore if
+        // missing (legacy schema). A connectivity failure is different from a
+        // missing table — queue it instead of silently dropping the audit row.
+        const { error: historyError, status: historyStatus } = await supabase.from('invoice_history').insert({
           invoice_id: data.id,
           event_type: 'invoice_created',
           event_data: {
             invoice_type: invoiceType,
             template_id: template?.id || null,
           },
-        }).then(() => {}, () => {})
+        })
+        if (historyError && isOfflineFailure(historyError, historyStatus)) {
+          await enqueueMutation({
+            table: 'invoice_history',
+            action: 'insert',
+            payload: { invoice_id: data.id, event_type: 'invoice_created', event_data: { invoice_type: invoiceType, template_id: template?.id || null } },
+            meta: { patientId: formData.patient_id, patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null, label: `Invoice history: ${usedInvoiceNumber || data.id}` },
+            groupId: newGroupId(),
+            seq: 0,
+          })
+        }
 
-        // treatments.is_invoiced / invoice_id are added by a later migration — ignore if missing
+        // treatments.is_invoiced / invoice_id are added by a later migration —
+        // ignore if missing (legacy schema). A connectivity failure is
+        // different: silently dropping this link would let the treatment come
+        // back as "unbilled" forever — queue it.
         if (selectedTreatmentIds.size > 0) {
           const linkedIds = Array.from(selectedTreatmentIds)
-          await supabase
+          const { error: linkError, status: linkStatus } = await supabase
             .from('treatments')
             .update({ is_invoiced: true, invoice_id: data.id })
             .in('id', linkedIds)
-            .then(() => {}, () => {})
+          if (linkError && isOfflineFailure(linkError, linkStatus)) {
+            await enqueueMutation({
+              table: 'treatments',
+              action: 'update_many',
+              payload: { ids: linkedIds, fields: { is_invoiced: true, invoice_id: data.id } },
+              meta: { patientId: formData.patient_id, patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null, label: `Link ${linkedIds.length} treatment(s) to ${usedInvoiceNumber || data.id}` },
+              groupId: newGroupId(),
+              seq: 0,
+            })
+          }
           advanceTreatmentStatusOnBilling(linkedIds)
         }
 
-        // payment_plans table is added by a later migration — ignore if missing
+        // payment_plans table is added by a later migration — ignore if
+        // missing (legacy schema); queue on a connectivity failure instead.
         const installments = Math.max(parseInt(formData.installment_count, 10) || 1, 1)
         if (installments > 1 && formData.due_date) {
           const installmentAmount = Number((totalAmount / installments).toFixed(2))
@@ -788,7 +822,17 @@ export function InvoiceModal({
             }
           })
 
-          await supabase.from('payment_plans').insert(planRows).then(() => {}, () => {})
+          const { error: planError, status: planStatus } = await supabase.from('payment_plans').insert(planRows)
+          if (planError && isOfflineFailure(planError, planStatus)) {
+            await enqueueMutation({
+              table: 'payment_plans',
+              action: 'insert',
+              payload: planRows,
+              meta: { patientId: formData.patient_id, patientName: invoicePatient ? `${invoicePatient.first_name} ${invoicePatient.last_name}` : null, label: `Installment plan (${installments}x) for ${usedInvoiceNumber || data.id}` },
+              groupId: newGroupId(),
+              seq: 0,
+            })
+          }
         }
 
         if (collectPayment && parsedPaymentAmount > 0) {
@@ -821,7 +865,7 @@ export function InvoiceModal({
   }
 
   /** Same fallback chain as PaymentEntryModal so older payments schemas keep working */
-  async function recordImmediatePayment(invoiceId: string, amount: number) {
+  async function recordImmediatePayment(invoiceId: string, amount: number, group?: { groupId: string; seq: number }) {
     // Same fix as PaymentEntryModal: a date-only picker can't capture time of day —
     // stamping it at midnight lost the actual moment for same-day payments. Keep the
     // chosen date but carry over the current time of day instead.
@@ -839,6 +883,7 @@ export function InvoiceModal({
       paymentDateIso,
       patientId: formData.patient_id,
       patientName: paymentPatient ? `${paymentPatient.first_name} ${paymentPatient.last_name}` : null,
+      group,
     })
 
     if (result.paymentStored) {

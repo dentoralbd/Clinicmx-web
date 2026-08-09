@@ -7,6 +7,7 @@ import { saveTreatmentPlan, deleteTreatmentRow as deleteTreatmentRowRepo } from 
 import { enqueueMutation, newGroupId } from '@/lib/offlineSync'
 import { queryClient } from '@/lib/queryClient'
 import { isOfflineFailure } from '@/lib/supabaseErrors'
+import { recordInvoicePayment } from '@/lib/payments'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
 import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -1418,9 +1419,10 @@ export function PatientProfile() {
       // isOffline may have been promoted to true above (a write started online
       // but the network died partway through). The :1135 guard above only
       // catches "offline from the start" — this covers the network dying
-      // mid-submission. createVisitInvoiceWithPayment/applyPaymentToExistingInvoice
-      // have no offline path of their own, and the visit/treatments already
-      // saved (queued) above, so don't attempt a doomed payment write here.
+      // mid-submission. Below this point isOffline is known false, so
+      // createVisitInvoiceWithPayment/applyPaymentToExistingInvoice run their
+      // normal online path (each has its own connectivity-failure fallback
+      // now — see their definitions).
       let paymentSkippedDueToPromotion = false
       if (paymentAmount > 0 && isOffline) {
         paymentSkippedDueToPromotion = true
@@ -1435,7 +1437,7 @@ export function PatientProfile() {
         let touchedTotalPaid = 0
         if (billableTreatments.length > 0 && remaining > 0) {
           const newInvoicePortion = Math.min(remaining, treatmentsTotal)
-          const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion)
+          const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, newInvoicePortion, visitGroupId, () => visitSeq++)
           if (newInvoiceId) linkedInvoiceId = newInvoiceId
           touchedTotalPaid += newInvoicePortion
           remaining -= newInvoicePortion
@@ -1478,7 +1480,12 @@ export function PatientProfile() {
     }
   }
 
-  async function createVisitInvoiceWithPayment(insertedTreatments: any[], paymentAmount: number): Promise<string | null> {
+  async function createVisitInvoiceWithPayment(
+    insertedTreatments: any[],
+    paymentAmount: number,
+    offlineGroupId: string,
+    nextSeq: () => number
+  ): Promise<string | null> {
     if (!id) return null
 
     // Items show the pre-discount price so the printed invoice can break out a
@@ -1507,8 +1514,89 @@ export function PatientProfile() {
     if (insertResult.error && isSchemaCompatibilityError(insertResult.error)) {
       insertResult = await supabase.from('invoices').insert([basePayload]).select('id').single()
     }
-    const { data: invoice, error: invoiceError } = insertResult
-    if (invoiceError) throw invoiceError
+    const { data: invoice, error: invoiceError, status: invoiceStatus } = insertResult
+    if (invoiceError) {
+      if (!isOfflineFailure(invoiceError, invoiceStatus)) throw invoiceError
+
+      // The network died before the invoice could be created online — build
+      // it directly with its FINAL paid_amount/status (no need for the
+      // online path's separate insert-then-update-status two-phase dance;
+      // everything here queues in one shot, so there's no ordering
+      // constraint that requires a real invoice id to exist first).
+      const clientInvoiceId = crypto.randomUUID()
+      const provisionalNumber = `INV-TMP-${clientInvoiceId.slice(0, 8)}`
+      const finalStatus = paymentAmount >= totalAmount ? 'Paid' : 'Partial'
+      const patientLabel = patient ? `${patient.first_name} ${patient.last_name}`.trim() : null
+      const offlineBasePayload = buildLegacySafeInvoicePayload({
+        patientId: id,
+        items,
+        totalAmount,
+        paidAmount: paymentAmount,
+        status: finalStatus,
+        dueDate: null,
+      })
+      const offlineInvoice = {
+        ...offlineBasePayload,
+        id: clientInvoiceId,
+        invoice_number: provisionalNumber,
+        ...(discountAmount > 0 ? { discount_amount: discountAmount, discount_type: 'fixed', discount_value: discountAmount } : {}),
+      }
+
+      await enqueueMutation({
+        table: 'invoices',
+        action: 'insert',
+        payload: offlineInvoice,
+        meta: { patientId: id, patientName: patientLabel, label: `Invoice ${provisionalNumber}`, detail: formatBDT(totalAmount) },
+        groupId: offlineGroupId,
+        seq: nextSeq(),
+      })
+
+      const billedTreatmentIdsOffline = insertedTreatments.map((treatment) => treatment.id)
+      if (billedTreatmentIdsOffline.length > 0) {
+        await enqueueMutation({
+          table: 'treatments',
+          action: 'update_many',
+          payload: { ids: billedTreatmentIdsOffline, fields: { is_invoiced: true, invoice_id: clientInvoiceId } },
+          meta: { patientId: id, patientName: patientLabel, label: `Link ${billedTreatmentIdsOffline.length} treatment(s) to ${provisionalNumber}` },
+          groupId: offlineGroupId,
+          seq: nextSeq(),
+        })
+      }
+
+      if (paymentAmount > 0) {
+        await enqueueMutation({
+          table: 'payments',
+          action: 'insert',
+          payload: { id: crypto.randomUUID(), invoice_id: clientInvoiceId, amount: paymentAmount, payment_method: visitPayment.method, payment_date: new Date().toISOString(), notes: null },
+          meta: { patientId: id, patientName: patientLabel, label: 'Payment', detail: `${formatBDT(paymentAmount)} via ${visitPayment.method}` },
+          groupId: offlineGroupId,
+          seq: nextSeq(),
+        })
+      }
+
+      queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+        if (!old) return old
+        return {
+          ...old,
+          invoices: [offlineInvoice, ...(old.invoices || [])],
+          treatments: (old.treatments || []).map((t: any) =>
+            billedTreatmentIdsOffline.includes(t.id) ? { ...t, is_invoiced: true, invoice_id: clientInvoiceId } : t
+          ),
+        }
+      })
+
+      logActivity({
+        action: 'create',
+        entityType: 'invoice',
+        entityId: clientInvoiceId,
+        entityLabel: provisionalNumber,
+        patientId: id,
+        patientName: patientLabel,
+        details: `Total ${formatBDT(totalAmount)} (Saved Offline)`,
+      })
+
+      return clientInvoiceId
+    }
     if (!invoice?.id) return null
 
     logActivity({
@@ -1528,17 +1616,27 @@ export function PatientProfile() {
     }).then(() => {}, () => {})
 
     const billedTreatmentIds = insertedTreatments.map((treatment) => treatment.id)
-    await supabase
+    const { error: linkError, status: linkStatus } = await supabase
       .from('treatments')
       .update({ is_invoiced: true, invoice_id: invoice.id })
       .in('id', billedTreatmentIds)
-      .then(() => {}, () => {})
+    if (linkError && isOfflineFailure(linkError, linkStatus)) {
+      await enqueueMutation({
+        table: 'treatments',
+        action: 'update_many',
+        payload: { ids: billedTreatmentIds, fields: { is_invoiced: true, invoice_id: invoice.id } },
+        meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: `Link ${billedTreatmentIds.length} treatment(s) to invoice` },
+        groupId: newGroupId(),
+        seq: 0,
+      })
+    }
     advanceTreatmentStatusOnBilling(billedTreatmentIds)
 
     // Same fallback chain as InvoiceModal.recordImmediatePayment for older payments schemas
     const paymentDateIso = new Date().toISOString()
     let paymentStored = false
     let paymentSchemaError: unknown = null
+    let delegatedToRecordInvoicePayment = false
     const paymentPayloads: Array<{
       invoice_id: string
       amount: number
@@ -1551,10 +1649,28 @@ export function PatientProfile() {
       { invoice_id: invoice.id, amount: paymentAmount },
     ]
     for (const payload of paymentPayloads) {
-      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      const { error: paymentError, status: paymentStatus } = await supabase.from('payments').insert(payload)
       if (!paymentError) {
         paymentStored = true
         paymentSchemaError = null
+        break
+      }
+      if (isOfflineFailure(paymentError, paymentStatus)) {
+        // The invoice already has a real server id at this point, so there's
+        // no ordering hazard — delegate to the already offline-safe payment
+        // recorder instead of reinventing its queueing logic.
+        const result = await recordInvoicePayment({
+          invoiceId: invoice.id,
+          amount: paymentAmount,
+          invoiceTotal: totalAmount,
+          invoicePaid: 0,
+          method: visitPayment.method,
+          paymentDateIso,
+          patientId: id,
+          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        })
+        paymentStored = result.paymentStored
+        delegatedToRecordInvoicePayment = true
         break
       }
       if (!isSchemaCompatibilityError(paymentError)) throw paymentError
@@ -1571,23 +1687,35 @@ export function PatientProfile() {
       })
     }
 
-    const { error: statusError } = await supabase
-      .from('invoices')
-      .update({
-        paid_amount: paymentAmount,
-        status: paymentAmount >= totalAmount ? 'Paid' : 'Partial',
-      })
-      .eq('id', invoice.id)
-    if (statusError) throw statusError
+    if (!delegatedToRecordInvoicePayment) {
+      const { error: statusError, status: statusStatus } = await supabase
+        .from('invoices')
+        .update({
+          paid_amount: paymentAmount,
+          status: paymentAmount >= totalAmount ? 'Paid' : 'Partial',
+        })
+        .eq('id', invoice.id)
+      if (statusError) {
+        if (!isOfflineFailure(statusError, statusStatus)) throw statusError
+        await enqueueMutation({
+          table: 'invoices',
+          action: 'update',
+          payload: { id: invoice.id, paid_amount: paymentAmount, status: paymentAmount >= totalAmount ? 'Paid' : 'Partial' },
+          meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: 'Update invoice balance' },
+          groupId: newGroupId(),
+          seq: 0,
+        })
+      }
 
-    await supabase.from('invoice_history').insert({
-      invoice_id: invoice.id,
-      event_type: 'payment_recorded',
-      event_data: { amount: paymentAmount, payment_method: visitPayment.method },
-    }).then(() => {}, () => {})
+      await supabase.from('invoice_history').insert({
+        invoice_id: invoice.id,
+        event_type: 'payment_recorded',
+        event_data: { amount: paymentAmount, payment_method: visitPayment.method },
+      }).then(() => {}, () => {})
 
-    if (!paymentStored && paymentSchemaError) {
-      logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount: paymentAmount })
+      if (!paymentStored && paymentSchemaError) {
+        logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount: paymentAmount })
+      }
     }
 
     return invoice.id as string
@@ -1598,6 +1726,8 @@ export function PatientProfile() {
     const paymentDateIso = new Date().toISOString()
     let paymentStored = false
     let paymentSchemaError: unknown = null
+    let delegatedToRecordInvoicePayment = false
+    let newPaid = (invoice.paid_amount || 0) + amount
     const paymentPayloads: Array<{
       invoice_id: string
       amount: number
@@ -1610,10 +1740,28 @@ export function PatientProfile() {
       { invoice_id: invoice.id, amount },
     ]
     for (const payload of paymentPayloads) {
-      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      const { error: paymentError, status: paymentStatus } = await supabase.from('payments').insert(payload)
       if (!paymentError) {
         paymentStored = true
         paymentSchemaError = null
+        break
+      }
+      if (isOfflineFailure(paymentError, paymentStatus)) {
+        // The invoice already exists server-side — no ordering hazard,
+        // delegate to the already offline-safe payment recorder.
+        const result = await recordInvoicePayment({
+          invoiceId: invoice.id,
+          amount,
+          invoiceTotal: invoice.total_amount || 0,
+          invoicePaid: invoice.paid_amount || 0,
+          method: visitPayment.method,
+          paymentDateIso,
+          patientId: id,
+          patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
+        })
+        paymentStored = result.paymentStored
+        newPaid = result.newPaidAmount
+        delegatedToRecordInvoicePayment = true
         break
       }
       if (!isSchemaCompatibilityError(paymentError)) throw paymentError
@@ -1630,24 +1778,35 @@ export function PatientProfile() {
       })
     }
 
-    const newPaid = (invoice.paid_amount || 0) + amount
-    const { error: statusError } = await supabase
-      .from('invoices')
-      .update({
-        paid_amount: newPaid,
-        status: newPaid >= (invoice.total_amount || 0) ? 'Paid' : 'Partial',
-      })
-      .eq('id', invoice.id)
-    if (statusError) throw statusError
+    if (!delegatedToRecordInvoicePayment) {
+      const { error: statusError, status: statusStatus } = await supabase
+        .from('invoices')
+        .update({
+          paid_amount: newPaid,
+          status: newPaid >= (invoice.total_amount || 0) ? 'Paid' : 'Partial',
+        })
+        .eq('id', invoice.id)
+      if (statusError) {
+        if (!isOfflineFailure(statusError, statusStatus)) throw statusError
+        await enqueueMutation({
+          table: 'invoices',
+          action: 'update',
+          payload: { id: invoice.id, paid_amount: newPaid, status: newPaid >= (invoice.total_amount || 0) ? 'Paid' : 'Partial' },
+          meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: 'Update invoice balance' },
+          groupId: newGroupId(),
+          seq: 0,
+        })
+      }
 
-    await supabase.from('invoice_history').insert({
-      invoice_id: invoice.id,
-      event_type: 'payment_recorded',
-      event_data: { amount, payment_method: visitPayment.method, source: 'visit_form' },
-    }).then(() => {}, () => {})
+      await supabase.from('invoice_history').insert({
+        invoice_id: invoice.id,
+        event_type: 'payment_recorded',
+        event_data: { amount, payment_method: visitPayment.method, source: 'visit_form' },
+      }).then(() => {}, () => {})
 
-    if (!paymentStored && paymentSchemaError) {
-      logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount })
+      if (!paymentStored && paymentSchemaError) {
+        logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId: invoice.id, amount })
+      }
     }
 
     return newPaid
@@ -2002,6 +2161,13 @@ export function PatientProfile() {
       return
     }
 
+    // Reaches here only when navigator.onLine was true at entry (see the
+    // early return above). Promotable: once a connectivity failure proves
+    // the network is actually down, later writes below (which have no
+    // ordering dependency on each other) skip a doomed repeat online
+    // attempt and enqueue directly instead.
+    let isOffline = false
+
     try {
       const payload: any = {
         patient_id: id,
@@ -2021,10 +2187,21 @@ export function PatientProfile() {
         language: prescriptionForm.language,
       }
 
-      await supabase
+      const { error: medHistoryError, status: medHistoryStatus } = await supabase
         .from('patients')
         .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
         .eq('id', id)
+      if (medHistoryError) {
+        if (isOfflineFailure(medHistoryError, medHistoryStatus)) {
+          // Earliest possible failure — nothing prescription-specific has
+          // happened yet. Delegate the whole save; saveNewPrescriptionOffline
+          // independently redoes this same medical_history update (an
+          // idempotent overwrite of the same computed value, harmless).
+          await saveNewPrescriptionOffline(entryCosts)
+          return
+        }
+        throw medHistoryError
+      }
 
       let prescriptionId = editingPrescriptionId
       if (editingPrescriptionId) {
@@ -2039,9 +2216,24 @@ export function PatientProfile() {
             previousPayload: previousPrescription,
           })
         }
-        await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
+        // Editing has no offline path (needs a live read of currently-billed
+        // treatment rows first — see the explicit refusal above); a genuine
+        // failure here should still surface rather than vanish.
+        const { error: updatePrescriptionError } = await supabase.from('prescriptions').update(payload).eq('id', editingPrescriptionId)
+        if (updatePrescriptionError) throw updatePrescriptionError
       } else {
-        const { data: inserted } = await supabase.from('prescriptions').insert([payload]).select().single()
+        const { data: inserted, error: insertPrescriptionError, status: insertPrescriptionStatus } = await supabase
+          .from('prescriptions')
+          .insert([payload])
+          .select()
+          .single()
+        if (insertPrescriptionError) {
+          if (isOfflineFailure(insertPrescriptionError, insertPrescriptionStatus)) {
+            await saveNewPrescriptionOffline(entryCosts)
+            return
+          }
+          throw insertPrescriptionError
+        }
         prescriptionId = inserted?.id || null
         logActivity({
           action: 'create',
@@ -2135,9 +2327,32 @@ export function PatientProfile() {
             const operation = mapEntryToOperation(entry, teethList[i])
             const reuseRow = reusableRows[i]
             if (reuseRow) {
-              await supabase.from('treatments').update({ ...operation, ...costPatch }).eq('id', reuseRow.id)
+              const enqueueUpdateFallback = async () => {
+                await enqueueMutation({
+                  table: 'treatments',
+                  action: 'update',
+                  payload: { id: reuseRow.id, ...operation, ...costPatch },
+                  meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: `Update treatment from prescription plan: ${entry.text || 'treatment'}` },
+                  groupId: newGroupId(),
+                  seq: 0,
+                })
+                queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+                  if (!old) return old
+                  return { ...old, treatments: (old.treatments || []).map((t: any) => (t.id === reuseRow.id ? { ...t, ...operation, ...costPatch } : t)) }
+                })
+              }
+              if (isOffline) {
+                await enqueueUpdateFallback()
+              } else {
+                const { error: updateError, status: updateStatus } = await supabase.from('treatments').update({ ...operation, ...costPatch }).eq('id', reuseRow.id)
+                if (updateError) {
+                  if (!isOfflineFailure(updateError, updateStatus)) throw updateError
+                  isOffline = true
+                  await enqueueUpdateFallback()
+                }
+              }
             } else {
-              await supabase.from('treatments').insert([{
+              const newTreatmentPayload = {
                 patient_id: id,
                 prescription_id: prescriptionId,
                 prescription_entry_id: entry.id,
@@ -2145,7 +2360,32 @@ export function PatientProfile() {
                 notes: 'Added from prescription treatment plan',
                 ...operation,
                 ...costPatch,
-              }])
+              }
+              const enqueueInsertFallback = async () => {
+                const offlineRow = { ...newTreatmentPayload, id: crypto.randomUUID(), created_at: new Date().toISOString() }
+                await enqueueMutation({
+                  table: 'treatments',
+                  action: 'insert',
+                  payload: offlineRow,
+                  meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: `Treatment from prescription plan: ${entry.text || 'treatment'}` },
+                  groupId: newGroupId(),
+                  seq: 0,
+                })
+                queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+                  if (!old) return old
+                  return { ...old, treatments: [offlineRow, ...(old.treatments || [])] }
+                })
+              }
+              if (isOffline) {
+                await enqueueInsertFallback()
+              } else {
+                const { error: insertError, status: insertStatus } = await supabase.from('treatments').insert([newTreatmentPayload])
+                if (insertError) {
+                  if (!isOfflineFailure(insertError, insertStatus)) throw insertError
+                  isOffline = true
+                  await enqueueInsertFallback()
+                }
+              }
               treatmentRowsCreated++
             }
           }
@@ -2160,10 +2400,21 @@ export function PatientProfile() {
         }
 
         if (idsToDelete.length > 0 && canDelete()) {
-          const { data: treatmentsToDelete } = await supabase
+          const { data: selectedTreatmentsToDelete, error: selectError, status: selectStatus } = await supabase
             .from('treatments')
             .select('*')
             .in('id', idsToDelete)
+          let treatmentsToDelete = selectedTreatmentsToDelete
+          if (selectError) {
+            if (!isOfflineFailure(selectError, selectStatus)) throw selectError
+            // A connectivity failure here would otherwise silently skip every
+            // delete_history snapshot below even if the network happens to
+            // recover in time for the delete itself to succeed for real.
+            // Fall back to the cached bundle so the audit trail isn't lost.
+            isOffline = true
+            const cachedTreatments = (queryClient.getQueryData<any>(qk.patients.bundle(id))?.treatments || []) as any[]
+            treatmentsToDelete = cachedTreatments.filter((t) => idsToDelete.includes(t.id))
+          }
           for (const treatment of treatmentsToDelete || []) {
             await logDeletion({
               entityType: 'treatment',
@@ -2174,7 +2425,32 @@ export function PatientProfile() {
               payload: treatment,
             })
           }
-          await supabase.from('treatments').delete().in('id', idsToDelete)
+          const enqueueDeleteFallback = async () => {
+            for (const treatmentId of idsToDelete) {
+              await enqueueMutation({
+                table: 'treatments',
+                action: 'delete',
+                payload: { id: treatmentId },
+                meta: { patientId: id, patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null, label: 'Delete treatment (superseded by prescription edit)' },
+                groupId: newGroupId(),
+                seq: 0,
+              })
+            }
+            queryClient.setQueryData(qk.patients.bundle(id), (old: any) => {
+              if (!old) return old
+              return { ...old, treatments: (old.treatments || []).filter((t: any) => !idsToDelete.includes(t.id)) }
+            })
+          }
+          if (isOffline) {
+            await enqueueDeleteFallback()
+          } else {
+            const { error: deleteError, status: deleteStatus } = await supabase.from('treatments').delete().in('id', idsToDelete)
+            if (deleteError) {
+              if (!isOfflineFailure(deleteError, deleteStatus)) throw deleteError
+              isOffline = true
+              await enqueueDeleteFallback()
+            }
+          }
         }
 
         if (treatmentRowsCreated > 0) {
@@ -2269,8 +2545,8 @@ export function PatientProfile() {
     if (!confirm('Are you sure you want to delete this prescription?')) return
     try {
       const prescription = prescriptions.find((p: any) => p.id === prescriptionId)
-      const isOffline = !navigator.onLine
-      const groupId = isOffline ? newGroupId() : undefined
+      let isOffline = !navigator.onLine
+      const groupId = newGroupId()
       await logDeletion({
         entityType: 'prescription',
         entityId: prescriptionId,
@@ -2278,9 +2554,9 @@ export function PatientProfile() {
         patientId: id ?? null,
         patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : null,
         payload: prescription || { id: prescriptionId },
-        offlineGroup: isOffline ? { groupId: groupId!, seq: 0 } : undefined,
+        offlineGroup: { groupId, seq: 0 },
       })
-      if (isOffline) {
+      const enqueuePrescriptionDelete = async () => {
         await enqueueMutation({
           table: 'prescriptions',
           action: 'delete',
@@ -2299,8 +2575,16 @@ export function PatientProfile() {
             return { ...old, prescriptions: (old.prescriptions || []).filter((p: any) => p.id !== prescriptionId) }
           })
         }
+      }
+      if (isOffline) {
+        await enqueuePrescriptionDelete()
       } else {
-        await supabase.from('prescriptions').delete().eq('id', prescriptionId)
+        const { error, status } = await supabase.from('prescriptions').delete().eq('id', prescriptionId)
+        if (error) {
+          if (!isOfflineFailure(error, status)) throw error
+          isOffline = true
+          await enqueuePrescriptionDelete()
+        }
       }
       loadPatientData()
     } catch (error) {
