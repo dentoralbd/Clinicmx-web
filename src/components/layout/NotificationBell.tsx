@@ -18,6 +18,7 @@ import {
   getOfflineSyncAlertsSeen,
   setOfflineSyncAlertsSeen,
   fetchSitewidePendingEdits,
+  fetchRemoteApprovableEdits,
 } from '@/lib/offlineSync'
 import { getPendingLeaveCount } from '@/lib/leaveAlerts'
 
@@ -160,7 +161,17 @@ export function NotificationBell() {
           // this device's own local outbox — admin should know about
           // pending edits queued on ANY device/account, not just the one
           // they happen to be looking at right now.
-          const sitewideRows = await fetchSitewidePendingEdits().catch(() => [])
+          const [sitewideRows, approvableRows] = await Promise.all([
+            fetchSitewidePendingEdits().catch(() => []),
+            fetchRemoteApprovableEdits().catch(() => []),
+          ])
+          // Not every staged edit can be approved from here — a row with no
+          // decryptable payload (staged by a session with no encryption key
+          // at the time) is metadata-only and view-only until re-reported by
+          // a session that has the key. Call that out explicitly instead of
+          // reporting one count while a different page (or this same click-
+          // through) turns up fewer actionable rows.
+          const approvableCount = approvableRows.length
           const outboxEntries: LiveEntry[] =
             sitewideRows.length > 0
               ? [
@@ -168,7 +179,7 @@ export function NotificationBell() {
                     id: 'live-outbox-pending',
                     kind: 'ip',
                     title: 'Offline edits pending verification',
-                    message: `${sitewideRows.length} offline edit${sitewideRows.length > 1 ? 's' : ''} staged clinic-wide — ${summarizeByActor(sitewideRows)}. Click to review in Admin → Offline Edits.`,
+                    message: `${sitewideRows.length} offline edit${sitewideRows.length > 1 ? 's' : ''} staged clinic-wide${approvableCount < sitewideRows.length ? ` (${approvableCount} approvable now)` : ''} — ${summarizeByActor(sitewideRows)}. Click to review in Admin → Offline Edits.`,
                     // Admins get the full sitewide audit log, deep-linked
                     // straight to the right tab instead of /offline-outbox
                     // (that page is the "my own edits" quick-action view).
