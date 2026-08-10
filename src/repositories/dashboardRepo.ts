@@ -36,18 +36,28 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     .order('date_time')
     .limit(5)
 
-  // Pending Bills = any non-Merged invoice with a due balance (includes Partial);
-  // Revenue = paid_amount collected on this month's invoices (matches FinancialReportsPanel)
+  // Pending Bills = any non-Merged invoice with a due balance (includes Partial).
+  // Revenue = payments ledger rows dated this month, i.e. cash actually collected
+  // this month regardless of when the invoice was raised (matches the Analytics
+  // "Daily Earnings" calendar's dailyCollected() logic in src/lib/analytics.ts).
   const { data: invoiceRows } = await supabase
     .from('invoices')
-    .select('total_amount, paid_amount, status, created_at')
+    .select('id, total_amount, paid_amount, status, created_at')
     .neq('status', 'Merged')
 
-  const allInvoices = (invoiceRows as Array<{ total_amount: number | null; paid_amount: number | null; created_at: string }> | null) || []
+  const allInvoices =
+    (invoiceRows as Array<{ id: string; total_amount: number | null; paid_amount: number | null; created_at: string }> | null) || []
   const pendingCount = allInvoices.filter((inv) => (inv.total_amount || 0) - (inv.paid_amount || 0) > 0).length
-  const revenue = allInvoices
-    .filter((inv) => inv.created_at >= monthStart)
-    .reduce((sum, inv) => sum + (inv.paid_amount || 0), 0)
+  const activeInvoiceIds = new Set(allInvoices.map((inv) => inv.id))
+
+  const { data: paymentRows } = await supabase
+    .from('payments')
+    .select('invoice_id, amount, payment_date')
+    .gte('payment_date', monthStart)
+
+  const revenue = ((paymentRows as Array<{ invoice_id: string; amount: number | null; payment_date: string }> | null) || [])
+    .filter((p) => activeInvoiceIds.has(p.invoice_id))
+    .reduce((sum, p) => sum + (p.amount || 0), 0)
 
   const { data: patients } = await supabase
     .from('patients')
