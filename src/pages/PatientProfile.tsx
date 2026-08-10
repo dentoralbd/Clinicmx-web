@@ -30,6 +30,7 @@ import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
@@ -587,6 +588,13 @@ export function PatientProfile() {
   const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
 
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
+  // Preview shows the current unsaved prescription draft through the same
+  // PrescriptionPrint overlay, without writing to Supabase.
+  const [previewPrescriptionOpen, setPreviewPrescriptionOpen] = useState(false)
+  // Set synchronously by the Print button's onClick, read at the end of
+  // savePrescriptionWithCosts()/saveNewPrescriptionOffline() to decide
+  // whether to open the print overlay on the just-saved row.
+  const printPrescriptionAfterSaveRef = useRef(false)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
   const [doctorsList, setDoctorsList] = useState<string[]>([])
   // Doctor full_name -> their account's default Doctor Share % (Admin -> Users).
@@ -1974,6 +1982,29 @@ export function PatientProfile() {
     setRxCostDialogEntries(planEntries)
   }
 
+  // Opens the print overlay on the current unsaved prescription draft
+  // instead of saving — no validation needed beyond `patient` already being
+  // loaded, since this page is always scoped to one specific patient.
+  function openPrescriptionPreview() {
+    setPreviewPrescriptionOpen(true)
+  }
+
+  // Builds the patient object PrescriptionPrint needs for the current
+  // in-progress medical-history edits, matching what the save path is about
+  // to persist.
+  function buildPreviewPrescriptionPatient() {
+    return {
+      first_name: patient?.first_name || '',
+      last_name: patient?.last_name || '',
+      date_of_birth: patient?.date_of_birth,
+      gender: patient?.gender,
+      phone: patient?.phone,
+      email: patient?.email,
+      patient_code: patient?.patient_code,
+      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+    }
+  }
+
   /**
    * Offline path for a brand-new prescription only — editing an existing one
    * reconciles its linked treatment rows against a fresh DB read (has this
@@ -2125,6 +2156,11 @@ export function PatientProfile() {
     for (const inv of prescriptionForm.investigations) {
       if (inv.name.trim()) rememberItem(MEMORY_KEYS.INVESTIGATIONS, inv.name)
     }
+
+    if (printPrescriptionAfterSaveRef.current) {
+      setPrintingPrescription({ ...payload, id: prescriptionId })
+    }
+    printPrescriptionAfterSaveRef.current = false
 
     setShowPrescriptionForm(false)
     setEditingPrescriptionId(null)
@@ -2463,6 +2499,11 @@ export function PatientProfile() {
           })
         }
       }
+
+      if (printPrescriptionAfterSaveRef.current && prescriptionId) {
+        setPrintingPrescription({ ...payload, id: prescriptionId })
+      }
+      printPrescriptionAfterSaveRef.current = false
 
       setShowPrescriptionForm(false)
       setEditingPrescriptionId(null)
@@ -5163,6 +5204,9 @@ export function PatientProfile() {
           dentitionType={patientDentition}
           onSubmit={handlePrescriptionSubmit}
           onClose={() => { setShowPrescriptionForm(false); setEditingPrescriptionId(null); setShowMedTemplates(false); setShowInvTemplates(false) }}
+          onPreview={openPrescriptionPreview}
+          onPrintClick={() => { printPrescriptionAfterSaveRef.current = true }}
+          onSaveClick={() => { printPrescriptionAfterSaveRef.current = false }}
           isEditing={!!editingPrescriptionId}
           medicationTemplates={medicationTemplates}
           investigationTemplates={investigationTemplates}
@@ -5211,6 +5255,30 @@ export function PatientProfile() {
           }}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => setPrintingPrescription(null)}
+        />
+      )}
+
+      {previewPrescriptionOpen && patient && (
+        <PrescriptionPrint
+          prescription={{
+            patient_id: patient.id,
+            prescribed_date: format(new Date(), 'yyyy-MM-dd'),
+            chief_complaint: entriesToText(prescriptionForm.chief_complaint_entries),
+            chief_complaint_entries: prescriptionForm.chief_complaint_entries,
+            on_examination: entriesToText(prescriptionForm.on_examination_entries),
+            on_examination_entries: prescriptionForm.on_examination_entries,
+            diagnosis: entriesToText(prescriptionForm.diagnosis_entries),
+            diagnosis_entries: prescriptionForm.diagnosis_entries,
+            treatment_plan: entriesToText(prescriptionForm.treatment_plan_entries),
+            treatment_plan_entries: prescriptionForm.treatment_plan_entries,
+            medications: prescriptionForm.medications.filter((m: any) => m.name.trim()),
+            investigations: prescriptionForm.investigations.filter((i: any) => i.name.trim()),
+            notes: prescriptionForm.notes,
+            language: prescriptionForm.language,
+          }}
+          patient={buildPreviewPrescriptionPatient()}
+          doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
+          onClose={() => setPreviewPrescriptionOpen(false)}
         />
       )}
 
@@ -5940,6 +6008,9 @@ function PrescriptionFormModal({
   setFormData,
   onSubmit,
   onClose,
+  onPreview,
+  onPrintClick,
+  onSaveClick,
   isEditing,
   medicationTemplates,
   investigationTemplates,
@@ -6797,9 +6868,17 @@ function PrescriptionFormModal({
           {/* ── Footer ── */}
           <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={onPreview} className="flex items-center gap-2">
+              <Printer className="w-4 h-4" />
+              Preview
+            </Button>
+            <Button type="submit" variant="outline" onClick={onPrintClick} className="flex items-center gap-2">
+              <Printer className="w-4 h-4" />
+              Print
+            </Button>
+            <Button type="submit" onClick={onSaveClick} className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
-              {isEditing ? 'Update Prescription' : 'Issue Prescription'}
+              Save
             </Button>
           </div>
         </form>
@@ -6874,26 +6953,18 @@ function EditTreatmentModal({ treatment, dentitionType, doctorsList, onSave, onC
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-            <select
+            <TreatmentTypeSelect
               required
               value={form.treatment_type}
-              onChange={(e) => setForm({ ...form, treatment_type: e.target.value })}
+              onChange={(value, item) =>
+                setForm({
+                  ...form,
+                  treatment_type: value,
+                  cost: !form.cost && item?.default_fee != null ? String(item.default_fee) : form.cost,
+                })
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Select...</option>
-              <option>Filling</option>
-              <option>Root Canal</option>
-              <option>Crown</option>
-              <option>Bridge</option>
-              <option>Extraction</option>
-              <option>Implant</option>
-              <option>Cleaning</option>
-              <option>Whitening</option>
-              <option>Braces</option>
-              <option>Dentures</option>
-              <option>Scaling</option>
-              <option>Other</option>
-            </select>
+            />
           </div>
 
           <div className={`grid grid-cols-1 ${canSetSharePct ? 'sm:grid-cols-2' : ''} gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200`}>
@@ -7102,27 +7173,17 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-                  <select
+                  <TreatmentTypeSelect
                     required
                     value={item.treatment_type}
-                    onChange={(e) => updateItem(index, { treatment_type: e.target.value })}
+                    onChange={(value, catalogItem) =>
+                      updateItem(index, {
+                        treatment_type: value,
+                        cost: !item.cost && catalogItem?.default_fee != null ? String(catalogItem.default_fee) : item.cost,
+                      })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Select treatment type...</option>
-                    <option>Filling</option>
-                    <option>Root Canal</option>
-                    <option>Crown</option>
-                    <option>Bridge</option>
-                    <option>Extraction</option>
-                    <option>Implant</option>
-                    <option>Cleaning</option>
-                    <option>Whitening</option>
-                    <option>Braces</option>
-                    <option>Dentures</option>
-                    <option>Veneer</option>
-                    <option>Consultation</option>
-                    <option>Other</option>
-                  </select>
+                  />
                 </div>
 
                 <div className={`grid grid-cols-1 ${canSetSharePct ? 'sm:grid-cols-2' : ''} gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200`}>

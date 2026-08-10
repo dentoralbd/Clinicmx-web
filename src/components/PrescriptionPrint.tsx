@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Mail, MessageCircle, Printer, X } from 'lucide-react'
 import { format, differenceInYears } from 'date-fns'
 import { QRCodeSVG } from 'qrcode.react'
@@ -7,6 +8,7 @@ import { getMedicalHistoryChecks } from '@/lib/medicalHistory'
 import { cleanLogoSource } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { type ClinicalEntry, quadrantAbbr } from '@/lib/clinicalEntries'
+import { listActiveLetterheadDoctors, type LetterheadDoctor } from '@/lib/prescriptionLetterheadDoctors'
 import {
   dosageToBengali,
   routeToBengali,
@@ -14,6 +16,37 @@ import {
   durationToBengali,
   instructionsToBengali,
 } from '@/lib/medicationBengali'
+
+type LetterheadMode = 'header' | 'blank'
+const LETTERHEAD_MODE_STORAGE_KEY = 'clinicmx_prescription_letterhead_mode'
+
+// Flagged in the implementation plan as needing a real calibration pass
+// against the physical pre-printed pad — cannot be derived from a screenshot.
+const BLANK_MODE_TOP_MARGIN_MM = 55
+
+function DoctorBlock({ doctor, align }: { doctor: LetterheadDoctor; align: 'left' | 'right' | 'center' }) {
+  return (
+    <div className={align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''}>
+      <div className="text-lg font-bold leading-tight" style={{ color: '#B0157A' }}>
+        {doctor.full_name.startsWith('Dr.') || doctor.full_name.startsWith('Dr ') ? doctor.full_name : `Dr. ${doctor.full_name}`}
+      </div>
+      {doctor.degrees &&
+        doctor.degrees
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line, idx) => (
+            <div key={idx} className="text-xs mt-0.5" style={{ color: '#1A7FB0' }}>{line}</div>
+          ))}
+      {doctor.designation && (
+        <div className="text-sm font-semibold mt-0.5" style={{ color: '#1A7FB0' }}>{doctor.designation}</div>
+      )}
+      {doctor.bmdc_reg && (
+        <div className="text-xs text-gray-500 mt-1">BMDC No. {doctor.bmdc_reg}</div>
+      )}
+    </div>
+  )
+}
 
 function ClinicalEntryList({ entries, text }: { entries?: ClinicalEntry[]; text?: string }) {
   const filled = (entries || []).filter((entry) => entry.text.trim())
@@ -116,6 +149,21 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         })
       : null
 
+  const [letterheadMode, setLetterheadMode] = useState<LetterheadMode>(() => {
+    if (typeof window === 'undefined') return 'header'
+    return localStorage.getItem(LETTERHEAD_MODE_STORAGE_KEY) === 'blank' ? 'blank' : 'header'
+  })
+
+  function changeLetterheadMode(mode: LetterheadMode) {
+    setLetterheadMode(mode)
+    localStorage.setItem(LETTERHEAD_MODE_STORAGE_KEY, mode)
+  }
+
+  const { data: letterheadDoctors = [] } = useQuery({
+    queryKey: ['letterheadDoctors', 'active'],
+    queryFn: listActiveLetterheadDoctors,
+  })
+
   // Uploaded logos are cleaned at upload time; the bundled default needs its
   // light background stripped here so it blends into the printed page.
   const [logoSrc, setLogoSrc] = useState(doctor.logo_data || '/logo.png')
@@ -193,6 +241,22 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       {/* Toolbar – sticky, hidden on print */}
       <div className="print:hidden sticky top-0 z-[101] bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
         <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 sm:px-4 sm:py-3">
+          <div className="flex items-center bg-gray-100 rounded-xl p-1 mr-auto text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => changeLetterheadMode('header')}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${letterheadMode === 'header' ? 'bg-white shadow-sm text-primary' : 'text-gray-500'}`}
+            >
+              With Header
+            </button>
+            <button
+              type="button"
+              onClick={() => changeLetterheadMode('blank')}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${letterheadMode === 'blank' ? 'bg-white shadow-sm text-primary' : 'text-gray-500'}`}
+            >
+              Blank (Pre-printed Pad)
+            </button>
+          </div>
           <button
             onClick={handlePrint}
             aria-label="Print / Save as PDF"
@@ -201,41 +265,43 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
             <Printer className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Print / Save as PDF</span>
           </button>
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowShareMenu((v) => !v)
-              }}
-              aria-label="Email or WhatsApp prescription"
-              className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
-            >
-              <Mail className="w-4 h-4 shrink-0" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600 shrink-0" />
-              <span className="hidden sm:inline">Share</span>
-            </button>
-            {showShareMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-1.5rem)]">
-                <button
-                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
-                  onClick={() => {
-                    sharePrescription('email')
-                    setShowShareMenu(false)
-                  }}
-                >
-                  <Mail className="w-4 h-4" /> Email
-                </button>
-                <button
-                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
-                  onClick={() => {
-                    sharePrescription('whatsapp')
-                    setShowShareMenu(false)
-                  }}
-                >
-                  <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
-                </button>
-              </div>
-            )}
-          </div>
+          {letterheadMode !== 'blank' && (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowShareMenu((v) => !v)
+                }}
+                aria-label="Email or WhatsApp prescription"
+                className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-2.5 py-2 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                <Mail className="w-4 h-4 shrink-0" /><MessageCircle className="w-4 h-4 -ml-1 text-green-600 shrink-0" />
+                <span className="hidden sm:inline">Share</span>
+              </button>
+              {showShareMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-44 max-w-[calc(100vw-1.5rem)]">
+                  <button
+                    className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      sharePrescription('email')
+                      setShowShareMenu(false)
+                    }}
+                  >
+                    <Mail className="w-4 h-4" /> Email
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      sharePrescription('whatsapp')
+                      setShowShareMenu(false)
+                    }}
+                  >
+                    <MessageCircle className="w-4 h-4 text-green-600" /> WhatsApp
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={onClose}
             aria-label="Close"
@@ -254,59 +320,105 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         className="prescription-print-container bg-white w-full max-w-3xl my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
-        {/* ── Letterhead: doctor (left) · logo (center) · practice (right) ── */}
-        <div className="border-b-2 border-gray-800 pb-4 mb-4">
-          <div className="grid grid-cols-[1fr_auto_1fr] gap-4 items-start">
-            {/* Left — doctor information */}
-            <div>
-              <div className="text-xl font-bold text-gray-900 leading-tight">
-                {doctor.full_name
-                  ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
-                  : 'Doctor Name'}
-              </div>
-              {doctor.degrees &&
-                doctor.degrees
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line, idx) => (
-                    <div key={idx} className="text-sm text-gray-600 mt-0.5">{line}</div>
+        {/* ── Letterhead: doctors (left/right, from Admin > Prescription Doctors) · logo + clinic (center) ── */}
+        {letterheadMode === 'header' && (
+          <div
+            className="border-b-2 pb-4 mb-4 -mx-8 print:-mx-6 px-8 print:px-6 pt-2"
+            style={{ borderColor: '#B0157A', background: 'linear-gradient(to bottom, #FCE4EC, #ffffff)' }}
+          >
+            {letterheadDoctors.length > 0 ? (
+              <div className="grid grid-cols-[1fr_auto_1fr] gap-4 items-start">
+                <div className="space-y-3">
+                  {letterheadDoctors.filter((_, i) => i % 2 === 0).map((d) => (
+                    <DoctorBlock key={d.id} doctor={d} align="left" />
                   ))}
-              {doctor.designation && (
-                <div className="text-sm font-semibold text-gray-700 mt-0.5">{doctor.designation}</div>
-              )}
-              {doctor.bmdc_reg && (
-                <div className="text-xs text-gray-500 mt-1">BMDC Reg: {doctor.bmdc_reg}</div>
-              )}
-            </div>
-            {/* Center — clinic logo */}
-            <div className="self-center px-2">
-              <img
-                src={logoSrc}
-                alt="Clinic logo"
-                style={{ height: 96, width: 'auto', maxWidth: 180, objectFit: 'contain', mixBlendMode: 'multiply' }}
-              />
-            </div>
-            {/* Right — practice information */}
-            <div className="text-right">
-              {doctor.workplace && (
-                <div className="text-base font-bold text-gray-800 leading-tight">{doctor.workplace}</div>
-              )}
-              {doctor.clinic_address && (
-                <div className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{doctor.clinic_address}</div>
-              )}
-              {doctor.phone && (
-                <div className="text-xs font-semibold text-gray-700 mt-1">Ph: {doctor.phone}</div>
-              )}
-              {doctor.email && (
-                <div className="text-xs text-gray-500 mt-0.5">Email: {doctor.email}</div>
-              )}
-            </div>
+                </div>
+                <div className="self-center px-2 text-center">
+                  <img
+                    src={logoSrc}
+                    alt="Clinic logo"
+                    style={{ height: 80, width: 'auto', maxWidth: 150, objectFit: 'contain', mixBlendMode: 'multiply', margin: '0 auto' }}
+                  />
+                  {doctor.workplace && (
+                    <div className="text-base font-bold mt-1" style={{ color: '#1A7FB0' }}>{doctor.workplace}</div>
+                  )}
+                  {(doctor.clinic_address || doctor.phone) && (
+                    <div className="text-[11px] text-gray-600 mt-0.5 whitespace-pre-line">
+                      {doctor.clinic_address}
+                      {doctor.clinic_address && doctor.phone && ' · '}
+                      {doctor.phone && `Ph: ${doctor.phone}`}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {letterheadDoctors.filter((_, i) => i % 2 === 1).map((d) => (
+                    <DoctorBlock key={d.id} doctor={d} align="right" />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-[1fr_auto_1fr] gap-4 items-start">
+                {/* Fallback to the clinic's own doctor profile if no Prescription Doctors are configured yet */}
+                <div>
+                  <div className="text-xl font-bold text-gray-900 leading-tight">
+                    {doctor.full_name
+                      ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
+                      : 'Doctor Name'}
+                  </div>
+                  {doctor.degrees &&
+                    doctor.degrees
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter(Boolean)
+                      .map((line, idx) => (
+                        <div key={idx} className="text-sm text-gray-600 mt-0.5">{line}</div>
+                      ))}
+                  {doctor.designation && (
+                    <div className="text-sm font-semibold text-gray-700 mt-0.5">{doctor.designation}</div>
+                  )}
+                  {doctor.bmdc_reg && (
+                    <div className="text-xs text-gray-500 mt-1">BMDC Reg: {doctor.bmdc_reg}</div>
+                  )}
+                </div>
+                <div className="self-center px-2">
+                  <img
+                    src={logoSrc}
+                    alt="Clinic logo"
+                    style={{ height: 96, width: 'auto', maxWidth: 180, objectFit: 'contain', mixBlendMode: 'multiply' }}
+                  />
+                </div>
+                <div className="text-right">
+                  {doctor.workplace && (
+                    <div className="text-base font-bold text-gray-800 leading-tight">{doctor.workplace}</div>
+                  )}
+                  {doctor.clinic_address && (
+                    <div className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{doctor.clinic_address}</div>
+                  )}
+                  {doctor.phone && (
+                    <div className="text-xs font-semibold text-gray-700 mt-1">Ph: {doctor.phone}</div>
+                  )}
+                  {doctor.email && (
+                    <div className="text-xs text-gray-500 mt-0.5">Email: {doctor.email}</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* ── Patient Info ── */}
-        <div className="border border-gray-300 rounded-lg px-4 py-3 mb-4 bg-gray-50">
+        <div
+          className={
+            letterheadMode === 'blank'
+              ? 'px-1 py-2 mb-4'
+              : 'border rounded-lg px-4 py-3 mb-4'
+          }
+          style={
+            letterheadMode === 'blank'
+              ? { marginTop: `${BLANK_MODE_TOP_MARGIN_MM}mm` }
+              : { borderColor: '#F3C6DD', backgroundColor: '#FDF2F7' }
+          }
+        >
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <div>
               <span className="font-semibold">Patient:</span>{' '}
@@ -475,17 +587,19 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                 </div>
               )}
             </div>
-            <div className="text-right">
-              <div className="border-t border-gray-800 w-40 mb-1" />
-              <div className="text-sm font-semibold">
-                {doctor.full_name
-                  ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
-                  : 'Doctor Signature'}
+            {letterheadMode === 'header' && (
+              <div className="text-right">
+                <div className="border-t border-gray-800 w-40 mb-1" />
+                <div className="text-sm font-semibold">
+                  {doctor.full_name
+                    ? `Dr. ${doctor.full_name.replace(/^Dr\.?\s*/i, '')}`
+                    : 'Doctor Signature'}
+                </div>
+                {doctor.designation && (
+                  <div className="text-xs text-gray-600">{doctor.designation}</div>
+                )}
               </div>
-              {doctor.designation && (
-                <div className="text-xs text-gray-600">{doctor.designation}</div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

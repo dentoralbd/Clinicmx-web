@@ -6,6 +6,8 @@ export type TrackedEntityType =
   | 'inventory_item'
   | 'patient_visit'
   | 'lab_work'
+  | 'treatment_catalog_item'
+  | 'custom_medication'
 
 // Column allowlists per target table (must match Row types in
 // database.types.ts). Snapshots taken from list pages can embed joined
@@ -39,6 +41,14 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   lab_work: {
     table: 'lab_work',
     columns: ['id', 'patient_id', 'lab_name', 'work_type', 'teeth', 'unit_count', 'shade', 'material', 'pricing_mode', 'unit_price', 'flat_price', 'status', 'date_sent', 'expected_date', 'date_received', 'is_paid', 'notes', 'source_plan_group_id', 'source_treatment_id', 'created_at', 'updated_at'],
+  },
+  treatment_catalog_item: {
+    table: 'treatment_catalog_items',
+    columns: ['id', 'category_id', 'name', 'default_fee', 'sort_order', 'created_at', 'updated_at'],
+  },
+  custom_medication: {
+    table: 'custom_medications',
+    columns: ['id', 'category_id', 'brand', 'generic', 'dosage_form', 'default_dosage', 'default_frequency', 'default_duration', 'default_instructions', 'default_route', 'notes', 'sort_order', 'created_at', 'updated_at'],
   },
 }
 

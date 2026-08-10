@@ -7,6 +7,7 @@ import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { logActivity } from '@/lib/activityLog'
 import { ToothSelector } from '@/components/ToothSelector'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { formatBDT } from '@/lib/utils'
 import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
@@ -713,26 +714,18 @@ function EditTreatmentModal({ treatment, dentitionType, onSave, onClose }: {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-            <select
+            <TreatmentTypeSelect
               required
               value={form.treatment_type}
-              onChange={(e) => setForm({ ...form, treatment_type: e.target.value })}
+              onChange={(value, item) =>
+                setForm({
+                  ...form,
+                  treatment_type: value,
+                  cost: !form.cost && item?.default_fee != null ? String(item.default_fee) : form.cost,
+                })
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Select...</option>
-              <option>Filling</option>
-              <option>Root Canal</option>
-              <option>Crown</option>
-              <option>Bridge</option>
-              <option>Extraction</option>
-              <option>Implant</option>
-              <option>Cleaning</option>
-              <option>Whitening</option>
-              <option>Braces</option>
-              <option>Dentures</option>
-              <option>Scaling</option>
-              <option>Other</option>
-            </select>
+            />
           </div>
 
           <div>
@@ -958,24 +951,17 @@ function TreatmentModal({ onClose, onSave }: {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Treatment Type *</label>
-                    <select
+                    <TreatmentTypeSelect
                       required
                       value={item.treatment_type}
-                      onChange={(e) => updateItem(index, { treatment_type: e.target.value })}
+                      onChange={(value, catalogItem) =>
+                        updateItem(index, {
+                          treatment_type: value,
+                          cost: !item.cost && catalogItem?.default_fee != null ? String(catalogItem.default_fee) : item.cost,
+                        })
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Select...</option>
-                      <option>Filling</option>
-                      <option>Root Canal</option>
-                      <option>Crown</option>
-                      <option>Bridge</option>
-                      <option>Extraction</option>
-                      <option>Implant</option>
-                      <option>Cleaning</option>
-                      <option>Whitening</option>
-                      <option>Braces</option>
-                      <option>Other</option>
-                    </select>
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Tooth / Teeth</label>

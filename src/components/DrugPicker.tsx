@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Pill } from 'lucide-react'
-import { DENTAL_DRUGS, type AgeDosing, type BDDrug, searchDrugs } from '@/lib/dentalDrugDatabase'
+import { DENTAL_DRUGS, type AgeDosing, type BDDrug } from '@/lib/dentalDrugDatabase'
+import { listCatalogCategories, listCustomMedications, type CustomMedication } from '@/lib/catalog'
 
 const FORM_ABBREVIATIONS: Record<string, string> = {
   Tab: 'Tab.',
@@ -19,7 +21,7 @@ const FORM_ABBREVIATIONS: Record<string, string> = {
   Suppository: 'Supp.',
 }
 
-function formatDrugName(drug: BDDrug): string {
+function formatDrugName(drug: Pick<BDDrug, 'brand' | 'dosageForm'>): string {
   const match = drug.dosageForm.match(/^([\d.,]+\s*(?:mg|gm|ml|%|IU\/ml|IU)[^\s]*)\s*(.*)$/i)
   if (!match) {
     return `${drug.brand} ${drug.dosageForm}`.trim()
@@ -48,10 +50,13 @@ interface DrugPickerProps {
     generic: string
     dosageForm: string
     drugKey: string
-    category: BDDrug['category']
+    category: string
   }) => void
   className?: string
 }
+
+/** Built-in BDDrug plus any clinic-added custom medication, which can carry a category outside the closed union. */
+type DisplayDrug = Omit<BDDrug, 'category'> & { category: string; isCustom?: boolean }
 
 const CATEGORY_META: Record<
   BDDrug['category'],
@@ -70,6 +75,15 @@ const CATEGORY_META: Record<
   'Anti-ulcerant': { bg: '#E9F7F1', text: '#1F7A5C' },
 }
 
+// Fallback for any category not in the hardcoded map above (a clinic-added
+// custom category) — keeps the picker resilient if the DB fetch is slow,
+// offline, or the category was only just created.
+const DEFAULT_CATEGORY_STYLE = { bg: '#F1F5F9', text: '#475569' }
+
+function categoryStyle(category: string) {
+  return CATEGORY_META[category as BDDrug['category']] ?? DEFAULT_CATEGORY_STYLE
+}
+
 const CATEGORY_ORDER: BDDrug['category'][] = [
   'Antibiotic',
   'Analgesic',
@@ -84,8 +98,62 @@ const CATEGORY_ORDER: BDDrug['category'][] = [
   'Anti-ulcerant',
 ]
 
+function toDisplayDrug(med: CustomMedication, categoryName: string): DisplayDrug {
+  return {
+    brand: med.brand,
+    generic: med.generic,
+    category: categoryName,
+    dosageForm: med.dosage_form ?? '',
+    company: '(Custom)',
+    pack: '',
+    priceLabel: '',
+    priceNum: 0,
+    dentalUse: '',
+    defaultDosage: med.default_dosage ?? '',
+    defaultFrequency: med.default_frequency ?? '',
+    defaultDuration: med.default_duration ?? '',
+    defaultInstructions: med.default_instructions ?? '',
+    defaultRoute: med.default_route ?? '',
+    ageDosing: { infant: '', child: '', adult: '' },
+    isCustom: true,
+  }
+}
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+/** Same substring+scoring logic as dentalDrugDatabase.ts's searchDrugs(), applied to the merged built-in + custom list. */
+function searchMergedDrugs(query: string, drugs: DisplayDrug[]): DisplayDrug[] {
+  const q = normalize(query)
+  if (!q) return drugs.slice(0, 20)
+
+  return drugs
+    .map((drug) => {
+      const haystacks = [drug.brand, drug.generic, drug.company, drug.category, drug.dentalUse].map((item) => item.toLowerCase())
+      const hasMatch = haystacks.some((item) => item.includes(q))
+      if (!hasMatch) return null
+
+      let score = 0
+      if (drug.brand.toLowerCase().startsWith(q)) score += 5
+      if (drug.generic.toLowerCase().startsWith(q)) score += 4
+      if (drug.company.toLowerCase().includes(q)) score += 2
+      if (drug.dentalUse.toLowerCase().includes(q)) score += 1
+      score += q.length / Math.max(drug.brand.length, 1)
+
+      return { drug, score }
+    })
+    .filter((item): item is { drug: DisplayDrug; score: number } => item !== null)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      return a.drug.brand.localeCompare(b.drug.brand)
+    })
+    .slice(0, 20)
+    .map((item) => item.drug)
+}
+
 interface IndexedDrug {
-  drug: BDDrug
+  drug: DisplayDrug
   index: number
 }
 
@@ -94,9 +162,24 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
 
+  const { data: customMedications = [] } = useQuery({ queryKey: ['customMedications'], queryFn: listCustomMedications })
+  const { data: customCategories = [] } = useQuery({ queryKey: ['catalogCategories', 'medication'], queryFn: () => listCatalogCategories('medication') })
+
+  const categoryOrderWithExtras = useMemo(() => {
+    const extras = customCategories
+      .map((c) => c.name)
+      .filter((name) => !(CATEGORY_ORDER as string[]).includes(name))
+    return [...CATEGORY_ORDER, ...extras]
+  }, [customCategories])
+
+  const allDrugs = useMemo<DisplayDrug[]>(() => {
+    const custom = customMedications.map((med) => toDisplayDrug(med, med.category?.name ?? 'Other'))
+    return [...DENTAL_DRUGS, ...custom]
+  }, [customMedications])
+
   const defaultDrugList = useMemo(() => {
-    return [...DENTAL_DRUGS].sort((a, b) => {
-      const categoryCompare = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
+    return [...allDrugs].sort((a, b) => {
+      const categoryCompare = categoryOrderWithExtras.indexOf(a.category) - categoryOrderWithExtras.indexOf(b.category)
       if (categoryCompare !== 0) return categoryCompare
 
       const genericCompare = a.generic.localeCompare(b.generic)
@@ -104,7 +187,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
 
       return a.brand.localeCompare(b.brand)
     })
-  }, [])
+  }, [allDrugs, categoryOrderWithExtras])
 
   const visibleDrugs = useMemo(() => {
     const trimmed = value.trim()
@@ -112,7 +195,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
       return defaultDrugList
     }
 
-    const results = searchDrugs(trimmed)
+    const results = searchMergedDrugs(trimmed, allDrugs)
     if (results.length > 0) {
       return results
     }
@@ -123,12 +206,12 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
     // a false "no drugs found" when that's the case.
     const isFormattedSelection = defaultDrugList.some((drug) => formatDrugName(drug) === trimmed)
     return isFormattedSelection ? defaultDrugList : results
-  }, [value, defaultDrugList])
+  }, [value, defaultDrugList, allDrugs])
 
   const groupedDrugs = useMemo(() => {
     const indexed: IndexedDrug[] = visibleDrugs.map((drug, index) => ({ drug, index }))
 
-    const groups = new Map<BDDrug['category'], Map<string, IndexedDrug[]>>()
+    const groups = new Map<string, Map<string, IndexedDrug[]>>()
 
     for (const item of indexed) {
       if (!groups.has(item.drug.category)) {
@@ -163,7 +246,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
-  const applyDrug = (drug: BDDrug) => {
+  const applyDrug = (drug: DisplayDrug) => {
     const name = formatDrugName(drug)
 
     onChange(name)
@@ -251,7 +334,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
                 No drugs found — type brand or generic name
               </div>
             ) : (
-              CATEGORY_ORDER.map((category) => {
+              categoryOrderWithExtras.map((category) => {
                 const categoryGroup = groupedDrugs.get(category)
                 if (!categoryGroup) return null
 
@@ -265,7 +348,7 @@ export function DrugPicker({ value, onChange, onDrugSelect, className }: DrugPic
                         <div className="space-y-1">
                           {genericRows.map(({ drug, index }) => {
                             const isHighlighted = index === highlightedIndex
-                            const color = CATEGORY_META[drug.category]
+                            const color = categoryStyle(drug.category)
                             return (
                               <button
                                 key={`${drug.brand}-${drug.company}-${drug.pack}`}

@@ -14,6 +14,7 @@ export type AppPageKey =
   | 'billing'
   | 'inventory'
   | 'qr-search'
+  | 'catalog'
 
 export interface AppPermissions {
   can_delete: boolean
@@ -46,6 +47,7 @@ const ALL_PAGES_ON: Record<AppPageKey, boolean> = {
   billing: true,
   inventory: true,
   'qr-search': true,
+  catalog: true,
 }
 
 export const DEFAULT_PERMISSIONS: Record<AppRole, AppPermissions> = {

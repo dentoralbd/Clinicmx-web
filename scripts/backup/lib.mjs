@@ -31,6 +31,10 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'appointment_schedule_windows', // migration 041
   'appointment_schedule_date_overrides', // migration 041
   'doctor_profiles',
+  'prescription_letterhead_doctors', // migration 058
+  'catalog_categories', // migration 057
+  'treatment_catalog_items', // after catalog_categories: treatment_catalog_items.category_id (migration 057)
+  'custom_medications', // after catalog_categories: custom_medications.category_id (migration 057)
   'app_users',
   'authorized_ips', // after app_users: authorized_ips.user_id (migration 027)
   'staff', // no FK dependency — payroll roster (migration 045)

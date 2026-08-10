@@ -2,7 +2,7 @@
 
 Every night at **3:00 AM Bangladesh time** a GitHub Actions job:
 
-1. Dumps **all 31 database tables** (see `lib.mjs`'s `TABLES_IN_DEPENDENCY_ORDER` for the current list — kept manually in sync with `supabase/migrations/`, verify it after adding a new table) to JSON and uploads a dated zip to Google Drive → `db-backups/clinicmx-db-YYYY-MM-DD.zip` (zips older than 30 days are pruned automatically).
+1. Dumps **all 35 database tables** (see `lib.mjs`'s `TABLES_IN_DEPENDENCY_ORDER` for the current list — kept manually in sync with `supabase/migrations/`, verify it after adding a new table) to JSON and uploads a dated zip to Google Drive → `db-backups/clinicmx-db-YYYY-MM-DD.zip` (zips older than 30 days are pruned automatically).
 2. Mirrors the **`patient-files` storage bucket** (photos, clinical images, x-rays) into Drive → `patient-files/…`. Upload-only: files deleted from Supabase **stay** in Drive.
 
 A failed backup shows as a red ❌ run under the repo's **Actions** tab.

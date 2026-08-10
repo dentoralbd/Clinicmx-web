@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet, BookOpen } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, type AppPageKey } from '@/lib/appSession'
 import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
 
@@ -40,6 +40,7 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
           { icon: Activity, label: 'Treatments', path: '/treatments', page: 'treatments' },
           { icon: FlaskConical, label: 'Lab', path: '/lab', page: 'lab' },
           { icon: FileCheck2, label: 'Verify Offline Edits', path: '/offline-outbox', page: 'patients' },
+          { icon: BookOpen, label: 'Catalog', path: '/catalog', page: 'catalog' },
         ],
       },
       { icon: Calendar, label: 'Appointments', path: '/appointments', page: 'appointments' },

@@ -34,6 +34,7 @@ import { UsersTab } from '@/components/admin/UsersTab'
 import { ActivityLogTab } from '@/components/admin/ActivityLogTab'
 import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
 import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
+import { PrescriptionDoctorsTab } from '@/components/admin/PrescriptionDoctorsTab'
 import { OfflineEditsTab } from '@/components/admin/OfflineEditsTab'
 import { MyLeaveTab } from '@/components/hr/MyLeaveTab'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
@@ -153,7 +154,7 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'lab_work', label: 'Lab' },
 ]
 
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline' | 'leave'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline' | 'leave' | 'prescription-doctors'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -171,6 +172,7 @@ function getAvailableTabs(): ZoneTabDef[] {
   if (getAppRole() === 'admin') tabs.push({ id: 'network', label: 'Network Access', icon: Wifi })
   if (getAppRole() === 'admin') tabs.push({ id: 'logs', label: 'Activity Log', icon: ScrollText })
   if (getAppRole() === 'admin') tabs.push({ id: 'hours', label: 'Clinic Hours', icon: Clock })
+  if (getAppRole() === 'admin') tabs.push({ id: 'prescription-doctors', label: 'Prescription Doctors', icon: Stethoscope })
   // Admin-only oversight of the device's offline outbox — every account's
   // queued edits, not just the admin's own (see canActOn() in offlineSync.ts:
   // admin is the one role allowed to approve/discard someone else's).
@@ -191,6 +193,7 @@ const TAB_GRID_COLS: Record<number, string> = {
   6: 'grid-cols-2 sm:grid-cols-3',
   7: 'grid-cols-2 sm:grid-cols-4',
   8: 'grid-cols-2 sm:grid-cols-4',
+  9: 'grid-cols-2 sm:grid-cols-5',
 }
 
 export function DoctorProfile() {
@@ -583,6 +586,8 @@ export function DoctorProfile() {
       {activeTab === 'logs' && <ActivityLogTab />}
 
       {activeTab === 'hours' && <ClinicHoursTab />}
+
+      {activeTab === 'prescription-doctors' && <PrescriptionDoctorsTab />}
 
       {activeTab === 'offline' && <OfflineEditsTab />}
 

@@ -25,6 +25,7 @@ const PAGE_OPTIONS: Array<{ key: AppPageKey; label: string }> = [
   { key: 'billing', label: 'Billing' },
   { key: 'inventory', label: 'Inventory' },
   { key: 'qr-search', label: 'QR Search' },
+  { key: 'catalog', label: 'Catalog' },
 ]
 
 const ACTION_OPTIONS: Array<{

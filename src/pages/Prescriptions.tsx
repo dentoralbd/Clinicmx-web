@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -167,6 +167,13 @@ export function Prescriptions() {
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
   const [printingPatient, setPrintingPatient] = useState<any | null>(null)
+  // Preview shows the current unsaved draft through the same PrescriptionPrint
+  // overlay, without writing to Supabase.
+  const [previewOpen, setPreviewOpen] = useState(false)
+  // Set synchronously by the Print button's onClick, read at the end of
+  // savePrescription() to decide whether to open the print overlay on the
+  // just-saved row instead of just closing the form.
+  const printAfterSaveRef = useRef(false)
 
   useEffect(() => {
     loadPrescriptions()
@@ -312,12 +319,65 @@ export function Prescriptions() {
     setCostDialogEntries(planEntries)
   }
 
+  // Same required-field checks as handleSubmit/savePrescription, but opens
+  // the print overlay on the current unsaved draft instead of saving.
+  function openPreview() {
+    if (patientMode === 'new') {
+      if (!newPatientData.first_name || !newPatientData.last_name || !newPatientData.phone) {
+        alert('Please fill in all required patient fields')
+        return
+      }
+      const parsedAge = Number.parseInt(newPatientData.age, 10)
+      const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+      if (!newPatientData.date_of_birth && !hasValidAge) {
+        alert('Please provide Date of Birth or Age for the new patient')
+        return
+      }
+    } else if (!formData.patient_id) {
+      alert('Please select or create a patient')
+      return
+    }
+    setPreviewOpen(true)
+  }
+
+  // Builds the patient object PrescriptionPrint needs from the current
+  // draft state — either the selected existing patient or the in-progress
+  // new-patient fields — for use by both Preview and (indirectly) Print.
+  function buildPreviewPatient() {
+    if (patientMode === 'existing') {
+      const selected = patients.find((p) => p.id === formData.patient_id)
+      return {
+        first_name: selected?.first_name || '',
+        last_name: selected?.last_name || '',
+        date_of_birth: selected?.date_of_birth,
+        gender: selected?.gender,
+        phone: selected?.phone,
+        email: selected?.email,
+        patient_code: selected?.patient_code,
+        medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+      }
+    }
+    const parsedAge = Number.parseInt(newPatientData.age, 10)
+    const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+    return {
+      first_name: newPatientData.first_name,
+      last_name: newPatientData.last_name,
+      date_of_birth: newPatientData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : undefined),
+      gender: newPatientData.gender,
+      phone: newPatientData.phone,
+      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+    }
+  }
+
   async function savePrescription(entryCosts: Record<string, string>) {
     try {
       let patientId = formData.patient_id
       // Captured before resetForm() clears newPatientData, so the post-save
       // consultation-invoice prompt still knows who/what to invoice.
       let newConsultationPatient: { patientId: string; patientName: string; fee: number } | null = null
+      // Captured before resetForm() clears everything, so a Print-triggered
+      // save can still open the print overlay with the right patient.
+      let savedPatientRecord: any = null
 
       if (patientMode === 'new') {
         if (!newPatientData.first_name || !newPatientData.last_name || !newPatientData.phone) {
@@ -349,6 +409,7 @@ export function Prescriptions() {
           patient_type: newPatientData.isConsultation ? 'consultation' : 'full',
         })
         patientId = newPatient.id
+        savedPatientRecord = newPatient
         if (newPatientData.isConsultation) {
           newConsultationPatient = {
             patientId: newPatient.id,
@@ -361,6 +422,10 @@ export function Prescriptions() {
       if (!patientId) {
         alert('Please select or create a patient')
         return
+      }
+
+      if (!savedPatientRecord) {
+        savedPatientRecord = patients.find((p) => p.id === patientId) || null
       }
 
       const payload: any = {
@@ -534,6 +599,12 @@ export function Prescriptions() {
           })
         }
       }
+
+      if (printAfterSaveRef.current && prescriptionId) {
+        setPrintingPrescription({ ...payload, id: prescriptionId })
+        setPrintingPatient(savedPatientRecord)
+      }
+      printAfterSaveRef.current = false
 
       setShowForm(false)
       resetForm()
@@ -1903,9 +1974,22 @@ export function Prescriptions() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={openPreview} className="flex items-center gap-2">
+                  <Printer className="w-4 h-4" />
+                  Preview
+                </Button>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  onClick={() => { printAfterSaveRef.current = true }}
+                  className="flex items-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print
+                </Button>
+                <Button type="submit" onClick={() => { printAfterSaveRef.current = false }} className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4" />
-                  {editingId ? 'Update Prescription' : 'Issue Prescription'}
+                  Save
                 </Button>
               </div>
             </form>
@@ -1944,6 +2028,30 @@ export function Prescriptions() {
           }}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => { setPrintingPrescription(null); setPrintingPatient(null) }}
+        />
+      )}
+
+      {previewOpen && (
+        <PrescriptionPrint
+          prescription={{
+            patient_id: patientMode === 'existing' ? formData.patient_id : undefined,
+            prescribed_date: formData.prescribed_date,
+            chief_complaint: entriesToText(formData.chief_complaint_entries),
+            chief_complaint_entries: formData.chief_complaint_entries,
+            on_examination: entriesToText(formData.on_examination_entries),
+            on_examination_entries: formData.on_examination_entries,
+            diagnosis: entriesToText(formData.diagnosis_entries),
+            diagnosis_entries: formData.diagnosis_entries,
+            treatment_plan: entriesToText(formData.treatment_plan_entries),
+            treatment_plan_entries: formData.treatment_plan_entries,
+            medications: formData.medications.filter((m) => m.name.trim()),
+            investigations: formData.investigations.filter((i) => i.name.trim()),
+            notes: formData.notes,
+            language: formData.language,
+          }}
+          patient={buildPreviewPatient()}
+          doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
+          onClose={() => setPreviewOpen(false)}
         />
       )}
 

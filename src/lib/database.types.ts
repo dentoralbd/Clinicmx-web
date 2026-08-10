@@ -1356,6 +1356,166 @@ export interface Database {
           }
         ]
       }
+      catalog_categories: {
+        Row: {
+          id: string
+          domain: string
+          name: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          domain: string
+          name: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          domain?: string
+          name?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      treatment_catalog_items: {
+        Row: {
+          id: string
+          category_id: string
+          name: string
+          default_fee: number | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category_id: string
+          name: string
+          default_fee?: number | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          category_id?: string
+          name?: string
+          default_fee?: number | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'treatment_catalog_items_category_id_fkey'
+            columns: ['category_id']
+            isOneToOne: false
+            referencedRelation: 'catalog_categories'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      custom_medications: {
+        Row: {
+          id: string
+          category_id: string
+          brand: string
+          generic: string
+          dosage_form: string | null
+          default_dosage: string | null
+          default_frequency: string | null
+          default_duration: string | null
+          default_instructions: string | null
+          default_route: string | null
+          notes: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category_id: string
+          brand: string
+          generic: string
+          dosage_form?: string | null
+          default_dosage?: string | null
+          default_frequency?: string | null
+          default_duration?: string | null
+          default_instructions?: string | null
+          default_route?: string | null
+          notes?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          category_id?: string
+          brand?: string
+          generic?: string
+          dosage_form?: string | null
+          default_dosage?: string | null
+          default_frequency?: string | null
+          default_duration?: string | null
+          default_instructions?: string | null
+          default_route?: string | null
+          notes?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'custom_medications_category_id_fkey'
+            columns: ['category_id']
+            isOneToOne: false
+            referencedRelation: 'catalog_categories'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      prescription_letterhead_doctors: {
+        Row: {
+          id: string
+          full_name: string
+          degrees: string
+          designation: string
+          bmdc_reg: string
+          display_order: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          full_name: string
+          degrees?: string
+          designation?: string
+          bmdc_reg?: string
+          display_order?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          full_name?: string
+          degrees?: string
+          designation?: string
+          bmdc_reg?: string
+          display_order?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       delete_history: {
         Row: {
           id: string

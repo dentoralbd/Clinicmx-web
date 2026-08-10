@@ -25,6 +25,7 @@ const DoctorAnalytics = lazy(() => import('./pages/DoctorAnalytics').then(m => (
 const FinancialAnalysis = lazy(() => import('./pages/FinancialAnalysis').then(m => ({ default: m.FinancialAnalysis })))
 const HRPayroll = lazy(() => import('./pages/HRPayroll').then(m => ({ default: m.HRPayroll })))
 const OfflineOutbox = lazy(() => import('./pages/OfflineOutbox').then(m => ({ default: m.OfflineOutbox })))
+const Catalog = lazy(() => import('./pages/Catalog').then(m => ({ default: m.Catalog })))
 
 function PageLoader() {
   return (
@@ -69,6 +70,7 @@ function App() {
               <Route path="billing" element={<RequirePage page="billing"><Billing /></RequirePage>} />
               <Route path="inventory" element={<RequirePage page="inventory"><Inventory /></RequirePage>} />
               <Route path="qr-search" element={<RequirePage page="qr-search"><QrSearch /></RequirePage>} />
+              <Route path="catalog" element={<RequirePage page="catalog"><Catalog /></RequirePage>} />
               <Route path="doctor-profile" element={<DoctorProfile />} />
               <Route path="admin" element={<DoctorProfile />} />
               <Route path="backup" element={<BackupRestore />} />

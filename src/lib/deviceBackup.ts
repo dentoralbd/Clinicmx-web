@@ -69,6 +69,10 @@ export const BACKUP_TABLES = [
   'backup_settings', // singleton config row (migration 031) — was missing from this list until 2026-08-03
   'appointment_schedule_windows',
   'appointment_schedule_date_overrides',
+  'prescription_letterhead_doctors', // migration 058
+  'catalog_categories', // migration 057
+  'treatment_catalog_items', // after catalog_categories: treatment_catalog_items.category_id (migration 057)
+  'custom_medications', // after catalog_categories: custom_medications.category_id (migration 057)
   'app_users',
   'authorized_ips',
   'staff', // payroll roster (migration 045, 2026-08-01)
