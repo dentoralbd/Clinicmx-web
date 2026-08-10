@@ -5265,6 +5265,7 @@ export function PatientProfile() {
         <InvoiceModal
           defaultPatientId={id}
           hidePatientSelect
+          defaultPatientName={patient ? `${patient.first_name} ${patient.last_name}`.trim() : null}
           preferredPlanGroupId={invoicePlanGroupId}
           onClose={() => {
             setShowInvoiceForm(false)

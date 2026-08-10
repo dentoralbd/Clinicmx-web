@@ -37,7 +37,7 @@ import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
 import { OfflineEditsTab } from '@/components/admin/OfflineEditsTab'
 import { MyLeaveTab } from '@/components/hr/MyLeaveTab'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
-import { getVisiblePendingMutations } from '@/lib/offlineSync'
+import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
 import { countPendingIpRequests } from '@/lib/ipAccess'
 import { loadDoctorProfile, saveDoctorProfile, isDoctorProfileAuthError, type DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource, stripLightBackground } from '@/lib/logoImage'
@@ -254,7 +254,7 @@ export function DoctorProfile() {
     if (getAppRole() !== 'admin') return
     const refresh = () => {
       getVisiblePendingMutations()
-        .then((list) => setPendingOfflineCount(list.length))
+        .then((list) => setPendingOfflineCount(countDistinctPendingEdits(list)))
         .catch(() => {
           // Badge is informational only — a failed count must not break the page.
         })

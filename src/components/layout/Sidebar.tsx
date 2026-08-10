@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, type AppPageKey } from '@/lib/appSession'
-import { getVisiblePendingMutations } from '@/lib/offlineSync'
+import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
 
 interface SidebarProps {
   isOpen: boolean
@@ -106,7 +106,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
     let cancelled = false
     const refresh = () => {
       getVisiblePendingMutations().then((list) => {
-        if (!cancelled) setOutboxCount(list.length)
+        if (!cancelled) setOutboxCount(countDistinctPendingEdits(list))
       })
     }
     refresh()

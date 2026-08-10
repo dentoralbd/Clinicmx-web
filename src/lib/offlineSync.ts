@@ -181,6 +181,17 @@ export async function getVisiblePendingMutations(): Promise<PendingMutation[]> {
   return getAppRole() === 'admin' ? all : all.filter((m) => canActOn(m))
 }
 
+/**
+ * Number of distinct pending EDITS, not raw queued mutations — a single
+ * offline invoice can be 3-4 mutations (insert, treatment-link, payment,
+ * balance update) sharing one groupId, and should count as one edit for a
+ * badge, same as it renders as one card on /offline-outbox. Ungrouped
+ * mutations each count as their own edit.
+ */
+export function countDistinctPendingEdits(mutations: PendingMutation[]): number {
+  return new Set(mutations.map((m) => m.groupId ?? m.id)).size
+}
+
 export async function enqueueMutation(mutation: EnqueueInput): Promise<PendingMutation> {
   return withOutbox((current) => {
     const item: PendingMutation = {
@@ -790,6 +801,11 @@ export interface SitewidePendingRow {
 // a row (synced/discarded) it's done, and without this filter every synced
 // edit would count forever toward "pending" in the admin bell/badge.
 const ACTIVE_STATUSES = ['pending', 'blocked', 'failed']
+
+/** Sitewide counterpart to countDistinctPendingEdits — one offline_edit_queue row per queued mutation, so a multi-step invoice is several rows sharing one group_id and should count as one edit. */
+export function countDistinctSitewideEdits(rows: SitewidePendingRow[]): number {
+  return new Set(rows.map((r) => r.group_id ?? r.id)).size
+}
 
 /**
  * Sitewide list of still-pending offline edits — admin sees every account's;

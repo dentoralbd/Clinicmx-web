@@ -19,6 +19,8 @@ import {
   setOfflineSyncAlertsSeen,
   fetchSitewidePendingEdits,
   fetchRemoteApprovableEdits,
+  countDistinctPendingEdits,
+  countDistinctSitewideEdits,
 } from '@/lib/offlineSync'
 import { getPendingLeaveCount } from '@/lib/leaveAlerts'
 
@@ -171,15 +173,23 @@ export function NotificationBell() {
           // a session that has the key. Call that out explicitly instead of
           // reporting one count while a different page (or this same click-
           // through) turns up fewer actionable rows.
-          const approvableCount = approvableRows.length
+          const sitewideEditCount = countDistinctSitewideEdits(sitewideRows)
+          const approvableCount = countDistinctSitewideEdits(approvableRows)
+          // One row per group (offline_edit_queue has a row per queued
+          // mutation, e.g. an invoice's insert/link/payment/balance-update
+          // share one group_id) so the per-actor breakdown counts edits, not
+          // the raw mutation rows that compose them.
+          const distinctSitewideRows = Array.from(
+            new Map(sitewideRows.map((r) => [r.group_id ?? r.id, r])).values()
+          )
           const outboxEntries: LiveEntry[] =
-            sitewideRows.length > 0
+            sitewideEditCount > 0
               ? [
                   {
                     id: 'live-outbox-pending',
                     kind: 'ip',
                     title: 'Offline edits pending verification',
-                    message: `${sitewideRows.length} offline edit${sitewideRows.length > 1 ? 's' : ''} staged clinic-wide${approvableCount < sitewideRows.length ? ` (${approvableCount} approvable now)` : ''} — ${summarizeByActor(sitewideRows)}. Click to review in Admin → Offline Edits.`,
+                    message: `${sitewideEditCount} offline edit${sitewideEditCount > 1 ? 's' : ''} staged clinic-wide${approvableCount < sitewideEditCount ? ` (${approvableCount} approvable now)` : ''} — ${summarizeByActor(distinctSitewideRows)}. Click to review in Admin → Offline Edits.`,
                     // Admins get the full sitewide audit log, deep-linked
                     // straight to the right tab instead of /offline-outbox
                     // (that page is the "my own edits" quick-action view).
@@ -193,19 +203,33 @@ export function NotificationBell() {
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
-          const [rows, outboxList] = await Promise.all([
+          const [rows, outboxList, remoteRows] = await Promise.all([
             listPendingIpRequestsForUser(userId).catch(() => []),
             getVisiblePendingMutations().catch(() => []),
+            // RLS scopes this to the caller's own account for a non-admin —
+            // same "your other devices" data /offline-outbox already shows,
+            // so the bell shouldn't stay silent about an edit queued on a
+            // phone while the doctor's looking at a desktop.
+            fetchRemoteApprovableEdits().catch(() => []),
           ])
           if (cancelled) return
+          const localIds = new Set(outboxList.map((m) => m.id))
+          const remoteOnlyRows = remoteRows.filter((r) => !localIds.has(r.client_mutation_id))
+          const localEditCount = countDistinctPendingEdits(outboxList)
+          const remoteEditCount = countDistinctSitewideEdits(remoteOnlyRows)
+          const totalEditCount = localEditCount + remoteEditCount
+          const outboxMessage =
+            remoteEditCount > 0
+              ? `${totalEditCount} offline edit${totalEditCount > 1 ? 's' : ''} pending — ${localEditCount} on this device, ${remoteEditCount} on another. Click to verify & sync.`
+              : `${localEditCount} offline edit${localEditCount > 1 ? 's' : ''} staged on your device. Click to verify & sync to server.`
           const outboxEntries: LiveEntry[] =
-            outboxList.length > 0
+            totalEditCount > 0
               ? [
                   {
                     id: 'live-outbox-pending',
                     kind: 'ip',
                     title: 'Offline edits pending verification',
-                    message: `${outboxList.length} offline edit${outboxList.length > 1 ? 's' : ''} staged on your device. Click to verify & sync to server.`,
+                    message: outboxMessage,
                     linkTo: '/offline-outbox',
                     unread: true,
                   },
