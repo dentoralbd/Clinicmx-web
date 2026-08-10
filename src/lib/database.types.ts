@@ -326,6 +326,45 @@ export interface Database {
           }
         ]
       }
+      clinic_expenses: {
+        Row: {
+          id: string
+          category: string
+          description: string
+          amount: number
+          expense_date: string
+          vendor: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category: string
+          description: string
+          amount: number
+          expense_date?: string
+          vendor?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          category?: string
+          description?: string
+          amount?: number
+          expense_date?: string
+          vendor?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       staff_leaves: {
         Row: {
           id: string

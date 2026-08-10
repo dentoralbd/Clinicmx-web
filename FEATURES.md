@@ -161,15 +161,17 @@ Gated like `/backup`: page self-redirects non-admins to `/dashboard`; sidebar li
 
 **Consultation-only patients excluded from new-patient counts, but not from revenue attribution (2026-07-22):** `Analytics.tsx` fetches all patients (unfiltered) so revenue features that need a name — Top Revenue Sources, the Daily Earnings calendar's per-patient breakdown — can still resolve a consultation-only patient's name instead of showing "Unknown Patient" (a bug in the initial cut: the fetch was filtered at the query level, breaking name lookups for anyone who'd paid a consultation fee but not converted). Only the "New Patients" stat tile and the new-registrations/returning-vs-new charts use a separately filtered `fullPatients` list (`patient_type !== 'consultation'`) so walk-ins who haven't converted don't inflate those. Consultation-fee invoices/payments are never filtered, so the fee always counts in Revenue Collected/Outstanding — see §3b.
 
-## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01, Statement/Detailed + Resolve action + per-doctor default % added 2026-08-02; narrowed to Doctor Analytics only 2026-08-08)
+## 15b. Financial Analysis (`/financial-analysis`, rebuilt 2026-08-01, Statement/Detailed + Resolve action + per-doctor default % added 2026-08-02; narrowed to Doctor Analytics only 2026-08-08; Clinic Expenses tab added 2026-08-11)
 
 Sidebar entry replaces admin's old direct "Doctor Analytics" link, at the same position (below
-Analytics). Single page, gated on `canAccessDoctorAnalytics()` (admin, or anyone granted
-`can_access_doctor_analytics`) — self-redirects to `/dashboard` otherwise. Doctors keep their own
-separate, unrelated sidebar entry — "Doctor Analytics", self-locked to their own work — untouched by
-any of this. **Staff Analytics used to be a second tab here; it moved into the admin-only HR &
-Payroll page 2026-08-08 (§15c)** — a non-admin holding only `can_access_staff_analytics` no longer
-gets a Financial Analysis sidebar link (it would have redirected them straight back out).
+Analytics). Two in-page tabs: **Doctor Analytics & Payouts** (gated on `canAccessDoctorAnalytics()` —
+admin, or anyone granted `can_access_doctor_analytics`) and **Clinic Expenses** (admin-only, plain
+`getAppRole() === 'admin'`, no permission-flag override — see §15b-vi). The page itself self-redirects
+to `/dashboard` only if the user has neither gate. Doctors keep their own separate, unrelated sidebar
+entry — "Doctor Analytics", self-locked to their own work — untouched by any of this. **Staff Analytics
+used to be a second tab here; it moved into the admin-only HR & Payroll page 2026-08-08 (§15c)** — a
+non-admin holding only `can_access_staff_analytics` no longer gets a Financial Analysis sidebar link
+(it would have redirected them straight back out).
 
 ### 15b-i. Doctor Analytics — two-part payout ledger
 
@@ -243,6 +245,40 @@ calculations:
     default set keep the flat 30% clinic default, unchanged.
 - Export: CSV and PDF, both following whichever view (Statement/Detailed) is currently active on
   screen, so the downloaded file always matches what was visible when it was generated.
+
+### 15b-vi. Clinic Expenses tab (admin-only, added 2026-08-11, migration 059)
+
+Fulfills the "Expense tracking / cashbook alongside income reports" line from PRODUCT-ROADMAP.md.
+Rolls up four cash-basis expense lines for a selected month into a Total Expenses figure and a
+Profit/Loss vs. Total Collected — self-fetches its own copy of `invoices`/`treatments`/`patients`/
+`payments`/`lab_work`/`staff`/`staff_salary_payments`/`clinic_expenses` independently of the Doctor
+Analytics tab (same "each tab re-fetches" precedent as HR & Payroll's Overview vs. Staff & Salary
+tabs — kept `DoctorAnalytics.tsx` untouched rather than lifting its fetch into a shared parent).
+
+- **Doctor Payouts** — `calculateDoctorFinancialSummary(..., 'ALL', periodMonth).totalDrIncome`
+  (`src/lib/doctorAnalytics.ts`), the same cash-basis payout figure the Doctor Analytics tab shows.
+- **Staff Salary** — `calculateStaffSalarySummary(..., 'ALL', periodMonth).totalPaid`
+  (`src/lib/staff.ts`) — actually paid to staff this month, not the full amount owed.
+- **Lab Charges** — sum of `lab_work` rows with `is_paid = true` (excludes `Cancelled`), cost computed
+  as `pricing_mode === 'flat' ? flat_price : unit_price * unit_count`, bucketed by `date_sent`
+  (falling back to `created_at` — `lab_work` has no "date paid" column, see 030_lab_work.sql).
+- **Other Expenses** — new `clinic_expenses` table (migration 059), admin-only RLS via
+  `is_app_admin()`. Ad-hoc entries with a fixed category (`Instrument Purchase`, `Material Purchase`,
+  `Machine Repair`, `Other`), description, amount, date, optional vendor/notes. Full CRUD with a
+  category-filter pill row, add/edit modal, delete confirmation; writes go through
+  `src/lib/clinicExpenses.ts` and log to `activity_log` via `logActivity()` (same lighter audit
+  pattern as `staff.ts` — not part of the tracked-entity delete/edit-history revert system).
+- **Total Collected** — raw `sum(payments.amount)` for the month (`calculateTotalCollected`,
+  bucketed by `payment_date` falling back to `created_at`). Deliberately NOT
+  `DoctorFinancialSummary.totalPaid`, which silently excludes payments that can't be attributed to
+  exactly one doctor (see §15b-i's flaggedRows) — using it here would understate real revenue.
+- **Profit/Loss** = Total Collected − (Doctor Payouts + Staff Salary + Lab Charges + Other Expenses).
+- Breakdown shown as one horizontal bar chart (`ChartCard`/`CHART_COLORS`, same style as HR &
+  Payroll's Payroll Summary chart) plus KPI tiles for each line and a Profit/Loss hero tile that
+  flips green/red on sign. CSV export (`exportClinicExpensesCSV`) — no PDF statement yet.
+- No new route, no new sidebar entry — this stays a tab inside `/financial-analysis`. No new
+  grantable permission flag; admin-only is a plain role check, matching HR & Payroll's gate rather
+  than the more permissive `canAccessDoctorAnalytics()` flag that gates the sibling tab.
 
 ## 15c. HR & Payroll (`/hr-payroll`, admin-only, added 2026-08-08)
 
