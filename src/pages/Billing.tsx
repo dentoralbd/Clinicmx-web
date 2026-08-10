@@ -51,6 +51,7 @@ import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { matchesPatientSearch } from '@/lib/patients'
 import { safeFormat, formatBDT } from '@/lib/utils'
+import { filterByRange, type AnalyticsRange } from '@/lib/analytics'
 
 interface Invoice {
   id: string
@@ -98,6 +99,15 @@ function getPatientAccent(patientId: string) {
   return PATIENT_ACCENTS[hash % PATIENT_ACCENTS.length]
 }
 
+const STATS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
+  { value: '1m', label: '1M' },
+  { value: '3m', label: '3M' },
+  { value: '6m', label: '6M' },
+  { value: '12m', label: '12M' },
+  { value: 'all', label: 'All' },
+  { value: 'custom', label: 'Custom' },
+]
+
 function getPatientInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -132,6 +142,9 @@ export function Billing() {
   const [allPatients, setAllPatients] = useState<Array<{ id: string; name: string; phone: string | null; patient_code: string | null }>>([])
   const [payPicker, setPayPicker] = useState<{ patientId: string; invoices: Invoice[] } | null>(null)
   const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<Invoice | null>(null)
+  const [statsRange, setStatsRange] = useState<AnalyticsRange>('all')
+  const [statsCustomStart, setStatsCustomStart] = useState('')
+  const [statsCustomEnd, setStatsCustomEnd] = useState('')
 
   useEffect(() => {
     loadInvoices()
@@ -572,10 +585,14 @@ export function Billing() {
   // live on the invoice that absorbed them, so they must be excluded from every
   // money total or merges double-count. Same activeInvoices filter PatientProfile uses.
   const activeInvoices = invoices.filter((invoice) => invoice.status !== 'Merged')
+  const statsRangeInvoices = useMemo(
+    () => filterByRange(activeInvoices, (invoice) => invoice.created_at, statsRange, statsCustomStart, statsCustomEnd),
+    [activeInvoices, statsRange, statsCustomStart, statsCustomEnd]
+  )
   const stats = {
-    total: activeInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
-    paid: activeInvoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
-    pending: activeInvoices
+    total: statsRangeInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
+    paid: statsRangeInvoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
+    pending: statsRangeInvoices
       .filter((invoice) => (invoice.total_amount || 0) > (invoice.paid_amount || 0))
       .reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),
   }
@@ -585,10 +602,10 @@ export function Billing() {
   return (
     <div className="space-y-6 page-fade-in pb-8">
       {/* Header Banner */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
+      <div className="relative z-30 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
         <div>
           <div className="flex items-center gap-2.5 mb-1">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Financial & Billing</h1>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Billing</h1>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               {activeInvoices.length} Active Invoices
             </span>
@@ -712,10 +729,49 @@ export function Billing() {
       {showReports && <FinancialReportsPanel invoices={invoices} />}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <SummaryCard title="Total Billed" value={formatBDT(stats.total)} icon={<DollarSign className="w-6 h-6" />} color="blue" />
-        <SummaryCard title="Total Collected" value={formatBDT(stats.paid)} icon={<CheckCircle className="w-6 h-6" />} color="green" />
-        <SummaryCard title="Pending Balance" value={formatBDT(stats.pending)} icon={<Clock className="w-6 h-6" />} color="orange" />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl">
+            {STATS_RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setStatsRange(option.value)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 ${
+                  statsRange === option.value
+                    ? 'bg-primary text-white shadow-elevation-low'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {statsRange === 'custom' && (
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+              <input
+                type="date"
+                value={statsCustomStart}
+                onChange={(e) => setStatsCustomStart(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                placeholder="From Date"
+              />
+              <span className="text-xs font-semibold text-slate-500">to</span>
+              <input
+                type="date"
+                value={statsCustomEnd}
+                onChange={(e) => setStatsCustomEnd(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                placeholder="To Date"
+              />
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <SummaryCard title="Total Billed" value={formatBDT(stats.total)} icon={<DollarSign className="w-6 h-6" />} color="blue" />
+          <SummaryCard title="Total Collected" value={formatBDT(stats.paid)} icon={<CheckCircle className="w-6 h-6" />} color="green" />
+          <SummaryCard title="Pending Balance" value={formatBDT(stats.pending)} icon={<Clock className="w-6 h-6" />} color="orange" />
+        </div>
       </div>
 
       {/* Filter & Search Panel */}
