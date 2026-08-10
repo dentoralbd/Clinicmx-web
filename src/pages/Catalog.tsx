@@ -558,7 +558,35 @@ function MedicationsSection() {
 
 // === Page =======================================================================
 
+type CatalogTab = 'procedures' | 'medications'
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+        active ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'
+      }`}
+    >
+      {icon} {label}
+    </button>
+  )
+}
+
 export function Catalog() {
+  const [tab, setTab] = useState<CatalogTab>('procedures')
+
   return (
     <div className="space-y-6 page-fade-in pb-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-primary/10 shadow-elevation-low">
@@ -575,8 +603,23 @@ export function Catalog() {
         </div>
       </div>
 
-      <ProceduresSection />
-      <MedicationsSection />
+      <div className="flex items-center gap-2 border-b border-gray-200 flex-wrap">
+        <TabButton
+          active={tab === 'procedures'}
+          onClick={() => setTab('procedures')}
+          icon={<Stethoscope className="w-4 h-4" />}
+          label="Procedures & Treatments"
+        />
+        <TabButton
+          active={tab === 'medications'}
+          onClick={() => setTab('medications')}
+          icon={<BookOpen className="w-4 h-4" />}
+          label="Medications"
+        />
+      </div>
+
+      {tab === 'procedures' && <ProceduresSection />}
+      {tab === 'medications' && <MedicationsSection />}
     </div>
   )
 }
