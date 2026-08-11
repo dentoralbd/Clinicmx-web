@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { CheckSquare, ChevronDown, ChevronUp, Plus, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import {
@@ -13,9 +14,9 @@ import {
   isSchemaCompatibilityError,
   logBillingError,
   normalizeInvoiceItems,
-  QUICK_TREATMENT_OPTIONS,
   type BillingLineItem,
 } from '@/lib/billing'
+import { listTreatmentCatalogItems } from '@/lib/catalog'
 import { supabase } from '@/lib/supabase'
 import { recordInvoicePayment } from '@/lib/payments'
 import { advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
@@ -102,6 +103,9 @@ export function InvoiceModal({
   editingInvoice = null,
 }: InvoiceModalProps) {
   const isEditMode = !!editingInvoice
+  // Real Catalog procedures back the quick-add chips below, so a fee only
+  // needs to be set in one place (Catalog) to show up here too.
+  const { data: catalogItems = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number; invoiceId: string } | null>(null)
   const [formData, setFormData] = useState({
@@ -405,9 +409,9 @@ export function InvoiceModal({
     setItems((prev) => [...prev, createInvoiceItem()])
   }
 
-  function addQuickTreatment(description: string) {
+  function addQuickTreatment(description: string, unitPrice?: number | null) {
     setAutoImported(false)
-    appendItems([createInvoiceItem(description)])
+    appendItems([createInvoiceItem(description, unitPrice)])
   }
 
   function removeItem(index: number) {
@@ -1062,14 +1066,14 @@ export function InvoiceModal({
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 mb-3">
-              {QUICK_TREATMENT_OPTIONS.map((option) => (
+              {catalogItems.map((item) => (
                 <button
-                  key={option}
+                  key={item.id}
                   type="button"
-                  onClick={() => addQuickTreatment(option)}
+                  onClick={() => addQuickTreatment(item.name, item.default_fee)}
                   className="px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium hover:bg-primary/10"
                 >
-                  + {option}
+                  + {item.name}
                 </button>
               ))}
             </div>

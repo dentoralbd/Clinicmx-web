@@ -41,11 +41,11 @@ function parseCurrency(value: unknown) {
   return Number.isFinite(parsed) ? roundCurrency(parsed) : 0
 }
 
-export function createInvoiceItem(description = ''): BillingLineItem {
+export function createInvoiceItem(description = '', unitPrice?: number | null): BillingLineItem {
   return {
     description,
     quantity: '1',
-    unit_price: '',
+    unit_price: unitPrice != null ? String(unitPrice) : '',
     amount: '',
   }
 }

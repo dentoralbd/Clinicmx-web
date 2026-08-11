@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
@@ -11,9 +12,9 @@ import {
   getInvoiceItemSubtotal,
   logBillingError,
   normalizeInvoiceItems,
-  QUICK_TREATMENT_OPTIONS,
   type BillingLineItem,
 } from '@/lib/billing'
+import { listTreatmentCatalogItems } from '@/lib/catalog'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
@@ -27,6 +28,9 @@ interface AdvancedInvoiceModalProps {
 }
 
 export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', template = null }: AdvancedInvoiceModalProps) {
+  // Real Catalog procedures back the quick-add chips below, so a fee only
+  // needs to be set in one place (Catalog) to show up here too.
+  const { data: catalogItems = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
   const [formData, setFormData] = useState({
     patient_id: defaultPatientId,
     due_date: '',
@@ -73,8 +77,8 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
     setItems((prev) => [...prev, createInvoiceItem()])
   }
 
-  function addQuickTreatment(description: string) {
-    setItems((prev) => [...prev.filter((item) => item.description.trim() || item.unit_price || item.amount), createInvoiceItem(description)])
+  function addQuickTreatment(description: string, unitPrice?: number | null) {
+    setItems((prev) => [...prev.filter((item) => item.description.trim() || item.unit_price || item.amount), createInvoiceItem(description, unitPrice)])
   }
 
   function removeItem(index: number) {
@@ -222,14 +226,14 @@ export function AdvancedInvoiceModal({ onClose, onSave, defaultPatientId = '', t
               <Button type="button" size="sm" onClick={addItem}>Add Item</Button>
             </div>
             <div className="flex flex-wrap gap-2 mb-3">
-              {QUICK_TREATMENT_OPTIONS.map((option) => (
+              {catalogItems.map((item) => (
                 <button
-                  key={option}
+                  key={item.id}
                   type="button"
-                  onClick={() => addQuickTreatment(option)}
+                  onClick={() => addQuickTreatment(item.name, item.default_fee)}
                   className="px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium hover:bg-primary/10"
                 >
-                  + {option}
+                  + {item.name}
                 </button>
               ))}
             </div>
