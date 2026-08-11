@@ -37,9 +37,11 @@ import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
-import { mapEntryToOperation } from '@/lib/treatmentPlan'
+import { mapEntryToOperation, findCatalogMatch } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
+import { listTreatmentCatalogItems } from '@/lib/catalog'
+import { TREATMENT_PLAN_PRESETS } from '@/lib/clinicalTextPresets'
 import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
 import {
@@ -595,6 +597,13 @@ export function PatientProfile() {
   // savePrescriptionWithCosts()/saveNewPrescriptionOffline() to decide
   // whether to open the print overlay on the just-saved row.
   const printPrescriptionAfterSaveRef = useRef(false)
+
+  // Real Catalog procedures — keeps the prescription's Treatment Plan
+  // section (and the treatments/invoicing it creates) in sync with what's
+  // actually in the Catalog rather than a fixed keyword guess. Shares its
+  // cache with TreatmentTypeSelect/Catalog.tsx (same query key).
+  const { data: treatmentCatalogItems = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
+  const treatmentPlanPresets = [...new Set([...treatmentCatalogItems.map((item) => item.name), ...TREATMENT_PLAN_PRESETS])]
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
   const [doctorsList, setDoctorsList] = useState<string[]>([])
   // Doctor full_name -> their account's default Doctor Share % (Admin -> Users).
@@ -1356,7 +1365,7 @@ export function PatientProfile() {
           const teethList: Array<number | null> = entry.teeth.length > 0 ? entry.teeth : [null]
           return teethList.map((tooth) => ({
             patient_id: id,
-            ...mapEntryToOperation(clinicalEntry, tooth),
+            ...mapEntryToOperation(clinicalEntry, tooth, treatmentCatalogItems),
             status: entry.status,
             cost: parseFloat(entry.cost) || 0,
             notes: null,
@@ -1978,6 +1987,15 @@ export function PatientProfile() {
         }
       }
     }
+    // Prefill from the matching Catalog procedure's default fee for any entry
+    // that doesn't already have a cost from an existing row above.
+    for (const entry of planEntries) {
+      if (entry.id in initialCosts) continue
+      const catalogMatch = findCatalogMatch(entry.text, treatmentCatalogItems)
+      if (catalogMatch?.default_fee != null) {
+        initialCosts[entry.id] = String(catalogMatch.default_fee)
+      }
+    }
     setRxCostDialogInitial(initialCosts)
     setRxCostDialogEntries(planEntries)
   }
@@ -2072,7 +2090,7 @@ export function PatientProfile() {
           prescription_entry_id: entry.id,
           status: 'Planned',
           notes: 'Added from prescription treatment plan',
-          ...mapEntryToOperation(entry, tooth),
+          ...mapEntryToOperation(entry, tooth, treatmentCatalogItems),
           ...costPatch,
         })
       }
@@ -2360,7 +2378,7 @@ export function PatientProfile() {
           const enteredCost = entryCosts[entry.id]
           const costPatch = enteredCost?.trim() ? { cost: parseFloat(enteredCost) || 0 } : {}
           for (let i = 0; i < teethList.length; i++) {
-            const operation = mapEntryToOperation(entry, teethList[i])
+            const operation = mapEntryToOperation(entry, teethList[i], treatmentCatalogItems)
             const reuseRow = reusableRows[i]
             if (reuseRow) {
               const enqueueUpdateFallback = async () => {
@@ -5207,6 +5225,7 @@ export function PatientProfile() {
           onPreview={openPrescriptionPreview}
           onPrintClick={() => { printPrescriptionAfterSaveRef.current = true }}
           onSaveClick={() => { printPrescriptionAfterSaveRef.current = false }}
+          treatmentPlanPresets={treatmentPlanPresets}
           isEditing={!!editingPrescriptionId}
           medicationTemplates={medicationTemplates}
           investigationTemplates={investigationTemplates}
@@ -6011,6 +6030,7 @@ function PrescriptionFormModal({
   onPreview,
   onPrintClick,
   onSaveClick,
+  treatmentPlanPresets,
   isEditing,
   medicationTemplates,
   investigationTemplates,
@@ -6317,6 +6337,7 @@ function PrescriptionFormModal({
             suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
             dentitionType={dentitionType}
             memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
+            catalogPresets={treatmentPlanPresets}
           />
 
           {/* ── Medications ── */}

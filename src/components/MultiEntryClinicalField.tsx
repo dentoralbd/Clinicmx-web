@@ -35,6 +35,11 @@ interface MultiEntryClinicalFieldProps {
   // Age-based dentition (from getDentitionTypeFromDOB) so the tooth picker shows
   // primary/mixed/permanent teeth consistently with the patient's dental chart.
   dentitionType?: DentitionType
+  // Real Catalog procedure names (Treatment Plan only) offered in the same
+  // suggestion dropdown as memory history — picking one sets the entry's text
+  // to the exact Catalog name, which mapEntryToOperation then matches back to
+  // that procedure (treatment_type + default_fee) when the prescription saves.
+  catalogPresets?: string[]
 }
 
 export function MultiEntryClinicalField({
@@ -48,6 +53,7 @@ export function MultiEntryClinicalField({
   suggestedTeeth,
   pickerMode = 'tooth',
   dentitionType,
+  catalogPresets,
 }: MultiEntryClinicalFieldProps) {
   function updateEntry(id: string, patch: Partial<ClinicalEntry>) {
     onChange(entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)))
@@ -127,6 +133,7 @@ export function MultiEntryClinicalField({
                 value={entry.text}
                 onChange={(text) => updateEntry(entry.id, { text })}
                 placeholder={idx === 0 ? placeholder : 'Add another...'}
+                presets={catalogPresets}
               />
             ) : (
               <textarea
@@ -205,14 +212,16 @@ function EntrySuggestTextarea({
   value,
   onChange,
   placeholder,
+  presets,
 }: {
   memoryKey: string
   sectionLabel: string
   value: string
   onChange: (text: string) => void
   placeholder?: string
+  presets?: string[]
 }) {
-  const { sourceList, remove } = useSuggestions(memoryKey, undefined)
+  const { sourceList, remove } = useSuggestions(memoryKey, presets)
   const anchorRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isOpen, setIsOpen] = useState(false)

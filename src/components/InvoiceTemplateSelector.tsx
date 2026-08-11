@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
+import { listTreatmentCatalogItems } from '@/lib/catalog'
 
 type InvoiceType = 'basic' | 'advanced'
 
@@ -20,6 +22,8 @@ export interface InvoiceTemplateData {
   discount_amount: number
   tax_rate: number
   payment_terms: string | null
+  /** Synthesized from a Catalog procedure's default fee, not a real invoice_templates row. */
+  isFromCatalog?: boolean
 }
 
 interface InvoiceTemplateSelectorProps {
@@ -35,6 +39,37 @@ export function InvoiceTemplateSelector({
 }: InvoiceTemplateSelectorProps) {
   const [templates, setTemplates] = useState<InvoiceTemplateData[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Every priced Catalog procedure doubles as a one-tap quick-invoice
+  // template — keeps Billing's quick templates in sync with the Catalog
+  // instead of needing a separate invoice_templates row kept up to date by
+  // hand. Only offered for "basic" invoices (a single line item per template).
+  const { data: catalogItems = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
+  const catalogTemplates: InvoiceTemplateData[] =
+    invoiceType === 'basic'
+      ? catalogItems
+          .filter((item) => item.default_fee != null)
+          .map((item) => ({
+            id: `catalog-${item.id}`,
+            name: item.name,
+            description: item.category?.name ?? null,
+            invoice_type: 'basic',
+            items: [
+              {
+                description: item.name,
+                amount: item.default_fee as number,
+                quantity: 1,
+                unit_price: item.default_fee as number,
+                line_total: item.default_fee as number,
+              },
+            ],
+            discount_amount: 0,
+            tax_rate: 0,
+            payment_terms: null,
+            isFromCatalog: true,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      : []
 
   useEffect(() => {
     loadTemplates()
@@ -54,6 +89,8 @@ export function InvoiceTemplateSelector({
     setLoading(false)
   }
 
+  const allTemplates = [...templates, ...catalogTemplates]
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden">
@@ -70,11 +107,11 @@ export function InvoiceTemplateSelector({
         <div className="p-4 overflow-y-auto max-h-[calc(85vh-80px)]">
           {loading ? (
             <div className="py-8 text-center text-text-secondary">Loading templates...</div>
-          ) : templates.length === 0 ? (
+          ) : allTemplates.length === 0 ? (
             <div className="py-8 text-center text-text-secondary">No templates found for this invoice type.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {templates.map((template) => {
+              {allTemplates.map((template) => {
                 const subtotal = Array.isArray(template.items)
                   ? template.items.reduce((sum, item) => sum + (parseFloat(String(item.amount)) || 0), 0)
                   : 0
@@ -91,7 +128,7 @@ export function InvoiceTemplateSelector({
                     <div className="flex items-center justify-between gap-3">
                       <h4 className="font-semibold">{template.name}</h4>
                       <span className="text-xs px-2 py-1 rounded bg-gray-100 text-text-secondary uppercase">
-                        {template.invoice_type}
+                        {template.isFromCatalog ? 'Catalog' : template.invoice_type}
                       </span>
                     </div>
                     {template.description && (

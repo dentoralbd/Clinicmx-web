@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Lightbulb, X, Pencil, FlaskConical, CheckCircle, Stethoscope, Pill, Printer, Users, UserPlus, Sparkles, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -29,8 +30,10 @@ import { safeFormat } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
-import { mapEntryToOperation } from '@/lib/treatmentPlan'
+import { mapEntryToOperation, findCatalogMatch } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
+import { listTreatmentCatalogItems } from '@/lib/catalog'
+import { TREATMENT_PLAN_PRESETS } from '@/lib/clinicalTextPresets'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
 import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
@@ -175,6 +178,13 @@ export function Prescriptions() {
   // just-saved row instead of just closing the form.
   const printAfterSaveRef = useRef(false)
 
+  // Real Catalog procedures — keeps the Treatment Plan section (and the
+  // treatments/invoicing it creates) in sync with what's actually in the
+  // Catalog rather than a fixed keyword guess. Shares its cache with
+  // TreatmentTypeSelect/Catalog.tsx (same query key).
+  const { data: treatmentCatalogItems = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
+  const treatmentPlanPresets = [...new Set([...treatmentCatalogItems.map((item) => item.name), ...TREATMENT_PLAN_PRESETS])]
+
   useEffect(() => {
     loadPrescriptions()
     loadPatients()
@@ -313,6 +323,15 @@ export function Prescriptions() {
         if (key && !(key in initialCosts) && (Number(row.cost) || 0) > 0) {
           initialCosts[key] = String(row.cost)
         }
+      }
+    }
+    // Prefill from the matching Catalog procedure's default fee for any entry
+    // that doesn't already have a cost from an existing row above.
+    for (const entry of planEntries) {
+      if (entry.id in initialCosts) continue
+      const catalogMatch = findCatalogMatch(entry.text, treatmentCatalogItems)
+      if (catalogMatch?.default_fee != null) {
+        initialCosts[entry.id] = String(catalogMatch.default_fee)
       }
     }
     setCostDialogInitial(initialCosts)
@@ -538,7 +557,7 @@ export function Prescriptions() {
           const enteredCost = entryCosts[entry.id]
           const costPatch = enteredCost?.trim() ? { cost: parseFloat(enteredCost) || 0 } : {}
           for (let i = 0; i < teethList.length; i++) {
-            const operation = mapEntryToOperation(entry, teethList[i])
+            const operation = mapEntryToOperation(entry, teethList[i], treatmentCatalogItems)
             const reuseRow = reusableRows[i]
             if (reuseRow) {
               await supabase.from('treatments').update({ ...operation, ...costPatch }).eq('id', reuseRow.id)
@@ -1407,6 +1426,7 @@ export function Prescriptions() {
                 suggestedTeeth={collectSuggestedTeeth([formData.on_examination_entries, formData.diagnosis_entries])}
                 dentitionType={selectedPatientDentition}
                 memoryKey={MEMORY_KEYS.TREATMENT_PLAN}
+                catalogPresets={treatmentPlanPresets}
               />
 
               {/* ── Medications ── */}
