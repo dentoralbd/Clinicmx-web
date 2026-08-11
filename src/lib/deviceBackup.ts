@@ -19,6 +19,8 @@ import {
 } from './backupReminders'
 import { sha256Hex } from './backupCrypto'
 import { getAdminDeviceToken } from './adminOtp'
+import { API_BASE } from './runtimeEnv'
+import { downloadBlob } from './downloadBlob'
 
 /** Auth header for upload-backup.ts and list-backups.ts, gated by
  * requireStaffSession server-side since 2026-08-03 (any signed-in staff
@@ -380,16 +382,16 @@ export function parseBackupCategory(filename: string): BackupCategory | 'manual'
   return (match?.[1] as BackupCategory | undefined) ?? 'manual'
 }
 
-export function downloadSerializedBackup(serialized: SerializedBackup, category?: BackupCategory) {
+// Returns null if the user cancelled the save (only possible in the Tauri
+// desktop build's native Save dialog — a browser download has no cancel
+// signal, so this always resolves to the filename there).
+export async function downloadSerializedBackup(
+  serialized: SerializedBackup,
+  category?: BackupCategory
+): Promise<string | null> {
   const blob = new Blob([serialized.bytes as BlobPart], { type: 'application/octet-stream' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = serialized.filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  const saved = await downloadBlob(blob, serialized.filename)
+  if (!saved) return null
   markBackupDone(category)
   saveLastBackupCounts(serialized.counts)
   return serialized.filename
@@ -436,7 +438,7 @@ export async function uploadSerializedBackup(
 
   let response: Response
   try {
-    response = await fetch(`/api/upload-backup?${params.toString()}`, {
+    response = await fetch(`${API_BASE}/api/upload-backup?${params.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', ...(await staffAuthHeaders()) },
       body: serialized.bytes as unknown as BodyInit,
@@ -473,7 +475,7 @@ export async function uploadSerializedBackup(
     for (let attempt = 0; attempt < 3 && !verified; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 2000))
       try {
-        const check = await fetch(`/api/download-backup?id=${encodeURIComponent(body.id)}`, {
+        const check = await fetch(`${API_BASE}/api/download-backup?id=${encodeURIComponent(body.id)}`, {
           headers: adminAuthHeaders(),
         })
         if (check.ok) {
@@ -503,7 +505,7 @@ export interface DriveBackupFile {
 export async function listBackupsFromDrive(): Promise<DriveBackupFile[]> {
   let response: Response
   try {
-    response = await fetch('/api/list-backups', { headers: await staffAuthHeaders() })
+    response = await fetch(`${API_BASE}/api/list-backups`, { headers: await staffAuthHeaders() })
   } catch {
     throw new Error('Could not reach Google Drive. Check your internet connection.')
   }
@@ -562,7 +564,7 @@ export async function getDriveBackupStatus(): Promise<DriveBackupStatus> {
 export async function fetchBackupFromDrive(id: string, name: string): Promise<File> {
   let response: Response
   try {
-    response = await fetch(`/api/download-backup?id=${encodeURIComponent(id)}`, {
+    response = await fetch(`${API_BASE}/api/download-backup?id=${encodeURIComponent(id)}`, {
       headers: adminAuthHeaders(),
     })
   } catch {

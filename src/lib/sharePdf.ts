@@ -1,4 +1,6 @@
 import type { jsPDF } from 'jspdf'
+import { IS_TAURI, openExternal } from './runtimeEnv'
+import { downloadBlob } from './downloadBlob'
 
 export function toWhatsAppNumber(phone: string): string | null {
   const digits = phone.replace(/\D/g, '')
@@ -45,21 +47,20 @@ export async function sharePdf(doc: jsPDF, fileName: string, info: SharePdfInfo)
     }
   }
 
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  URL.revokeObjectURL(url)
+  const saved = await downloadBlob(blob, fileName)
+  if (!saved) return // Tauri Save dialog was cancelled — nothing to share
 
   const docLabel = info.docLabel || 'Invoice'
+  const verb = IS_TAURI ? 'saved' : 'downloaded'
   if (info.channel === 'email') {
-    alert(`${docLabel} PDF downloaded. Please attach it to the email before sending.`)
-    window.location.href = `mailto:${info.email}?subject=${encodeURIComponent(info.subject)}&body=${encodeURIComponent(info.text)}`
+    alert(`${docLabel} PDF ${verb}. Please attach it to the email before sending.`)
+    await openExternal(
+      `mailto:${info.email}?subject=${encodeURIComponent(info.subject)}&body=${encodeURIComponent(info.text)}`
+    )
   } else if (info.channel === 'whatsapp') {
-    alert(`${docLabel} PDF downloaded. Please attach it in WhatsApp before sending.`)
-    window.open(`https://wa.me/${info.waNumber}?text=${encodeURIComponent(info.text)}`, '_blank')
+    alert(`${docLabel} PDF ${verb}. Please attach it in WhatsApp before sending.`)
+    await openExternal(`https://wa.me/${info.waNumber}?text=${encodeURIComponent(info.text)}`)
   } else {
-    alert(`${docLabel} PDF downloaded.`)
+    alert(`${docLabel} PDF ${verb}.`)
   }
 }

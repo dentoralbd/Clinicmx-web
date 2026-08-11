@@ -49,6 +49,7 @@ import {
   type BackupCategory,
   type ScheduleSettings,
 } from '@/lib/backupReminders'
+import { IS_TAURI } from '@/lib/runtimeEnv'
 
 const CATEGORY_LABEL: Record<BackupCategory, string> = {
   daily: 'Daily',
@@ -190,7 +191,8 @@ export function BackupRestore() {
     try {
       const serialized = await buildSerializedBackup({ onProgress: setBackupProgress, onAnomaly: confirmAnomaly })
       if (!serialized) return
-      const filename = downloadSerializedBackup(serialized)
+      const filename = await downloadSerializedBackup(serialized)
+      if (!filename) return // Save dialog cancelled (desktop app) — nothing was written
       // A local-only download never touches Drive, so it doesn't move the
       // shared "Last backup (any device)" timestamp — only an upload does.
       setLastDownloadedFile(filename)
@@ -538,7 +540,8 @@ export function BackupRestore() {
         {lastDownloadedFile && !backingUp && (
           <div className="mt-3 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            Backup saved as <span className="font-mono">{lastDownloadedFile}</span> in your Downloads.
+            Backup saved as <span className="font-mono">{lastDownloadedFile}</span>
+            {IS_TAURI ? '.' : ' in your Downloads.'}
           </div>
         )}
       </div>

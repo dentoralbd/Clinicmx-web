@@ -5,6 +5,7 @@ import { drawFooter, drawLetterhead } from '@/lib/invoicePdf'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { formatBDT, safeFormat, csvCell } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
+import { downloadBlob } from '@/lib/downloadBlob'
 
 export interface StaffRecord {
   id: string
@@ -272,7 +273,7 @@ export function calculateStaffSalarySummary(
   }
 }
 
-export function exportStaffSalaryCSV(summary: StaffSalarySummary) {
+export async function exportStaffSalaryCSV(summary: StaffSalarySummary) {
   const csvLines: string[] = []
 
   csvLines.push(`"Total Base Salary",${summary.totalBase.toFixed(2)}`)
@@ -327,14 +328,7 @@ export function exportStaffSalaryCSV(summary: StaffSalarySummary) {
 
   const csvContent = csvLines.join('\n')
   const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Staff_Salary_${summary.staffLabel.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  await downloadBlob(blob, `Staff_Salary_${summary.staffLabel.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.csv`)
 }
 
 export function generateStaffSalaryPDF(summary: StaffSalarySummary, doctorProfile: DoctorProfileData | null): jsPDF {

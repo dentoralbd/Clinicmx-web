@@ -3,6 +3,7 @@ import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, Calendar, UserChec
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { SlotPicker } from '@/components/SlotPicker'
+import { API_BASE } from '@/lib/runtimeEnv'
 
 interface DentoralAppointment {
   id: string
@@ -46,7 +47,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/dentoral-bridge?t=${Date.now()}`, {
+      const res = await fetch(`${API_BASE}/api/dentoral-bridge?t=${Date.now()}`, {
         cache: 'no-store',
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
       })
@@ -194,7 +195,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
 
       // 3. Update status on DentOral live Cloudflare KV
       const { data: { session } } = await supabase.auth.getSession()
-      await fetch(`/api/dentoral-bridge?action=update_status`, {
+      await fetch(`${API_BASE}/api/dentoral-bridge?action=update_status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -33,6 +33,7 @@ import { ToothSelector } from '@/components/ToothSelector'
 import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { ArchDentalChart } from '@/components/ArchDentalChart'
 import { supabase } from '@/lib/supabase'
+import { openExternal } from '@/lib/runtimeEnv'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
 import { MEDICAL_HISTORY_LABELS, getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
@@ -4449,7 +4450,7 @@ export function PatientProfile() {
                     ) : (
                       <div
                         className="w-full h-32 flex items-center justify-center cursor-pointer"
-                        onClick={() => window.open(url, '_blank')}
+                        onClick={() => openExternal(url)}
                       >
                         <FileText className="w-10 h-10 text-gray-400" />
                       </div>

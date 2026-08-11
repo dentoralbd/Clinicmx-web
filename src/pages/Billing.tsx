@@ -46,6 +46,7 @@ import { supabase } from '@/lib/supabase'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 import { resolveLogoSrc } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
+import { downloadBlob } from '@/lib/downloadBlob'
 import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
@@ -409,7 +410,7 @@ export function Billing() {
     }
   }
 
-  function exportInvoices() {
+  async function exportInvoices() {
     const rows = filteredInvoices.map((invoice) => ({
       invoice_number: invoice.invoice_number || '',
       patient: `${invoice.patients?.first_name || ''} ${invoice.patients?.last_name || ''}`.trim(),
@@ -426,12 +427,7 @@ export function Billing() {
     ].join('\n')
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `invoices-${new Date().toISOString().slice(0, 10)}.csv`)
-    link.click()
-    URL.revokeObjectURL(url)
+    await downloadBlob(blob, `invoices-${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
   async function ensureDoctorProfile() {

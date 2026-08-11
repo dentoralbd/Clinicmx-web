@@ -3,6 +3,7 @@ import type { Json } from './database.types'
 import { DEFAULT_PERMISSIONS, type AppPermissions, type AppRole } from './appSession'
 import { logActivity } from './activityLog'
 import { getAdminDeviceToken } from './adminOtp'
+import { API_BASE } from './runtimeEnv'
 
 // Phase 2 (SECURITY-HARDENING.md): staff accounts are now real Supabase
 // Auth users. Creation/password-reset/disable/delete go through
@@ -111,7 +112,7 @@ export async function listAppUsers(): Promise<AppUserRecord[]> {
 }
 
 async function callAdminUsersFunction(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/admin-users', {
+  const res = await fetch(`${API_BASE}/api/admin-users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', [ADMIN_TOKEN_HEADER]: getAdminDeviceToken() ?? '' },
     body: JSON.stringify(body),

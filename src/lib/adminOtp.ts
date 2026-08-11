@@ -15,6 +15,7 @@
 // treated as an error here; see the comment on redeemSupabaseSession.
 
 import { supabase } from './supabase'
+import { API_BASE } from './runtimeEnv'
 
 const DEVICE_TOKEN_KEY = 'clinicmx_admin_device'
 
@@ -44,7 +45,7 @@ export function saveAdminDeviceToken(token: string): void {
 
 async function post(body: Record<string, unknown>): Promise<Response | null> {
   try {
-    return await fetch('/api/admin-otp', {
+    return await fetch(`${API_BASE}/api/admin-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

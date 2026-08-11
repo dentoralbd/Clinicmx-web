@@ -3,6 +3,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatBDT, csvCell } from '@/lib/utils'
 import { getInvoiceItemLineTotal, getInvoiceItemSubtotal, type BillingLineItem } from '@/lib/billing'
+import { downloadBlob } from '@/lib/downloadBlob'
 
 // Row subsets fetched by the Analytics page (read-only selects).
 export interface AnalyticsInvoice {
@@ -577,7 +578,7 @@ export function treatmentConversion(treatments: AnalyticsTreatment[]): Treatment
 /**
  * Downloads a CSV export of clinic invoices and revenue ledger for Analytics.
  */
-export function exportClinicAnalyticsCSV(
+export async function exportClinicAnalyticsCSV(
   invoices: AnalyticsInvoice[],
   patients: AnalyticsPatient[],
   rangeLabel: string
@@ -606,13 +607,7 @@ export function exportClinicAnalyticsCSV(
 
   const csvContent = [headers.join(','), ...rows].join('\n')
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Clinic_Analytics_Revenue_${rangeLabel}.csv`
-  document.body.appendChild(a)
-  a.click()
-  URL.revokeObjectURL(url)
+  await downloadBlob(blob, `Clinic_Analytics_Revenue_${rangeLabel}.csv`)
 }
 
 /**

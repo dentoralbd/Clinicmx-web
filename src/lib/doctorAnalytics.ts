@@ -6,6 +6,7 @@ import { formatBDT, safeFormat, csvCell } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { logEdit } from '@/lib/editHistory'
 import { logActivity } from '@/lib/activityLog'
+import { downloadBlob } from '@/lib/downloadBlob'
 
 // ============================================================================
 // Two-part ledger, matching the clinic's reference statement format
@@ -564,7 +565,7 @@ export type DoctorStatementView = 'statement' | 'detailed'
  * Collections tables (Collections grouped per patient with a subtotal row).
  * Both append Needs Attention when non-empty.
  */
-export function exportFinancialStatementCSV(summary: DoctorFinancialSummary, view: DoctorStatementView = 'statement') {
+export async function exportFinancialStatementCSV(summary: DoctorFinancialSummary, view: DoctorStatementView = 'statement') {
   const csvLines: string[] = []
 
   csvLines.push(`"Total Work Done (Billed)",${summary.totalWorkDone.toFixed(2)}`)
@@ -695,14 +696,7 @@ export function exportFinancialStatementCSV(summary: DoctorFinancialSummary, vie
 
   const csvContent = csvLines.join('\n')
   const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  await downloadBlob(blob, `Financial_Statement_${summary.doctorName.replace(/[^a-zA-Z0-9]/g, '_')}_${summary.periodLabel}.csv`)
 }
 
 /**

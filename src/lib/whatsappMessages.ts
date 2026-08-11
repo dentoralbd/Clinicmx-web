@@ -1,5 +1,6 @@
 import { formatBDT } from '@/lib/utils'
 import { toWhatsAppNumber } from '@/lib/sharePdf'
+import { openExternal } from '@/lib/runtimeEnv'
 
 /** Displayed in reminder/thank-you message text. Edit to match the clinic. */
 export const CLINIC_NAME = 'DentOral Dental Care'
@@ -26,13 +27,15 @@ export function buildTreatmentFollowUpMessage(firstName: string): string {
 /**
  * Opens WhatsApp with a prefilled message to the given (stored-format) phone
  * number. Must be called synchronously inside a click handler — browsers
- * block window.open() calls that happen after an await. Returns false when
- * the phone number has nothing usable to dial (caller should disable the
- * triggering button in that case rather than call this).
+ * block window.open() calls that happen after an await, and openExternal()'s
+ * non-Tauri path still runs window.open() synchronously within this call for
+ * that reason (Tauri's own IPC-based open isn't subject to popup blocking).
+ * Returns false when the phone number has nothing usable to dial (caller
+ * should disable the triggering button in that case rather than call this).
  */
 export function openWhatsAppMessage(phone: string | null | undefined, text: string): boolean {
   const waNumber = phone ? toWhatsAppNumber(phone) : null
   if (!waNumber) return false
-  window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
+  void openExternal(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`)
   return true
 }
