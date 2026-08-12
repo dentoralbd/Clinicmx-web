@@ -175,6 +175,29 @@ function topNWithOthers<T extends { value: number }>(
 
 const isActiveInvoice = (inv: AnalyticsInvoice) => inv.status !== 'Merged'
 
+/** Ids of non-Merged invoices, from the FULL invoice set (not date-range-filtered) — a
+ *  payment can land inside a selected range even when the invoice it pays down was
+ *  created outside it, so "is this invoice active" must never be range-limited. */
+function activeInvoiceIdSet(allInvoices: AnalyticsInvoice[]): Set<string> {
+  const ids = new Set<string>()
+  for (const inv of allInvoices) if (isActiveInvoice(inv)) ids.add(inv.id)
+  return ids
+}
+
+/** Σ payment amounts against active invoices, grouped by payment_date's month. */
+function collectedByMonth(payments: AnalyticsPayment[], activeIds: Set<string>): Map<string, number> {
+  const byMonth = new Map<string, number>()
+  for (const p of payments) {
+    if (!activeIds.has(p.invoice_id)) continue
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    const key = monthKey(p.payment_date)
+    if (!key) continue
+    byMonth.set(key, (byMonth.get(key) || 0) + amount)
+  }
+  return byMonth
+}
+
 export interface MonthlyRevenuePoint {
   month: string
   label: string
@@ -183,17 +206,27 @@ export interface MonthlyRevenuePoint {
   outstanding: number
 }
 
-/** Per-month collected (Σ paid_amount) and outstanding (Σ max(total-paid, 0)), grouped by invoice created_at. */
-export function monthlyRevenue(invoices: AnalyticsInvoice[], monthAxis: string[]): MonthlyRevenuePoint[] {
-  const byMonth = new Map<string, { collected: number; billed: number; outstanding: number }>()
+/**
+ * Per-month collected (Σ payments.amount, grouped by payment_date — cash actually
+ * received that month, regardless of when the invoice was raised) and billed/outstanding
+ * (Σ total_amount / Σ max(total-paid, 0), grouped by invoice created_at).
+ * `allInvoices` (unfiltered by date range) resolves which invoices are active for payments.
+ */
+export function monthlyRevenue(
+  invoices: AnalyticsInvoice[],
+  payments: AnalyticsPayment[],
+  allInvoices: AnalyticsInvoice[],
+  monthAxis: string[]
+): MonthlyRevenuePoint[] {
+  const collectedMonths = collectedByMonth(payments, activeInvoiceIdSet(allInvoices))
+  const byMonth = new Map<string, { billed: number; outstanding: number }>()
   for (const inv of invoices) {
     if (!isActiveInvoice(inv)) continue
     const key = monthKey(inv.created_at)
     if (!key) continue
-    const bucket = byMonth.get(key) || { collected: 0, billed: 0, outstanding: 0 }
+    const bucket = byMonth.get(key) || { billed: 0, outstanding: 0 }
     const total = inv.total_amount || 0
     const paid = inv.paid_amount || 0
-    bucket.collected += paid
     bucket.billed += total
     bucket.outstanding += Math.max(total - paid, 0)
     byMonth.set(key, bucket)
@@ -201,7 +234,7 @@ export function monthlyRevenue(invoices: AnalyticsInvoice[], monthAxis: string[]
   return monthAxis.map((month) => ({
     month,
     label: monthLabel(month),
-    collected: byMonth.get(month)?.collected || 0,
+    collected: collectedMonths.get(month) || 0,
     billed: byMonth.get(month)?.billed || 0,
     outstanding: byMonth.get(month)?.outstanding || 0,
   }))
@@ -215,15 +248,28 @@ export interface RevenueSummary {
   collectionRate: number
 }
 
-export function revenueSummary(invoices: AnalyticsInvoice[]): RevenueSummary {
+/**
+ * `invoices` should already be date-range-filtered (drives billed/outstanding);
+ * `payments` should already be date-range-filtered by payment_date (drives collected);
+ * `allInvoices` is the unfiltered set, used only to resolve which invoices are active.
+ */
+export function revenueSummary(
+  invoices: AnalyticsInvoice[],
+  payments: AnalyticsPayment[],
+  allInvoices: AnalyticsInvoice[]
+): RevenueSummary {
+  const activeIds = activeInvoiceIdSet(allInvoices)
   let totalCollected = 0
   let totalBilled = 0
   let totalOutstanding = 0
+  for (const p of payments) {
+    if (!activeIds.has(p.invoice_id)) continue
+    totalCollected += p.amount || 0
+  }
   for (const inv of invoices) {
     if (!isActiveInvoice(inv)) continue
     const total = inv.total_amount || 0
     const paid = inv.paid_amount || 0
-    totalCollected += paid
     totalBilled += total
     totalOutstanding += Math.max(total - paid, 0)
   }
@@ -391,8 +437,15 @@ export interface TopRevenueSource {
   invoiceCount: number
 }
 
+/**
+ * `invoices` should already be date-range-filtered (drives totalBilled/invoiceCount);
+ * `payments` should already be date-range-filtered by payment_date (drives collected);
+ * `allInvoices` is the unfiltered set, used to resolve each payment's patient/active status.
+ */
 export function topRevenueSources(
   invoices: AnalyticsInvoice[],
+  payments: AnalyticsPayment[],
+  allInvoices: AnalyticsInvoice[],
   patients: AnalyticsPatient[],
   limit = 10
 ): TopRevenueSource[] {
@@ -400,15 +453,24 @@ export function topRevenueSources(
   for (const p of patients) {
     nameById.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient')
   }
+  const invoiceById = new Map<string, AnalyticsInvoice>()
+  for (const inv of allInvoices) invoiceById.set(inv.id, inv)
+
   const byPatient = new Map<string, { totalBilled: number; totalPaid: number; invoiceCount: number }>()
   for (const inv of invoices) {
     if (!isActiveInvoice(inv) || !inv.patient_id) continue
-    const billed = inv.total_amount || 0
-    const paid = inv.paid_amount || 0
     const bucket = byPatient.get(inv.patient_id) || { totalBilled: 0, totalPaid: 0, invoiceCount: 0 }
-    bucket.totalBilled += billed
-    bucket.totalPaid += paid
+    bucket.totalBilled += inv.total_amount || 0
     bucket.invoiceCount += 1
+    byPatient.set(inv.patient_id, bucket)
+  }
+  for (const p of payments) {
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    const inv = invoiceById.get(p.invoice_id)
+    if (!inv || !isActiveInvoice(inv) || !inv.patient_id) continue
+    const bucket = byPatient.get(inv.patient_id) || { totalBilled: 0, totalPaid: 0, invoiceCount: 0 }
+    bucket.totalPaid += amount
     byPatient.set(inv.patient_id, bucket)
   }
   return Array.from(byPatient.entries())

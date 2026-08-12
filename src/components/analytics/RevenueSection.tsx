@@ -31,7 +31,7 @@ export function RevenueSection({ monthly, byType, topSources }: RevenueSectionPr
       <ChartCard
         icon={<TrendingUp className="w-4 h-4" />}
         title="Monthly Revenue"
-        caption="Collected = payments received on invoices created that month; Outstanding = still due on them. Merged invoices excluded."
+        caption="Collected = payments received that month, regardless of when the invoice was created; Outstanding = still due on invoices created that month. Merged invoices excluded."
       >
         {!hasMonthlyData ? (
           <ChartEmptyState message="No invoices in this period" />

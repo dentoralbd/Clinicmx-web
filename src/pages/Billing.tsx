@@ -145,11 +145,13 @@ export function Billing() {
   const [statsRange, setStatsRange] = useState<AnalyticsRange>('all')
   const [statsCustomStart, setStatsCustomStart] = useState('')
   const [statsCustomEnd, setStatsCustomEnd] = useState('')
+  const [payments, setPayments] = useState<Array<{ invoice_id: string; amount: number | null; payment_date: string }>>([])
 
   useEffect(() => {
     loadInvoices()
     loadPendingPatients()
     loadAllPatients()
+    loadPayments()
   }, [])
 
   useEffect(() => {
@@ -187,6 +189,16 @@ export function Billing() {
       console.error('Error loading invoices:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadPayments() {
+    try {
+      const { data, error } = await supabase.from('payments').select('invoice_id, amount, payment_date')
+      if (error) throw error
+      setPayments((data as Array<{ invoice_id: string; amount: number | null; payment_date: string }>) || [])
+    } catch (error) {
+      console.error('Error loading payments:', error)
     }
   }
 
@@ -589,9 +601,21 @@ export function Billing() {
     () => filterByRange(activeInvoices, (invoice) => invoice.created_at, statsRange, statsCustomStart, statsCustomEnd),
     [activeInvoices, statsRange, statsCustomStart, statsCustomEnd]
   )
+  // Total Collected uses the payments ledger (payment_date), not invoice.paid_amount
+  // grouped by invoice created_at — a payment made this range against an older
+  // invoice must count, and partial payments on non-"Paid" invoices must count too.
+  // Matches Dashboard's monthRevenue and Analytics' dailyCollected().
+  const activeInvoiceIds = useMemo(() => new Set(activeInvoices.map((invoice) => invoice.id)), [activeInvoices])
+  const rangePayments = useMemo(
+    () =>
+      filterByRange(payments, (p) => p.payment_date, statsRange, statsCustomStart, statsCustomEnd).filter((p) =>
+        activeInvoiceIds.has(p.invoice_id)
+      ),
+    [payments, statsRange, statsCustomStart, statsCustomEnd, activeInvoiceIds]
+  )
   const stats = {
     total: statsRangeInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0),
-    paid: statsRangeInvoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + (invoice.paid_amount || 0), 0),
+    paid: rangePayments.reduce((sum, p) => sum + (p.amount || 0), 0),
     pending: statsRangeInvoices
       .filter((invoice) => (invoice.total_amount || 0) > (invoice.paid_amount || 0))
       .reduce((sum, invoice) => sum + ((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0),

@@ -129,6 +129,10 @@ export function Analytics() {
     () => filterByRange(fullPatients, (p) => p.created_at, range, customStart, customEnd),
     [fullPatients, range, customStart, customEnd]
   )
+  const rangePayments = useMemo(
+    () => filterByRange(payments, (p) => p.payment_date, range, customStart, customEnd),
+    [payments, range, customStart, customEnd]
+  )
 
   const monthAxis = useMemo(
     () =>
@@ -144,11 +148,17 @@ export function Analytics() {
     [range, invoices, patients, appointments, customStart]
   )
 
-  const summary = useMemo(() => revenueSummary(rangeInvoices), [rangeInvoices])
-  const monthly = useMemo(() => monthlyRevenue(rangeInvoices, monthAxis), [rangeInvoices, monthAxis])
+  const summary = useMemo(() => revenueSummary(rangeInvoices, rangePayments, invoices), [rangeInvoices, rangePayments, invoices])
+  const monthly = useMemo(
+    () => monthlyRevenue(rangeInvoices, rangePayments, invoices, monthAxis),
+    [rangeInvoices, rangePayments, invoices, monthAxis]
+  )
   // All treatments (not range-filtered) so items linking to older treatments still resolve a type.
   const byType = useMemo(() => revenueByTreatmentType(rangeInvoices, treatments), [rangeInvoices, treatments])
-  const topSources = useMemo(() => topRevenueSources(rangeInvoices, patients), [rangeInvoices, patients])
+  const topSources = useMemo(
+    () => topRevenueSources(rangeInvoices, rangePayments, invoices, patients),
+    [rangeInvoices, rangePayments, invoices, patients]
+  )
   const newPerMonth = useMemo(() => newPatientsPerMonth(fullPatients, monthAxis), [fullPatients, monthAxis])
   // Full appointment history: first-ever visits must be computed across all time.
   const returningVsNew = useMemo(() => returningVsNewByMonth(appointments, monthAxis), [appointments, monthAxis])
