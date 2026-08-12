@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bar,
@@ -10,20 +11,33 @@ import {
   YAxis,
 } from 'recharts'
 import { TrendingUp, PieChart, Users } from 'lucide-react'
-import { formatBDT } from '@/lib/utils'
-import type { MonthlyRevenuePoint, RevenueByTypeRow, TopRevenueSource } from '@/lib/analytics'
-import { ChartCard, ChartEmptyState, CHART_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from './ChartCard'
+import { formatBDT, safeFormat } from '@/lib/utils'
+import type { MonthlyRevenuePoint, PaymentMonthGroup, RevenueByTypeRow, TopRevenueSource } from '@/lib/analytics'
+import { ChartCard, ChartEmptyState, ModeToggle, CHART_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from './ChartCard'
 
 interface RevenueSectionProps {
   monthly: MonthlyRevenuePoint[]
   byType: RevenueByTypeRow[]
   topSources: TopRevenueSource[]
+  invoicePayments: PaymentMonthGroup[]
 }
 
 const tooltipMoney = (value: unknown) => formatBDT(Number(value))
 
-export function RevenueSection({ monthly, byType, topSources }: RevenueSectionProps) {
+const statusPillClass = (status: string): string => {
+  if (status === 'Paid') return 'pill-success'
+  if (status === 'Overdue') return 'pill-error'
+  return 'pill-warning'
+}
+
+const REVENUE_VIEW_OPTIONS = [
+  { value: 'monthly' as const, label: 'Monthly' },
+  { value: 'invoice' as const, label: 'Invoice' },
+]
+
+export function RevenueSection({ monthly, byType, topSources, invoicePayments }: RevenueSectionProps) {
   const navigate = useNavigate()
+  const [revenueView, setRevenueView] = useState<'monthly' | 'invoice'>('monthly')
   const hasMonthlyData = monthly.some((m) => m.collected > 0 || m.outstanding > 0)
 
   return (
@@ -31,22 +45,56 @@ export function RevenueSection({ monthly, byType, topSources }: RevenueSectionPr
       <ChartCard
         icon={<TrendingUp className="w-4 h-4" />}
         title="Monthly Revenue"
-        caption="Collected = payments received that month, regardless of when the invoice was created; Outstanding = still due on invoices created that month. Merged invoices excluded."
+        caption={
+          revenueView === 'invoice'
+            ? 'Individual payments received in the selected period, grouped by month — the records behind the bars in Monthly view.'
+            : 'Collected = payments received that month, regardless of when the invoice was created; Outstanding = still due on invoices created that month. Merged invoices excluded.'
+        }
+        headerRight={<ModeToggle value={revenueView} options={REVENUE_VIEW_OPTIONS} onChange={setRevenueView} />}
       >
-        {!hasMonthlyData ? (
-          <ChartEmptyState message="No invoices in this period" />
+        {revenueView === 'monthly' ? (
+          !hasMonthlyData ? (
+            <ChartEmptyState message="No invoices in this period" />
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+                <CartesianGrid strokeDasharray="0" stroke={CHART_COLORS.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={{ stroke: CHART_COLORS.grid }} />
+                <YAxis tickFormatter={formatBDTCompact} tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} width={70} />
+                <Tooltip formatter={tooltipMoney} itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(13, 148, 136, 0.06)' }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="collected" name="Collected" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="outstanding" name="Outstanding" fill={CHART_COLORS.outstanding} radius={[4, 4, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          )
+        ) : invoicePayments.length === 0 ? (
+          <ChartEmptyState message="No payments in this period" />
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
-              <CartesianGrid strokeDasharray="0" stroke={CHART_COLORS.grid} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={{ stroke: CHART_COLORS.grid }} />
-              <YAxis tickFormatter={formatBDTCompact} tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} width={70} />
-              <Tooltip formatter={tooltipMoney} itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(13, 148, 136, 0.06)' }} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="collected" name="Collected" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="outstanding" name="Outstanding" fill={CHART_COLORS.outstanding} radius={[4, 4, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="max-h-[520px] overflow-y-auto space-y-4 pr-1">
+            {invoicePayments.map((group) => (
+              <div key={group.month}>
+                <div className="flex items-center justify-between px-3 py-2 bg-surface-subtle rounded-lg mb-1.5">
+                  <span className="text-xs font-semibold text-text-primary">{group.label}</span>
+                  <span className="text-xs font-semibold text-primary">{formatBDT(group.monthTotal)}</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {group.rows.map((row) => (
+                    <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{row.patientName}</p>
+                        <p className="text-xs text-text-secondary">{safeFormat(row.date, 'MMM d, yyyy')}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className={statusPillClass(row.invoiceStatus)}>{row.invoiceStatus}</span>
+                        <span className="font-semibold tabular-nums">{formatBDT(row.amount)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </ChartCard>
 

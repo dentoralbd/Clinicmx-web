@@ -10,13 +10,20 @@ import {
   filterByRange,
   monthlyRevenue,
   newPatientsPerMonth,
+  newPatientsYoY,
   procedureCountsByType,
+  procedureCountsYoY,
   avgCostByType,
+  avgCostYoY,
   returningVsNewByMonth,
+  totalPatientsSeenYoY,
   revenueByTreatmentType,
   revenueSummary,
   topRevenueSources,
   treatmentConversion,
+  treatmentConversionByMonth,
+  treatmentConversionYoY,
+  paymentsByMonth,
   exportClinicAnalyticsCSV,
   generateClinicAnalyticsPDF,
   type AnalyticsAppointment,
@@ -94,7 +101,7 @@ export function Analytics() {
         fetchAllRows<AnalyticsTreatment>('treatments', 'id, treatment_type, status, cost, created_at'),
         fetchAllRows<AnalyticsPatient>('patients', 'id, first_name, last_name, created_at, patient_type'),
         fetchAllRows<AnalyticsAppointment>('appointments', 'patient_id, date_time, status'),
-        fetchAllRows<AnalyticsPayment>('payments', 'invoice_id, amount, payment_date'),
+        fetchAllRows<AnalyticsPayment>('payments', 'id, invoice_id, amount, payment_date'),
       ])
 
       setInvoices(invoiceRows)
@@ -165,6 +172,20 @@ export function Analytics() {
   const counts = useMemo(() => procedureCountsByType(rangeTreatments), [rangeTreatments])
   const avgCosts = useMemo(() => avgCostByType(rangeTreatments), [rangeTreatments])
   const conversion = useMemo(() => treatmentConversion(rangeTreatments), [rangeTreatments])
+
+  // Invoice-wise Revenue view: payments in the selected range, grouped by payment month.
+  const invoicePayments = useMemo(
+    () => paymentsByMonth(rangePayments, invoices, patients),
+    [rangePayments, invoices, patients]
+  )
+  // Year-over-year variants always use full, unfiltered history — a YoY comparison
+  // across only the top-level range (e.g. "3M") would be mostly empty bars.
+  const newPatientsYoYData = useMemo(() => newPatientsYoY(fullPatients), [fullPatients])
+  const totalPatientsSeenYoYData = useMemo(() => totalPatientsSeenYoY(appointments), [appointments])
+  const countsYoY = useMemo(() => procedureCountsYoY(treatments), [treatments])
+  const avgCostsYoY = useMemo(() => avgCostYoY(treatments), [treatments])
+  const conversionTrend = useMemo(() => treatmentConversionByMonth(rangeTreatments, monthAxis), [rangeTreatments, monthAxis])
+  const conversionYoYData = useMemo(() => treatmentConversionYoY(treatments), [treatments])
 
   if (getAppRole() !== 'admin') {
     return <Navigate to="/dashboard" replace />
@@ -314,9 +335,22 @@ export function Analytics() {
       </div>
 
       <RevenueCalendar payments={payments} invoices={invoices} patients={patients} />
-      <RevenueSection monthly={monthly} byType={byType} topSources={topSources} />
-      <PatientSection newPerMonth={newPerMonth} returningVsNew={returningVsNew} />
-      <TreatmentMixSection counts={counts} avgCosts={avgCosts} conversion={conversion} />
+      <RevenueSection monthly={monthly} byType={byType} topSources={topSources} invoicePayments={invoicePayments} />
+      <PatientSection
+        newPerMonth={newPerMonth}
+        returningVsNew={returningVsNew}
+        newPatientsYoY={newPatientsYoYData}
+        totalPatientsSeenYoY={totalPatientsSeenYoYData}
+      />
+      <TreatmentMixSection
+        counts={counts}
+        avgCosts={avgCosts}
+        conversion={conversion}
+        countsYoY={countsYoY}
+        avgCostsYoY={avgCostsYoY}
+        conversionTrend={conversionTrend}
+        conversionYoY={conversionYoYData}
+      />
 
       {showPrintModal && (
         <ClinicAnalyticsReportPrintModal

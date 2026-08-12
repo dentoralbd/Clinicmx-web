@@ -38,6 +38,7 @@ export interface AnalyticsAppointment {
 }
 
 export interface AnalyticsPayment {
+  id: string
   invoice_id: string
   amount: number | null
   payment_date: string
@@ -55,6 +56,11 @@ export function monthKey(dateStr: string): string {
 export function dayKey(dateStr: string): string {
   const d = new Date(dateStr)
   return isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd')
+}
+
+export function yearKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  return isNaN(d.getTime()) ? '' : format(d, 'yyyy')
 }
 
 export function monthLabel(key: string): string {
@@ -171,6 +177,31 @@ function topNWithOthers<T extends { value: number }>(
   return [...top, merge(rest)]
 }
 
+// ---------- year-over-year comparison ----------
+
+const MONTH_OF_YEAR_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MAX_YOY_YEARS = 5
+
+/** One row per calendar month (Jan..Dec); one numeric field per calendar year shown. */
+export interface YoYPoint {
+  month: string
+  label: string
+  [year: string]: number | string
+}
+
+/** Most recent MAX_YOY_YEARS years, ascending. */
+function recentYears(years: Iterable<string>): string[] {
+  return Array.from(new Set(years)).sort().slice(-MAX_YOY_YEARS)
+}
+
+function emptyYoYAxis(years: string[]): YoYPoint[] {
+  return MONTH_OF_YEAR_LABELS.map((label, idx) => {
+    const point: YoYPoint = { month: String(idx + 1).padStart(2, '0'), label }
+    for (const year of years) point[year] = 0
+    return point
+  })
+}
+
 // ---------- revenue ----------
 
 const isActiveInvoice = (inv: AnalyticsInvoice) => inv.status !== 'Merged'
@@ -279,6 +310,72 @@ export function revenueSummary(
     totalOutstanding,
     collectionRate: totalBilled > 0 ? totalCollected / totalBilled : 0,
   }
+}
+
+export interface PaymentRow {
+  id: string
+  date: string
+  patientId: string | null
+  patientName: string
+  invoiceId: string
+  amount: number
+  invoiceTotal: number
+  invoiceStatus: string
+}
+
+export interface PaymentMonthGroup {
+  month: string
+  label: string
+  rows: PaymentRow[]
+  monthTotal: number
+}
+
+/**
+ * `payments` should already be date-range-filtered by payment_date; `allInvoices`/
+ * `patients` are the full unfiltered sets, used to resolve each payment's invoice and
+ * patient. Merged invoices excluded. Groups by payment month (newest first); rows
+ * within a group are newest first.
+ */
+export function paymentsByMonth(
+  payments: AnalyticsPayment[],
+  allInvoices: AnalyticsInvoice[],
+  patients: AnalyticsPatient[]
+): PaymentMonthGroup[] {
+  const invoiceById = new Map<string, AnalyticsInvoice>()
+  for (const inv of allInvoices) invoiceById.set(inv.id, inv)
+  const nameById = new Map<string, string>()
+  for (const p of patients) nameById.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient')
+
+  const byMonth = new Map<string, PaymentRow[]>()
+  for (const p of payments) {
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    const inv = invoiceById.get(p.invoice_id)
+    if (!inv || inv.status === 'Merged') continue
+    const key = monthKey(p.payment_date)
+    if (!key) continue
+    const rows = byMonth.get(key) || []
+    rows.push({
+      id: p.id,
+      date: p.payment_date,
+      patientId: inv.patient_id,
+      patientName: inv.patient_id ? nameById.get(inv.patient_id) || 'Patient' : 'Unknown Patient',
+      invoiceId: inv.id,
+      amount,
+      invoiceTotal: inv.total_amount || 0,
+      invoiceStatus: inv.status || 'Pending',
+    })
+    byMonth.set(key, rows)
+  }
+
+  return Array.from(byMonth.entries())
+    .sort(([a], [b]) => (a < b ? 1 : -1))
+    .map(([month, rows]) => ({
+      month,
+      label: format(new Date(`${month}-01T00:00:00`), 'MMMM yyyy'),
+      rows: rows.sort((a, b) => (a.date < b.date ? 1 : -1)),
+      monthTotal: rows.reduce((sum, r) => sum + r.amount, 0),
+    }))
 }
 
 export const UNLINKED_REVENUE_LABEL = 'Other / Unlinked'
@@ -513,6 +610,27 @@ export function newPatientsPerMonth(patients: AnalyticsPatient[], monthAxis: str
   })
 }
 
+/** YoY: new-patient count per calendar month, one field per calendar year (most recent 5). Always full history. */
+export function newPatientsYoY(patients: AnalyticsPatient[]): { data: YoYPoint[]; years: string[] } {
+  const byYearMonth = new Map<string, number>()
+  const yearsSeen = new Set<string>()
+  for (const p of patients) {
+    const d = new Date(p.created_at)
+    if (isNaN(d.getTime())) continue
+    const year = String(d.getFullYear())
+    yearsSeen.add(year)
+    const key = `${year}-${d.getMonth()}`
+    byYearMonth.set(key, (byYearMonth.get(key) || 0) + 1)
+  }
+  const years = recentYears(yearsSeen)
+  const data = emptyYoYAxis(years)
+  for (const point of data) {
+    const monthIdx = Number(point.month) - 1
+    for (const year of years) point[year] = byYearMonth.get(`${year}-${monthIdx}`) || 0
+  }
+  return { data, years }
+}
+
 export interface ReturningVsNewPoint {
   month: string
   label: string
@@ -557,6 +675,34 @@ export function returningVsNewByMonth(
   })
 }
 
+/**
+ * YoY: total distinct active (non-Cancelled) patients seen per calendar month, one
+ * field per calendar year (most recent 5). Collapses the new/returning split shown
+ * in Monthly mode — a 2-series-by-year grouped chart isn't readable.
+ */
+export function totalPatientsSeenYoY(appointments: AnalyticsAppointment[]): { data: YoYPoint[]; years: string[] } {
+  const byYearMonth = new Map<string, Set<string>>()
+  const yearsSeen = new Set<string>()
+  for (const a of appointments) {
+    if (!a.patient_id || !a.date_time || a.status === 'Cancelled') continue
+    const d = new Date(a.date_time)
+    if (isNaN(d.getTime())) continue
+    const year = String(d.getFullYear())
+    yearsSeen.add(year)
+    const key = `${year}-${d.getMonth()}`
+    const set = byYearMonth.get(key) || new Set<string>()
+    set.add(a.patient_id)
+    byYearMonth.set(key, set)
+  }
+  const years = recentYears(yearsSeen)
+  const data = emptyYoYAxis(years)
+  for (const point of data) {
+    const monthIdx = Number(point.month) - 1
+    for (const year of years) point[year] = byYearMonth.get(`${year}-${monthIdx}`)?.size || 0
+  }
+  return { data, years }
+}
+
 // ---------- treatments ----------
 
 export interface ProcedureCountRow {
@@ -578,6 +724,42 @@ export function procedureCountsByType(treatments: AnalyticsTreatment[]): Procedu
     label: 'Others',
     value: others.reduce((sum, o) => sum + o.value, 0),
   })).map(({ label, value }) => ({ type: label, count: value }))
+}
+
+export interface TypeYoYRow {
+  type: string
+  [year: string]: number | string
+}
+
+/** Top-5 types (by all-time non-cancelled count) as per-calendar-year counts, most recent 5 years. Always full history. */
+export function procedureCountsYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow[]; years: string[] } {
+  const normalize = buildTypeNormalizer(treatments.map((t) => t.treatment_type))
+  const totalByType = new Map<string, number>()
+  const byTypeYear = new Map<string, Map<string, number>>()
+  const yearsSeen = new Set<string>()
+  for (const t of treatments) {
+    if (t.status === 'Cancelled') continue
+    const type = normalize(t.treatment_type)
+    totalByType.set(type, (totalByType.get(type) || 0) + 1)
+    const year = yearKey(t.created_at)
+    if (!year) continue
+    yearsSeen.add(year)
+    const byYear = byTypeYear.get(type) || new Map<string, number>()
+    byYear.set(year, (byYear.get(year) || 0) + 1)
+    byTypeYear.set(type, byYear)
+  }
+  const years = recentYears(yearsSeen)
+  const topTypes = Array.from(totalByType.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([type]) => type)
+  const data = topTypes.map((type) => {
+    const row: TypeYoYRow = { type }
+    const byYear = byTypeYear.get(type)
+    for (const year of years) row[year] = byYear?.get(year) || 0
+    return row
+  })
+  return { data, years }
 }
 
 export interface AvgCostRow {
@@ -604,6 +786,45 @@ export function avgCostByType(treatments: AnalyticsTreatment[], limit = 10): Avg
     .map(([type, { total, n }]) => ({ type, avgCost: total / n, n }))
     .sort((a, b) => b.n - a.n)
     .slice(0, limit)
+}
+
+/** Same top-5 type selection as procedureCountsYoY (by all-time frequency, matching avgCostByType's sort); per-year mean cost. Always full history. */
+export function avgCostYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow[]; years: string[] } {
+  const normalize = buildTypeNormalizer(treatments.map((t) => t.treatment_type))
+  const freqByType = new Map<string, number>()
+  const sumByTypeYear = new Map<string, Map<string, { total: number; n: number }>>()
+  const yearsSeen = new Set<string>()
+  for (const t of treatments) {
+    if (t.status === 'Cancelled') continue
+    const type = normalize(t.treatment_type)
+    freqByType.set(type, (freqByType.get(type) || 0) + 1)
+    const cost = t.cost || 0
+    if (cost <= 0) continue
+    const year = yearKey(t.created_at)
+    if (!year) continue
+    yearsSeen.add(year)
+    const byYear = sumByTypeYear.get(type) || new Map<string, { total: number; n: number }>()
+    const bucket = byYear.get(year) || { total: 0, n: 0 }
+    bucket.total += cost
+    bucket.n += 1
+    byYear.set(year, bucket)
+    sumByTypeYear.set(type, byYear)
+  }
+  const years = recentYears(yearsSeen)
+  const topTypes = Array.from(freqByType.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([type]) => type)
+  const data = topTypes.map((type) => {
+    const row: TypeYoYRow = { type }
+    const byYear = sumByTypeYear.get(type)
+    for (const year of years) {
+      const bucket = byYear?.get(year)
+      row[year] = bucket && bucket.n > 0 ? Math.round(bucket.total / bucket.n) : 0
+    }
+    return row
+  })
+  return { data, years }
 }
 
 export interface TreatmentConversion {
@@ -634,6 +855,67 @@ export function treatmentConversion(treatments: AnalyticsTreatment[]): Treatment
     cancelled,
     completionRate: pipeline > 0 ? completed / pipeline : 0,
   }
+}
+
+export interface ConversionTrendPoint {
+  month: string
+  label: string
+  completionRatePct: number
+  completed: number
+  pipeline: number
+}
+
+/** Per-month completion rate (%), bucketed by treatment created_at; pipeline = planned+inProgress+completed (Cancelled excluded). */
+export function treatmentConversionByMonth(treatments: AnalyticsTreatment[], monthAxis: string[]): ConversionTrendPoint[] {
+  const byMonth = new Map<string, { completed: number; pipeline: number }>()
+  for (const t of treatments) {
+    if (t.status === 'Cancelled') continue
+    const key = monthKey(t.created_at)
+    if (!key) continue
+    const bucket = byMonth.get(key) || { completed: 0, pipeline: 0 }
+    bucket.pipeline += 1
+    if (t.status === 'Completed') bucket.completed += 1
+    byMonth.set(key, bucket)
+  }
+  return monthAxis.map((month) => {
+    const bucket = byMonth.get(month) || { completed: 0, pipeline: 0 }
+    return {
+      month,
+      label: monthLabel(month),
+      completionRatePct: bucket.pipeline > 0 ? Math.round((bucket.completed / bucket.pipeline) * 100) : 0,
+      completed: bucket.completed,
+      pipeline: bucket.pipeline,
+    }
+  })
+}
+
+/** YoY completion rate (%) per calendar month, one field per calendar year (most recent 5). Always full history. */
+export function treatmentConversionYoY(treatments: AnalyticsTreatment[]): { data: YoYPoint[]; years: string[] } {
+  const completedByYM = new Map<string, number>()
+  const pipelineByYM = new Map<string, number>()
+  const yearsSeen = new Set<string>()
+  for (const t of treatments) {
+    if (t.status === 'Cancelled') continue
+    const d = new Date(t.created_at)
+    if (isNaN(d.getTime())) continue
+    const year = String(d.getFullYear())
+    yearsSeen.add(year)
+    const key = `${year}-${d.getMonth()}`
+    pipelineByYM.set(key, (pipelineByYM.get(key) || 0) + 1)
+    if (t.status === 'Completed') completedByYM.set(key, (completedByYM.get(key) || 0) + 1)
+  }
+  const years = recentYears(yearsSeen)
+  const data = emptyYoYAxis(years)
+  for (const point of data) {
+    const monthIdx = Number(point.month) - 1
+    for (const year of years) {
+      const key = `${year}-${monthIdx}`
+      const pipeline = pipelineByYM.get(key) || 0
+      const completed = completedByYM.get(key) || 0
+      point[year] = pipeline > 0 ? Math.round((completed / pipeline) * 100) : 0
+    }
+  }
+  return { data, years }
 }
 
 /**
