@@ -180,8 +180,6 @@ function topNWithOthers<T extends { value: number }>(
 // ---------- year-over-year comparison ----------
 
 const MONTH_OF_YEAR_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-/** Yearly mode is a Previous-Year-vs-Current-Year comparison, not an open-ended multi-year trend. */
-const MAX_YOY_YEARS = 2
 
 /** One row per calendar month (Jan..Dec); one numeric field per calendar year shown. */
 export interface YoYPoint {
@@ -190,9 +188,25 @@ export interface YoYPoint {
   [year: string]: number | string
 }
 
-/** Most recent MAX_YOY_YEARS years, ascending. */
-function recentYears(years: Iterable<string>): string[] {
-  return Array.from(new Set(years)).sort().slice(-MAX_YOY_YEARS)
+/** [previous year, current year] — the two years a Yearly-mode chart compares. Picked via the page's year picker. */
+export type YoYYears = [string, string]
+
+/** All distinct calendar years present across the given date lists, descending (newest first) — populates the year picker. */
+export function distinctYears(...dateLists: Array<Array<string | null | undefined>>): string[] {
+  const years = new Set<string>()
+  for (const list of dateLists) {
+    for (const raw of list) {
+      if (!raw) continue
+      const d = new Date(raw)
+      if (!isNaN(d.getTime())) years.add(String(d.getFullYear()))
+    }
+  }
+  return Array.from(years).sort().reverse()
+}
+
+/** De-duplicated (a chart still reads sensibly if the same year is picked twice). */
+function dedupeYears(years: YoYYears): string[] {
+  return years[0] === years[1] ? [years[1]] : years
 }
 
 function emptyYoYAxis(years: string[]): YoYPoint[] {
@@ -611,19 +625,18 @@ export function newPatientsPerMonth(patients: AnalyticsPatient[], monthAxis: str
   })
 }
 
-/** YoY: new-patient count per calendar month, one field per calendar year (most recent 5). Always full history. */
-export function newPatientsYoY(patients: AnalyticsPatient[]): { data: YoYPoint[]; years: string[] } {
+/** YoY: new-patient count per calendar month, for the two picked years. Always full history. */
+export function newPatientsYoY(patients: AnalyticsPatient[], pickedYears: YoYYears): { data: YoYPoint[]; years: string[] } {
+  const years = dedupeYears(pickedYears)
   const byYearMonth = new Map<string, number>()
-  const yearsSeen = new Set<string>()
   for (const p of patients) {
     const d = new Date(p.created_at)
     if (isNaN(d.getTime())) continue
     const year = String(d.getFullYear())
-    yearsSeen.add(year)
+    if (!years.includes(year)) continue
     const key = `${year}-${d.getMonth()}`
     byYearMonth.set(key, (byYearMonth.get(key) || 0) + 1)
   }
-  const years = recentYears(yearsSeen)
   const data = emptyYoYAxis(years)
   for (const point of data) {
     const monthIdx = Number(point.month) - 1
@@ -677,25 +690,24 @@ export function returningVsNewByMonth(
 }
 
 /**
- * YoY: total distinct active (non-Cancelled) patients seen per calendar month, one
- * field per calendar year (most recent 5). Collapses the new/returning split shown
- * in Monthly mode — a 2-series-by-year grouped chart isn't readable.
+ * YoY: total distinct active (non-Cancelled) patients seen per calendar month, for
+ * the two picked years. Collapses the new/returning split shown in Monthly mode —
+ * a 2-series-by-year grouped chart isn't readable.
  */
-export function totalPatientsSeenYoY(appointments: AnalyticsAppointment[]): { data: YoYPoint[]; years: string[] } {
+export function totalPatientsSeenYoY(appointments: AnalyticsAppointment[], pickedYears: YoYYears): { data: YoYPoint[]; years: string[] } {
+  const years = dedupeYears(pickedYears)
   const byYearMonth = new Map<string, Set<string>>()
-  const yearsSeen = new Set<string>()
   for (const a of appointments) {
     if (!a.patient_id || !a.date_time || a.status === 'Cancelled') continue
     const d = new Date(a.date_time)
     if (isNaN(d.getTime())) continue
     const year = String(d.getFullYear())
-    yearsSeen.add(year)
+    if (!years.includes(year)) continue
     const key = `${year}-${d.getMonth()}`
     const set = byYearMonth.get(key) || new Set<string>()
     set.add(a.patient_id)
     byYearMonth.set(key, set)
   }
-  const years = recentYears(yearsSeen)
   const data = emptyYoYAxis(years)
   for (const point of data) {
     const monthIdx = Number(point.month) - 1
@@ -732,24 +744,22 @@ export interface TypeYoYRow {
   [year: string]: number | string
 }
 
-/** Top-5 types (by all-time non-cancelled count) as per-calendar-year counts, most recent 5 years. Always full history. */
-export function procedureCountsYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow[]; years: string[] } {
+/** Top-5 types (by all-time non-cancelled count) as per-calendar-year counts, for the two picked years. Always full history. */
+export function procedureCountsYoY(treatments: AnalyticsTreatment[], pickedYears: YoYYears): { data: TypeYoYRow[]; years: string[] } {
+  const years = dedupeYears(pickedYears)
   const normalize = buildTypeNormalizer(treatments.map((t) => t.treatment_type))
   const totalByType = new Map<string, number>()
   const byTypeYear = new Map<string, Map<string, number>>()
-  const yearsSeen = new Set<string>()
   for (const t of treatments) {
     if (t.status === 'Cancelled') continue
     const type = normalize(t.treatment_type)
     totalByType.set(type, (totalByType.get(type) || 0) + 1)
     const year = yearKey(t.created_at)
-    if (!year) continue
-    yearsSeen.add(year)
+    if (!year || !years.includes(year)) continue
     const byYear = byTypeYear.get(type) || new Map<string, number>()
     byYear.set(year, (byYear.get(year) || 0) + 1)
     byTypeYear.set(type, byYear)
   }
-  const years = recentYears(yearsSeen)
   const topTypes = Array.from(totalByType.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
@@ -790,11 +800,11 @@ export function avgCostByType(treatments: AnalyticsTreatment[], limit = 10): Avg
 }
 
 /** Same top-5 type selection as procedureCountsYoY (by all-time frequency, matching avgCostByType's sort); per-year mean cost. Always full history. */
-export function avgCostYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow[]; years: string[] } {
+export function avgCostYoY(treatments: AnalyticsTreatment[], pickedYears: YoYYears): { data: TypeYoYRow[]; years: string[] } {
+  const years = dedupeYears(pickedYears)
   const normalize = buildTypeNormalizer(treatments.map((t) => t.treatment_type))
   const freqByType = new Map<string, number>()
   const sumByTypeYear = new Map<string, Map<string, { total: number; n: number }>>()
-  const yearsSeen = new Set<string>()
   for (const t of treatments) {
     if (t.status === 'Cancelled') continue
     const type = normalize(t.treatment_type)
@@ -802,8 +812,7 @@ export function avgCostYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow
     const cost = t.cost || 0
     if (cost <= 0) continue
     const year = yearKey(t.created_at)
-    if (!year) continue
-    yearsSeen.add(year)
+    if (!year || !years.includes(year)) continue
     const byYear = sumByTypeYear.get(type) || new Map<string, { total: number; n: number }>()
     const bucket = byYear.get(year) || { total: 0, n: 0 }
     bucket.total += cost
@@ -811,7 +820,6 @@ export function avgCostYoY(treatments: AnalyticsTreatment[]): { data: TypeYoYRow
     byYear.set(year, bucket)
     sumByTypeYear.set(type, byYear)
   }
-  const years = recentYears(yearsSeen)
   const topTypes = Array.from(freqByType.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
@@ -890,22 +898,21 @@ export function treatmentConversionByMonth(treatments: AnalyticsTreatment[], mon
   })
 }
 
-/** YoY completion rate (%) per calendar month, one field per calendar year (most recent 5). Always full history. */
-export function treatmentConversionYoY(treatments: AnalyticsTreatment[]): { data: YoYPoint[]; years: string[] } {
+/** YoY completion rate (%) per calendar month, for the two picked years. Always full history. */
+export function treatmentConversionYoY(treatments: AnalyticsTreatment[], pickedYears: YoYYears): { data: YoYPoint[]; years: string[] } {
+  const years = dedupeYears(pickedYears)
   const completedByYM = new Map<string, number>()
   const pipelineByYM = new Map<string, number>()
-  const yearsSeen = new Set<string>()
   for (const t of treatments) {
     if (t.status === 'Cancelled') continue
     const d = new Date(t.created_at)
     if (isNaN(d.getTime())) continue
     const year = String(d.getFullYear())
-    yearsSeen.add(year)
+    if (!years.includes(year)) continue
     const key = `${year}-${d.getMonth()}`
     pipelineByYM.set(key, (pipelineByYM.get(key) || 0) + 1)
     if (t.status === 'Completed') completedByYM.set(key, (completedByYM.get(key) || 0) + 1)
   }
-  const years = recentYears(yearsSeen)
   const data = emptyYoYAxis(years)
   for (const point of data) {
     const monthIdx = Number(point.month) - 1

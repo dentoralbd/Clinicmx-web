@@ -7,6 +7,7 @@ import { sharePdf } from '@/lib/sharePdf'
 import { RefreshCw, TrendingUp, DollarSign, UserPlus, CheckCircle2, FileSpreadsheet, Printer, FileText } from 'lucide-react'
 import {
   buildMonthAxis,
+  distinctYears,
   filterByRange,
   monthlyRevenue,
   newPatientsPerMonth,
@@ -32,6 +33,7 @@ import {
   type AnalyticsPayment,
   type AnalyticsRange,
   type AnalyticsTreatment,
+  type YoYYears,
 } from '@/lib/analytics'
 import { RevenueCalendar } from '@/components/analytics/RevenueCalendar'
 import { RevenueSection } from '@/components/analytics/RevenueSection'
@@ -74,6 +76,8 @@ export function Analytics() {
   const [range, setRange] = useState<AnalyticsRange>('12m')
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
+  // null = auto (the two most recent years present in the data); an explicit pick overrides that.
+  const [yoyYearsOverride, setYoyYearsOverride] = useState<YoYYears | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -180,12 +184,32 @@ export function Analytics() {
   )
   // Year-over-year variants always use full, unfiltered history — a YoY comparison
   // across only the top-level range (e.g. "3M") would be mostly empty bars.
-  const newPatientsYoYData = useMemo(() => newPatientsYoY(fullPatients), [fullPatients])
-  const totalPatientsSeenYoYData = useMemo(() => totalPatientsSeenYoY(appointments), [appointments])
-  const countsYoY = useMemo(() => procedureCountsYoY(treatments), [treatments])
-  const avgCostsYoY = useMemo(() => avgCostYoY(treatments), [treatments])
+  const availableYoyYears = useMemo(
+    () =>
+      distinctYears(
+        fullPatients.map((p) => p.created_at),
+        appointments.map((a) => a.date_time),
+        treatments.map((t) => t.created_at)
+      ),
+    [fullPatients, appointments, treatments]
+  )
+  const effectiveYoyYears: YoYYears = useMemo(() => {
+    if (yoyYearsOverride) return yoyYearsOverride
+    const [current, previous] = availableYoyYears
+    return [previous || current || '', current || '']
+  }, [yoyYearsOverride, availableYoyYears])
+  const newPatientsYoYData = useMemo(() => newPatientsYoY(fullPatients, effectiveYoyYears), [fullPatients, effectiveYoyYears])
+  const totalPatientsSeenYoYData = useMemo(
+    () => totalPatientsSeenYoY(appointments, effectiveYoyYears),
+    [appointments, effectiveYoyYears]
+  )
+  const countsYoY = useMemo(() => procedureCountsYoY(treatments, effectiveYoyYears), [treatments, effectiveYoyYears])
+  const avgCostsYoY = useMemo(() => avgCostYoY(treatments, effectiveYoyYears), [treatments, effectiveYoyYears])
   const conversionTrend = useMemo(() => treatmentConversionByMonth(rangeTreatments, monthAxis), [rangeTreatments, monthAxis])
-  const conversionYoYData = useMemo(() => treatmentConversionYoY(treatments), [treatments])
+  const conversionYoYData = useMemo(
+    () => treatmentConversionYoY(treatments, effectiveYoyYears),
+    [treatments, effectiveYoyYears]
+  )
 
   if (getAppRole() !== 'admin') {
     return <Navigate to="/dashboard" replace />
@@ -298,6 +322,46 @@ export function Analytics() {
           </button>
         </div>
       </div>
+
+      {availableYoyYears.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap -mt-4">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Yearly comparison:</span>
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+            <select
+              value={effectiveYoyYears[0]}
+              onChange={(e) => setYoyYearsOverride([e.target.value, effectiveYoyYears[1]])}
+              className="px-2 py-1 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            >
+              {availableYoyYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-semibold text-slate-500">vs</span>
+            <select
+              value={effectiveYoyYears[1]}
+              onChange={(e) => setYoyYearsOverride([effectiveYoyYears[0], e.target.value])}
+              className="px-2 py-1 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            >
+              {availableYoyYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          {yoyYearsOverride && (
+            <button
+              type="button"
+              onClick={() => setYoyYearsOverride(null)}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              Reset to latest
+            </button>
+          )}
+        </div>
+      )}
 
       {loadError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{loadError}</div>
