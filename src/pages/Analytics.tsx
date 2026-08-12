@@ -335,7 +335,18 @@ export function Analytics() {
       </div>
 
       <RevenueCalendar payments={payments} invoices={invoices} patients={patients} />
-      <RevenueSection monthly={monthly} byType={byType} topSources={topSources} invoicePayments={invoicePayments} />
+      <RevenueSection
+        monthly={monthly}
+        byType={byType}
+        topSources={topSources}
+        invoicePayments={invoicePayments}
+        rangeInvoices={rangeInvoices}
+        rangePayments={rangePayments}
+        invoices={invoices}
+        patients={patients}
+        treatments={treatments}
+        monthAxis={monthAxis}
+      />
       <PatientSection
         newPerMonth={newPerMonth}
         returningVsNew={returningVsNew}

@@ -11,8 +11,26 @@ export const CHART_COLORS = {
   axis: '#5A7184',
 } as const
 
-/** Cycled by index when rendering one series per calendar year in a year-over-year chart. */
-export const YEAR_SERIES_COLORS = [CHART_COLORS.primary, CHART_COLORS.outstanding, CHART_COLORS.secondary, '#0891b2', '#a855f7']
+/** Previous-year vs current-year bars in a year-over-year comparison chart (navy vs orange, matching the reference design). */
+export const YOY_COLORS = { previous: '#1e3a5f', current: CHART_COLORS.outstanding } as const
+
+/** `years` is ≤2 entries, ascending. Labels each series "Previous Year (Y)"/"Current Year (Y)", or just the year when only one year of data exists. */
+export function yoySeriesLabel(years: string[], index: number): string {
+  const year = years[index]
+  if (years.length < 2) return year
+  return index === 0 ? `Previous Year (${year})` : `Current Year (${year})`
+}
+
+export function yoySeriesColor(years: string[], index: number): string {
+  if (years.length < 2) return YOY_COLORS.current
+  return index === 0 ? YOY_COLORS.previous : YOY_COLORS.current
+}
+
+/** "Previous Year (2025) vs Current Year (2026)", or just the single year when only one year of data exists. */
+export function yoyCaption(years: string[]): string {
+  if (years.length < 2) return years[0] || ''
+  return `Previous Year (${years[0]}) vs Current Year (${years[1]})`
+}
 
 /** Keeps tooltip values in ink color instead of recharts' default per-series coloring. */
 export const TOOLTIP_ITEM_STYLE = { color: '#1B2733' } as const

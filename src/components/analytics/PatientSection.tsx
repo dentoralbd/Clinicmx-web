@@ -13,7 +13,7 @@ import {
 } from 'recharts'
 import { UserPlus, TrendingUp, Repeat } from 'lucide-react'
 import type { NewPatientsPoint, ReturningVsNewPoint, YoYPoint } from '@/lib/analytics'
-import { ChartCard, ChartEmptyState, ModeToggle, CHART_COLORS, YEAR_SERIES_COLORS, TOOLTIP_ITEM_STYLE } from './ChartCard'
+import { ChartCard, ChartEmptyState, ModeToggle, CHART_COLORS, TOOLTIP_ITEM_STYLE, yoyCaption, yoySeriesColor, yoySeriesLabel } from './ChartCard'
 
 interface PatientSectionProps {
   newPerMonth: NewPatientsPoint[]
@@ -43,11 +43,7 @@ export function PatientSection({ newPerMonth, returningVsNew, newPatientsYoY, to
         <ChartCard
           icon={<UserPlus className="w-4 h-4" />}
           title="New Patients per Month"
-          caption={
-            newPatientsMode === 'yearly'
-              ? 'Patients registered each calendar month, compared year over year.'
-              : 'Patients registered each month.'
-          }
+          caption={newPatientsMode === 'yearly' ? yoyCaption(newPatientsYoY.years) : 'Patients registered each month.'}
           headerRight={<ModeToggle value={newPatientsMode} options={MODE_OPTIONS} onChange={setNewPatientsMode} />}
         >
           {newPatientsMode === 'monthly' ? (
@@ -75,7 +71,14 @@ export function PatientSection({ newPerMonth, returningVsNew, newPatientsYoY, to
                 <Tooltip itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(13, 148, 136, 0.06)' }} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
                 {newPatientsYoY.years.map((year, i) => (
-                  <Bar key={year} dataKey={year} name={year} fill={YEAR_SERIES_COLORS[i % YEAR_SERIES_COLORS.length]} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar
+                    key={year}
+                    dataKey={year}
+                    name={yoySeriesLabel(newPatientsYoY.years, i)}
+                    fill={yoySeriesColor(newPatientsYoY.years, i)}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={40}
+                  />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -116,7 +119,7 @@ export function PatientSection({ newPerMonth, returningVsNew, newPatientsYoY, to
         title="Returning vs New Patients"
         caption={
           returningVsNewMode === 'yearly'
-            ? 'Total patients seen each month (new + returning combined) — switch to Monthly for the new-vs-returning split.'
+            ? `${yoyCaption(totalPatientsSeenYoY.years)} — total patients seen (new + returning combined).`
             : 'By appointments (Cancelled excluded): a patient is New in the month of their first-ever appointment, Returning in any later month they visit.'
         }
         headerRight={<ModeToggle value={returningVsNewMode} options={MODE_OPTIONS} onChange={setReturningVsNewMode} />}
@@ -148,7 +151,14 @@ export function PatientSection({ newPerMonth, returningVsNew, newPatientsYoY, to
               <Tooltip itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(13, 148, 136, 0.06)' }} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
               {totalPatientsSeenYoY.years.map((year, i) => (
-                <Bar key={year} dataKey={year} name={year} fill={YEAR_SERIES_COLORS[i % YEAR_SERIES_COLORS.length]} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                <Bar
+                  key={year}
+                  dataKey={year}
+                  name={yoySeriesLabel(totalPatientsSeenYoY.years, i)}
+                  fill={yoySeriesColor(totalPatientsSeenYoY.years, i)}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={40}
+                />
               ))}
             </BarChart>
           </ResponsiveContainer>

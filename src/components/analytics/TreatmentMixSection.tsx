@@ -21,7 +21,17 @@ import type {
   TypeYoYRow,
   YoYPoint,
 } from '@/lib/analytics'
-import { ChartCard, ChartEmptyState, ModeToggle, CHART_COLORS, YEAR_SERIES_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from './ChartCard'
+import {
+  ChartCard,
+  ChartEmptyState,
+  ModeToggle,
+  CHART_COLORS,
+  formatBDTCompact,
+  TOOLTIP_ITEM_STYLE,
+  yoyCaption,
+  yoySeriesColor,
+  yoySeriesLabel,
+} from './ChartCard'
 
 interface TreatmentMixSectionProps {
   counts: ProcedureCountRow[]
@@ -63,7 +73,7 @@ export function TreatmentMixSection({
           title="Procedures by Type"
           caption={
             typeBreakdownMode === 'yearly'
-              ? 'Top 5 types by all-time volume, compared year over year.'
+              ? `Top 5 types by all-time volume. ${yoyCaption(countsYoY.years)}.`
               : 'Number of treatments recorded per type (Cancelled excluded).'
           }
           headerRight={<ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />}
@@ -107,7 +117,14 @@ export function TreatmentMixSection({
                 <Tooltip itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(13, 148, 136, 0.06)' }} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
                 {countsYoY.years.map((year, i) => (
-                  <Bar key={year} dataKey={year} name={year} fill={YEAR_SERIES_COLORS[i % YEAR_SERIES_COLORS.length]} radius={[0, 4, 4, 0]} maxBarSize={16} />
+                  <Bar
+                    key={year}
+                    dataKey={year}
+                    name={yoySeriesLabel(countsYoY.years, i)}
+                    fill={yoySeriesColor(countsYoY.years, i)}
+                    radius={[0, 4, 4, 0]}
+                    maxBarSize={16}
+                  />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -119,7 +136,7 @@ export function TreatmentMixSection({
           title="Average Cost per Procedure"
           caption={
             typeBreakdownMode === 'yearly'
-              ? 'Top 5 types by all-time frequency, mean cost compared year over year.'
+              ? `Top 5 types by all-time frequency. ${yoyCaption(avgCostsYoY.years)}.`
               : 'Mean recorded treatment cost per type (zero-cost rows excluded); tooltip shows sample size.'
           }
           headerRight={<ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />}
@@ -170,7 +187,14 @@ export function TreatmentMixSection({
                 <Tooltip formatter={tooltipMoney} itemStyle={TOOLTIP_ITEM_STYLE} cursor={{ fill: 'rgba(74, 58, 167, 0.06)' }} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
                 {avgCostsYoY.years.map((year, i) => (
-                  <Bar key={year} dataKey={year} name={year} fill={YEAR_SERIES_COLORS[i % YEAR_SERIES_COLORS.length]} radius={[0, 4, 4, 0]} maxBarSize={16} />
+                  <Bar
+                    key={year}
+                    dataKey={year}
+                    name={yoySeriesLabel(avgCostsYoY.years, i)}
+                    fill={yoySeriesColor(avgCostsYoY.years, i)}
+                    radius={[0, 4, 4, 0]}
+                    maxBarSize={16}
+                  />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -198,7 +222,10 @@ export function TreatmentMixSection({
         </div>
 
         <div className="flex items-center justify-between mt-5 mb-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Completion rate trend</p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Completion rate trend</p>
+            {conversionMode === 'yearly' && <p className="text-xs text-text-secondary mt-0.5">{yoyCaption(conversionYoY.years)}</p>}
+          </div>
           <ModeToggle value={conversionMode} options={MODE_OPTIONS} onChange={setConversionMode} />
         </div>
         {conversionMode === 'monthly' ? (
@@ -234,7 +261,14 @@ export function TreatmentMixSection({
               <Tooltip formatter={(value: unknown) => `${value}%`} itemStyle={TOOLTIP_ITEM_STYLE} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
               {conversionYoY.years.map((year, i) => (
-                <Bar key={year} dataKey={year} name={year} fill={YEAR_SERIES_COLORS[i % YEAR_SERIES_COLORS.length]} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                <Bar
+                  key={year}
+                  dataKey={year}
+                  name={yoySeriesLabel(conversionYoY.years, i)}
+                  fill={yoySeriesColor(conversionYoY.years, i)}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={40}
+                />
               ))}
             </BarChart>
           </ResponsiveContainer>

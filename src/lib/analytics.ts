@@ -180,7 +180,8 @@ function topNWithOthers<T extends { value: number }>(
 // ---------- year-over-year comparison ----------
 
 const MONTH_OF_YEAR_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const MAX_YOY_YEARS = 5
+/** Yearly mode is a Previous-Year-vs-Current-Year comparison, not an open-ended multi-year trend. */
+const MAX_YOY_YEARS = 2
 
 /** One row per calendar month (Jan..Dec); one numeric field per calendar year shown. */
 export interface YoYPoint {
