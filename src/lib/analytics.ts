@@ -310,7 +310,9 @@ export function revenueSummary(
   let totalOutstanding = 0
   for (const p of payments) {
     if (!activeIds.has(p.invoice_id)) continue
-    totalCollected += p.amount || 0
+    const amount = p.amount || 0
+    if (amount <= 0) continue
+    totalCollected += amount
   }
   for (const inv of invoices) {
     if (!isActiveInvoice(inv)) continue

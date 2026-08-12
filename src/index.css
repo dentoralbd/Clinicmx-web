@@ -32,6 +32,19 @@ button:focus-visible {
   box-shadow: 0 0 0 4px rgba(20,184,166,.35);
 }
 
+/* ── Recharts mobile tap highlight ── */
+/* Without this, some mobile browsers draw a focus/tap-highlight ring around the whole
+   bar-series <g> on tap instead of just the tapped bar, making the entire chart look
+   "selected" together. */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface {
+  -webkit-tap-highlight-color: transparent;
+}
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
 /* ── Gradient hairline card border ── */
 .glass-card {
   position: relative;

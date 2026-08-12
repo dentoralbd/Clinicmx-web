@@ -194,9 +194,21 @@ export function Billing() {
 
   async function loadPayments() {
     try {
-      const { data, error } = await supabase.from('payments').select('invoice_id, amount, payment_date')
-      if (error) throw error
-      setPayments((data as Array<{ invoice_id: string; amount: number | null; payment_date: string }>) || [])
+      // Supabase caps an unpaginated select at 1000 rows — page through so a clinic
+      // with >1000 recorded payments doesn't silently undercount Total Collected.
+      const pageSize = 1000
+      const rows: Array<{ invoice_id: string; amount: number | null; payment_date: string }> = []
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from('payments')
+          .select('invoice_id, amount, payment_date')
+          .range(from, from + pageSize - 1)
+        if (error) throw error
+        const page = (data as Array<{ invoice_id: string; amount: number | null; payment_date: string }>) || []
+        rows.push(...page)
+        if (page.length < pageSize) break
+      }
+      setPayments(rows)
     } catch (error) {
       console.error('Error loading payments:', error)
     }

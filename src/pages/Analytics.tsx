@@ -323,7 +323,7 @@ export function Analytics() {
         </div>
       </div>
 
-      {availableYoyYears.length > 1 && (
+      {availableYoyYears.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap -mt-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Yearly comparison:</span>
           <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import {
@@ -97,6 +97,15 @@ export function RevenueSection({
     const monthPayments = rangePayments.filter((p) => monthKey(p.payment_date) === breakdownMonth)
     return topRevenueSources(monthInvoices, monthPayments, invoices, patients)
   }, [breakdownMonth, topSources, rangeInvoices, rangePayments, invoices, patients])
+
+  // A picked month can fall outside the range after the top-level date filter changes
+  // (e.g. narrowing from "All" to "1M") — monthOptions.find(...) would then return
+  // undefined and render "undefined" in the caption, so fall back to "All months".
+  useEffect(() => {
+    if (breakdownMonth !== ALL_MONTHS && !monthOptions.some((o) => o.value === breakdownMonth)) {
+      setBreakdownMonth(ALL_MONTHS)
+    }
+  }, [breakdownMonth, monthOptions])
 
   function toggleMonth(month: string) {
     setExpandedMonths((prev) => {

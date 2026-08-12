@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import {
   Bar,
@@ -92,6 +92,15 @@ export function TreatmentMixSection({
   )
   const countsShown = useMemo(() => (monthTreatments ? procedureCountsByType(monthTreatments) : counts), [monthTreatments, counts])
   const avgCostsShown = useMemo(() => (monthTreatments ? avgCostByType(monthTreatments) : avgCosts), [monthTreatments, avgCosts])
+
+  // A picked month can fall outside the range after the top-level date filter changes
+  // (e.g. narrowing from "All" to "1M") — monthOptions.find(...) would then return
+  // undefined and render "undefined" in the caption, so fall back to "All months".
+  useEffect(() => {
+    if (breakdownMonth !== ALL_MONTHS && !monthOptions.some((o) => o.value === breakdownMonth)) {
+      setBreakdownMonth(ALL_MONTHS)
+    }
+  }, [breakdownMonth, monthOptions])
 
   return (
     <div className="space-y-6">
