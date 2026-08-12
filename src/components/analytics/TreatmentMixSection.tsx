@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { format } from 'date-fns'
 import {
   Bar,
   BarChart,
@@ -13,18 +14,23 @@ import {
 } from 'recharts'
 import { Activity, DollarSign, CheckCircle2 } from 'lucide-react'
 import { formatBDT } from '@/lib/utils'
-import type {
-  AvgCostRow,
-  ConversionTrendPoint,
-  ProcedureCountRow,
-  TreatmentConversion,
-  TypeYoYRow,
-  YoYPoint,
+import {
+  avgCostByType,
+  monthKey,
+  procedureCountsByType,
+  type AnalyticsTreatment,
+  type AvgCostRow,
+  type ConversionTrendPoint,
+  type ProcedureCountRow,
+  type TreatmentConversion,
+  type TypeYoYRow,
+  type YoYPoint,
 } from '@/lib/analytics'
 import {
   ChartCard,
   ChartEmptyState,
   ModeToggle,
+  MonthSelect,
   CHART_COLORS,
   formatBDTCompact,
   TOOLTIP_ITEM_STYLE,
@@ -41,7 +47,11 @@ interface TreatmentMixSectionProps {
   avgCostsYoY: { data: TypeYoYRow[]; years: string[] }
   conversionTrend: ConversionTrendPoint[]
   conversionYoY: { data: YoYPoint[]; years: string[] }
+  rangeTreatments: AnalyticsTreatment[]
+  monthAxis: string[]
 }
+
+const ALL_MONTHS = 'all'
 
 const MODE_OPTIONS = [
   { value: 'monthly' as const, label: 'Monthly' },
@@ -58,12 +68,30 @@ export function TreatmentMixSection({
   avgCostsYoY,
   conversionTrend,
   conversionYoY,
+  rangeTreatments,
+  monthAxis,
 }: TreatmentMixSectionProps) {
   const [typeBreakdownMode, setTypeBreakdownMode] = useState<'monthly' | 'yearly'>('monthly')
   const [conversionMode, setConversionMode] = useState<'monthly' | 'yearly'>('monthly')
+  const [breakdownMonth, setBreakdownMonth] = useState<string>(ALL_MONTHS)
   const pipeline = conversion.planned + conversion.inProgress + conversion.completed
   const hasConversionTrendData = conversionTrend.some((p) => p.pipeline > 0)
   const hasConversionYoYData = conversionYoY.years.some((y) => conversionYoY.data.some((d) => Number(d[y]) > 0))
+
+  const monthOptions = useMemo(
+    () => [
+      { value: ALL_MONTHS, label: 'All months' },
+      ...[...monthAxis].reverse().map((m) => ({ value: m, label: format(new Date(`${m}-01T00:00:00`), 'MMMM yyyy') })),
+    ],
+    [monthAxis]
+  )
+
+  const monthTreatments = useMemo(
+    () => (breakdownMonth === ALL_MONTHS ? null : rangeTreatments.filter((t) => monthKey(t.created_at) === breakdownMonth)),
+    [breakdownMonth, rangeTreatments]
+  )
+  const countsShown = useMemo(() => (monthTreatments ? procedureCountsByType(monthTreatments) : counts), [monthTreatments, counts])
+  const avgCostsShown = useMemo(() => (monthTreatments ? avgCostByType(monthTreatments) : avgCosts), [monthTreatments, avgCosts])
 
   return (
     <div className="space-y-6">
@@ -74,16 +102,23 @@ export function TreatmentMixSection({
           caption={
             typeBreakdownMode === 'yearly'
               ? `Top 5 types by all-time volume. ${yoyCaption(countsYoY.years)}.`
-              : 'Number of treatments recorded per type (Cancelled excluded).'
+              : breakdownMonth === ALL_MONTHS
+                ? 'Number of treatments recorded per type (Cancelled excluded).'
+                : `Number of treatments recorded per type in ${monthOptions.find((o) => o.value === breakdownMonth)?.label} (Cancelled excluded).`
           }
-          headerRight={<ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />}
+          headerRight={
+            <div className="flex items-center gap-2">
+              {typeBreakdownMode === 'monthly' && <MonthSelect value={breakdownMonth} options={monthOptions} onChange={setBreakdownMonth} />}
+              <ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />
+            </div>
+          }
         >
           {typeBreakdownMode === 'monthly' ? (
-            counts.length === 0 ? (
+            countsShown.length === 0 ? (
               <ChartEmptyState message="No treatments in this period" />
             ) : (
-              <ResponsiveContainer width="100%" height={Math.max(280, counts.length * 36)}>
-                <BarChart data={counts} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+              <ResponsiveContainer width="100%" height={Math.max(280, countsShown.length * 36)}>
+                <BarChart data={countsShown} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="0" stroke={CHART_COLORS.grid} horizontal={false} />
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} />
                   <YAxis
@@ -137,16 +172,23 @@ export function TreatmentMixSection({
           caption={
             typeBreakdownMode === 'yearly'
               ? `Top 5 types by all-time frequency. ${yoyCaption(avgCostsYoY.years)}.`
-              : 'Mean recorded treatment cost per type (zero-cost rows excluded); tooltip shows sample size.'
+              : breakdownMonth === ALL_MONTHS
+                ? 'Mean recorded treatment cost per type (zero-cost rows excluded); tooltip shows sample size.'
+                : `Mean recorded treatment cost per type in ${monthOptions.find((o) => o.value === breakdownMonth)?.label} (zero-cost rows excluded).`
           }
-          headerRight={<ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />}
+          headerRight={
+            <div className="flex items-center gap-2">
+              {typeBreakdownMode === 'monthly' && <MonthSelect value={breakdownMonth} options={monthOptions} onChange={setBreakdownMonth} />}
+              <ModeToggle value={typeBreakdownMode} options={MODE_OPTIONS} onChange={setTypeBreakdownMode} />
+            </div>
+          }
         >
           {typeBreakdownMode === 'monthly' ? (
-            avgCosts.length === 0 ? (
+            avgCostsShown.length === 0 ? (
               <ChartEmptyState message="No costed treatments in this period" />
             ) : (
-              <ResponsiveContainer width="100%" height={Math.max(280, avgCosts.length * 36)}>
-                <BarChart data={avgCosts} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+              <ResponsiveContainer width="100%" height={Math.max(280, avgCostsShown.length * 36)}>
+                <BarChart data={avgCostsShown} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="0" stroke={CHART_COLORS.grid} horizontal={false} />
                   <XAxis type="number" tickFormatter={formatBDTCompact} tick={{ fontSize: 12, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} />
                   <YAxis

@@ -26,7 +26,7 @@ import {
   type RevenueByTypeRow,
   type TopRevenueSource,
 } from '@/lib/analytics'
-import { ChartCard, ChartEmptyState, ModeToggle, CHART_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from './ChartCard'
+import { ChartCard, ChartEmptyState, ModeToggle, MonthSelect, CHART_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from './ChartCard'
 
 interface RevenueSectionProps {
   monthly: MonthlyRevenuePoint[]
@@ -278,29 +278,5 @@ export function RevenueSection({
         </ChartCard>
       </div>
     </div>
-  )
-}
-
-function MonthSelect({
-  value,
-  options,
-  onChange,
-}: {
-  value: string
-  options: Array<{ value: string; label: string }>
-  onChange: (value: string) => void
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="text-xs font-medium rounded-lg border border-gray-300 bg-gray-50 px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
   )
 }

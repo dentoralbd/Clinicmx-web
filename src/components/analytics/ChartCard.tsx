@@ -74,6 +74,31 @@ export function ChartEmptyState({ message }: { message: string }) {
   )
 }
 
+/** Picks a single month (or "All months") to break a chart down to, e.g. next to a Monthly/Yearly ModeToggle. */
+export function MonthSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="text-xs font-medium rounded-lg border border-gray-300 bg-gray-50 px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 /** Small per-card 2-way switch (e.g. Monthly/Yearly), styled lighter than the page-level range filter so it reads as local to the card. */
 export function ModeToggle<T extends string>({
   value,

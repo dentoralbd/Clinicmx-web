@@ -425,6 +425,8 @@ export function Analytics() {
         avgCostsYoY={avgCostsYoY}
         conversionTrend={conversionTrend}
         conversionYoY={conversionYoYData}
+        rangeTreatments={rangeTreatments}
+        monthAxis={monthAxis}
       />
 
       {showPrintModal && (
