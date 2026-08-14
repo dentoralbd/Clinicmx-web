@@ -52,6 +52,7 @@ export function Appointments() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const selectedDateIso = format(selectedDate, 'yyyy-MM-dd')
   const weekStartIso = format(weekStart, 'yyyy-MM-dd')
+  const isSelectedDateToday = selectedDateIso === format(new Date(), 'yyyy-MM-dd')
 
   const {
     data: dayAppointmentsData,
@@ -62,6 +63,8 @@ export function Appointments() {
     queryKey: qk.appointments.day(selectedDateIso),
     queryFn: () => fetchDayAppointments(selectedDateIso),
   })
+
+  const activeAppointmentsCount = appointments.filter(a => a.status !== 'Cancelled').length
 
   const {
     data: weekAppointmentsData,
@@ -148,7 +151,7 @@ export function Appointments() {
           <div className="flex items-center gap-2.5 mb-1">
             <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">Appointments & Scheduling</h1>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-              {appointments.length} Today
+              {activeAppointmentsCount} Appt{activeAppointmentsCount !== 1 ? 's' : ''}{isSelectedDateToday ? ' Today' : ` on ${format(selectedDate, 'd MMM')}`}
             </span>
           </div>
           <p className="text-sm text-text-secondary">Organize patient time slots, confirmations, and daily chair schedules.</p>
@@ -230,7 +233,7 @@ export function Appointments() {
             <h3 className="font-bold text-text-primary text-base">
               Schedule for {format(selectedDate, 'EEEE, MMMM d, yyyy')}
             </h3>
-            <p className="text-xs text-text-secondary">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''} listed</p>
+            <p className="text-xs text-text-secondary">{activeAppointmentsCount} appointment{activeAppointmentsCount !== 1 ? 's' : ''} listed</p>
           </div>
 
           <div className="flex gap-1 bg-white border border-gray-200/80 rounded-xl p-1 shadow-sm">
@@ -274,8 +277,17 @@ export function Appointments() {
             <div className="w-12 h-12 rounded-2xl bg-surface-subtle text-text-muted mx-auto flex items-center justify-center mb-3">
               <Calendar className="w-6 h-6" />
             </div>
-            <p className="text-sm font-semibold text-text-primary mb-1">No Appointments Scheduled</p>
-            <p className="text-xs text-text-secondary mb-4">The calendar is open for this date.</p>
+            {getWindowsForDay(selectedDate, schedule).length === 0 ? (
+              <>
+                <p className="text-sm font-semibold text-text-primary mb-1">Clinic Closed</p>
+                <p className="text-xs text-text-secondary mb-4">No operating windows configured for this day.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-text-primary mb-1">No Appointments Scheduled</p>
+                <p className="text-xs text-text-secondary mb-4">The calendar is open for this date.</p>
+              </>
+            )}
             <Button onClick={() => setShowModal(true)} size="sm" className="rounded-xl shadow-sm">
               <Plus className="w-4 h-4 mr-1.5" />
               Book Appointment
