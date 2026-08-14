@@ -410,7 +410,7 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
         </div>
 
         {!isClosed && (
-          <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
             {appointment.status === 'Scheduled' && (
               <button
                 onClick={() => onStatusChange('Confirmed')}
