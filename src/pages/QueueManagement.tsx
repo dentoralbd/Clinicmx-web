@@ -38,7 +38,7 @@ import {
 } from '@/lib/queueApi'
 import { sortQueueEntries, sortKeyForAppointment, sortKeyForWalkIn, computePositions } from '@/lib/queueOrder'
 import { calculateQueueEtas, fetchProcedureDurations, getProcedureDuration } from '@/lib/queueEstimation'
-import { matchesPatientSearch } from '@/lib/patients'
+import { matchesPatientSearch, createPatient } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
 import { QueueQrScanner } from '@/components/QueueQrScanner'
 import { format } from 'date-fns'
@@ -56,6 +56,8 @@ export function QueueManagement() {
   const [queueDate, setQueueDate] = useState(todayQueueDate())
   const [search, setSearch] = useState('')
   const [showScanner, setShowScanner] = useState(false)
+  const [quickAddPhone, setQuickAddPhone] = useState('')
+  const [quickAddBusy, setQuickAddBusy] = useState(false)
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null)
   const [holdReason, setHoldReason] = useState<string>(HOLD_REASONS[0])
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -170,6 +172,39 @@ export function QueueManagement() {
       })
     )
     setSearch('')
+  }
+
+  // Walk-ins who aren't in the system at all yet — a lighter path than the
+  // full patient registration flow (AppointmentModal's inline "new
+  // patient"): just a name + phone, added as a CO- consultation-only
+  // patient (createPatient() from lib/patients.ts, the same shared helper
+  // Consultations.tsx uses — patient_type: 'consultation' gets the CO-
+  // code assigned server-side, not PT-). Upgradeable to a full patient
+  // later from the Consultations page, same as any other CO- patient.
+  const handleQuickAddWalkIn = async () => {
+    const trimmed = search.trim()
+    if (!trimmed) return
+    const spaceIdx = trimmed.indexOf(' ')
+    const first_name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx)
+    const last_name = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim()
+
+    setQuickAddBusy(true)
+    try {
+      const newPatient = await createPatient({
+        first_name,
+        last_name,
+        phone: quickAddPhone.trim(),
+        patient_type: 'consultation',
+      })
+      queryClient.invalidateQueries({ queryKey: qk.patients.list })
+      addWalkIn(newPatient)
+      setQuickAddPhone('')
+    } catch (err) {
+      console.error(err)
+      alert('Could not add this walk-in. Please try again.')
+    } finally {
+      setQuickAddBusy(false)
+    }
   }
 
   const handleQrScan = async (patientId: string | null, patientCode: string | null) => {
@@ -457,6 +492,29 @@ export function QueueManagement() {
                     <UserPlus className="w-4 h-4 text-primary shrink-0" />
                   </button>
                 ))}
+              </div>
+            )}
+            {search.trim().length > 1 && searchResults.length === 0 && (
+              <div className="p-3 rounded-lg border border-dashed border-gray-300 bg-surface-subtle">
+                <p className="text-xs text-text-muted mb-2">
+                  No existing patient matches "{search.trim()}". Add as a walk-in not yet in the system —
+                  registered as a consultation-only patient, upgradeable to a full record later.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={quickAddPhone}
+                    onChange={(e) => setQuickAddPhone(e.target.value)}
+                    placeholder="Phone number"
+                    className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+                  />
+                  <button
+                    disabled={quickAddBusy || !quickAddPhone.trim()}
+                    onClick={handleQuickAddWalkIn}
+                    className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold disabled:opacity-40 shrink-0"
+                  >
+                    {quickAddBusy ? 'Adding…' : `Quick Add "${search.trim()}"`}
+                  </button>
+                </div>
               </div>
             )}
           </div>

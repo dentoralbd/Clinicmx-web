@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Volume2, VolumeX, Settings, X } from 'lucide-react'
+import { Volume2, VolumeX, Settings, X, QrCode } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   getQueueEntries,
   getQueueSettings,
@@ -36,6 +37,7 @@ export function QueueDisplay() {
   const [queueDate, setQueueDate] = useState(todayQueueDate())
   const [audioUnlocked, setAudioUnlocked] = useState(isAudioUnlocked())
   const [showSettings, setShowSettings] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const announcedIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -130,6 +132,15 @@ export function QueueDisplay() {
           <span className={audioUnlocked ? 'text-emerald-400' : 'text-amber-400'}>
             {audioUnlocked ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
           </span>
+          {/* Scan to open /queue on a phone instead of typing the local
+              network address — same "Connect Devices" idea from the
+              redesign sandbox this feature was ported from, just scoped to
+              the one link staff actually asked for (reception's Queue
+              Management page). Any staff viewing this screen can use it,
+              not just admins — it's a shortcut, not a setting. */}
+          <button onClick={() => setShowQr(true)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20" title="Scan to open Queue Management">
+            <QrCode className="w-5 h-5" />
+          </button>
           {canEditSettings && (
             <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20">
               <Settings className="w-5 h-5" />
@@ -216,6 +227,26 @@ export function QueueDisplay() {
             <p className="text-[11px] text-gray-500 mt-3">
               Saved server-side — persists across reloads and applies to every screen, including the patient-facing
               board on dentoralbd.com.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showQr && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-xs text-white text-center">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold">Scan to Open Queue</h2>
+              <button onClick={() => setShowQr(false)}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="bg-white rounded-xl p-4 inline-block">
+              <QRCodeSVG value={`${window.location.origin}/queue`} size={200} />
+            </div>
+            <p className="text-[11px] text-gray-500 mt-3">
+              Scan with a phone's camera to open Queue Management directly — no need to type the address.
+              Still requires logging in on that device.
             </p>
           </div>
         </div>

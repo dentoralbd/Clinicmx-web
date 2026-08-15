@@ -103,9 +103,14 @@ export function QueueFloatingWidget() {
     await resumeQueueEntry(id)
   }
 
+  // bottom-36 on mobile clears both PatientProfile's own bottom-20 quick-add
+  // FAB and the fixed bottom tab bar beneath it (PatientProfile.tsx renders
+  // this widget globally via DashboardLayout, so it overlays every page);
+  // md:bottom-6 reverts once neither of those exist on desktop. Found live
+  // 2026-08-15 — a flat bottom-6 covered the Billing tab on mobile.
   if (!expanded) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-36 right-6 md:bottom-6 z-50">
         <button
           onClick={() => setExpanded(true)}
           className="bg-white rounded-full p-4 shadow-elevation-lg border border-gray-200 text-primary hover:bg-gray-50 transition-all flex items-center gap-3 relative group"
@@ -123,7 +128,7 @@ export function QueueFloatingWidget() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200">
+    <div className="fixed bottom-36 right-6 md:bottom-6 z-50 w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200">
       <div
         className="bg-primary text-white p-3.5 px-4 flex justify-between items-center cursor-pointer shadow-sm"
         onClick={() => setExpanded(false)}
