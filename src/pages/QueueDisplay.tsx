@@ -32,9 +32,15 @@ interface QueueSlide {
 // involved). Falls back to this list before an admin has ever saved any.
 const DEFAULT_QUEUE_SLIDES: QueueSlide[] = [
   { href: 'https://dentoralbd.com/brushing-flossing.html', title: 'Brushing & Flossing', blurb: 'The daily habits that keep your smile healthy between visits.' },
+  { href: 'https://dentoralbd.com/orthodontics.html', title: 'Specialized Orthodontics', blurb: 'Straightening smiles at every age, from early intervention to adult treatment.' },
   { href: 'https://dentoralbd.com/orthodontic-retention.html', title: 'After Braces: Retention', blurb: 'Why wearing your retainer matters just as much as the braces did.' },
   { href: 'https://dentoralbd.com/retainer-instructions.html', title: 'Caring for Your Retainer', blurb: 'Simple steps to keep your retainer clean and lasting longer.' },
   { href: 'https://dentoralbd.com/general-dentistry.html', title: 'General Dentistry', blurb: 'Routine checkups and cleanings — the foundation of a healthy mouth.' },
+  { href: 'https://dentoralbd.com/cosmetic-dentistry.html', title: 'Cosmetic Dentistry', blurb: 'Whitening, veneers, and smile makeovers designed to fit your face.' },
+  { href: 'https://dentoralbd.com/prosthodontics.html', title: 'Prosthodontics', blurb: 'Crowns, bridges, and dentures that restore both function and confidence.' },
+  { href: 'https://dentoralbd.com/for-children.html', title: 'Dental Care for Children', blurb: 'Gentle, age-appropriate checkups that build healthy habits early.' },
+  { href: 'https://dentoralbd.com/types-of-braces.html', title: 'Types of Braces', blurb: 'Metal, ceramic, or clear aligners — find the right fit for your treatment.' },
+  { href: 'https://dentoralbd.com/faqs.html', title: 'Frequently Asked Questions', blurb: 'Answers to the questions patients ask us most.' },
 ]
 
 /**
@@ -263,15 +269,33 @@ export function QueueDisplay() {
       </div>
 
       {infotainmentEnabled && slides.length > 0 && slides[slideIndex] && (
-        <a
-          href={slides[slideIndex].href}
-          target="_blank"
-          rel="noreferrer"
-          className="block rounded-2xl border border-white/10 bg-white/5 p-6 text-inherit no-underline hover:bg-white/[0.07] transition-colors"
-        >
-          <h3 className="text-lg font-bold text-teal-300">{slides[slideIndex].title}</h3>
-          <p className="mt-1 text-sm text-gray-400">{slides[slideIndex].blurb}</p>
-        </a>
+        <div className="relative min-h-[8rem] rounded-2xl border border-white/10 bg-white/5 bg-gradient-to-br from-primary/10 to-highlight/5 overflow-hidden">
+          {/* key={slideIndex} forces remount on rotation so the fade-in
+              animation replays each time, rather than a single element's
+              text just changing in place with no transition. */}
+          <a
+            key={slideIndex}
+            href={slides[slideIndex].href}
+            target="_blank"
+            rel="noreferrer"
+            className="block p-7 pb-9 text-inherit no-underline hover:bg-white/[0.04] transition-colors animate-in fade-in slide-in-from-bottom-1 duration-500"
+          >
+            <h3 className="text-lg font-bold text-teal-300">{slides[slideIndex].title}</h3>
+            <p className="mt-1 text-sm text-gray-400 leading-relaxed">{slides[slideIndex].blurb}</p>
+          </a>
+          {slides.length > 1 && (
+            <div className="absolute bottom-3.5 left-7 flex gap-1.5">
+              {slides.map((_, i) => (
+                <span
+                  key={i}
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    i === slideIndex ? 'w-4 bg-teal-400' : 'w-1.5 bg-white/20'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {showSettings && (
