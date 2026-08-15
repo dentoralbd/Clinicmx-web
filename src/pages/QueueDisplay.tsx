@@ -307,7 +307,7 @@ export function QueueDisplay() {
                 <path d="M12 5c-2.5 0-4.5 2-4.5 4.5 0 3 1.5 4 1.5 7.5 0 1 .5 2 1.5 2s1.5-1 1.5-2c0-1 .3-1.5 1-1.5s1 .5 1 1.5c0 1 .5 2 1.5 2s1.5-1 1.5-2c0-3.5 1.5-4.5 1.5-7.5C16.5 7 14.5 5 12 5z" />
               </svg>
             </span>
-            <span className="absolute bottom-3.5 right-7 text-[11px] font-semibold text-white/55">DentOral BD Health Care</span>
+            <span className="absolute bottom-3.5 right-7 text-[11px] font-semibold text-white/55">DentOral BD</span>
           </a>
           {slides.length > 1 && (
             <div className="absolute bottom-4 left-7 flex gap-1.5">
