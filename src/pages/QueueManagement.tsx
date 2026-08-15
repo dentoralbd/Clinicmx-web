@@ -15,6 +15,8 @@ import {
   Clock,
   AlertTriangle,
   Banknote,
+  Monitor,
+  X,
 } from 'lucide-react'
 import { qk } from '@/repositories/keys'
 import { fetchTodayQueue, fetchQueueSettings } from '@/repositories/queueRepo'
@@ -61,6 +63,17 @@ export function QueueManagement() {
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null)
   const [holdReason, setHoldReason] = useState<string>(HOLD_REASONS[0])
   const [busyId, setBusyId] = useState<string | null>(null)
+
+  // "Add Patient to Queue" wizard state — step 1 (pick a patient, from
+  // today's schedule, a search, or a brand-new quick-add) collapses into a
+  // selected chip, then steps 2/3 (procedure, chair time, priority) appear.
+  // Replaces the old split "Today's Schedule" / "Walk-in" panels with one
+  // unified flow, per redesign reference.
+  const [selectedPatient, setSelectedPatient] = useState<any | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null)
+  const [selectedProcedure, setSelectedProcedure] = useState('')
+  const [selectedDurationMins, setSelectedDurationMins] = useState(15)
+  const [selectedPriority, setSelectedPriority] = useState<'normal' | 'urgent'>('normal')
 
   const todayIso = format(new Date(), 'yyyy-MM-dd')
 
@@ -147,31 +160,53 @@ export function QueueManagement() {
     }
   }
 
-  const addFromAppointment = (appointment: any) => {
-    const duration = getProcedureDuration(appointment.type, durations, appointment.duration || 15)
-    void runAction('add', () =>
-      addQueueEntry({
-        patient_id: appointment.patient_id,
-        appointment_id: appointment.id,
-        patient_name: `${appointment.patients.first_name} ${appointment.patients.last_name}`,
-        sort_key: sortKeyForAppointment(appointment.date_time),
-        procedure_name: appointment.type,
-        estimated_duration_mins: duration,
-      })
-    )
+  // Step 1 of the wizard: choosing a patient (from today's schedule, a
+  // search hit, or a fresh quick-add) fills the selection and auto-fills
+  // steps 2/3 from that source — an appointment's own type/duration when
+  // picked from the schedule, otherwise a sensible default the receptionist
+  // can still change before confirming.
+  const selectFromAppointment = (appointment: any) => {
+    setSelectedAppointment(appointment)
+    setSelectedPatient(appointment.patients)
+    setSelectedProcedure(appointment.type || '')
+    setSelectedDurationMins(getProcedureDuration(appointment.type, durations, appointment.duration || 15))
+    setSelectedPriority('normal')
+    setSearch('')
   }
 
-  const addWalkIn = (patient: any, procedureName?: string) => {
-    void runAction('add', () =>
-      addQueueEntry({
-        patient_id: patient.id,
-        patient_name: `${patient.first_name} ${patient.last_name}`,
-        sort_key: sortKeyForWalkIn(),
-        procedure_name: procedureName ?? null,
-        estimated_duration_mins: getProcedureDuration(procedureName, durations),
-      })
-    )
+  const selectPatient = (patient: any) => {
+    setSelectedAppointment(null)
+    setSelectedPatient(patient)
+    const firstProcedure = Object.keys(durations)[0] ?? ''
+    setSelectedProcedure(firstProcedure)
+    setSelectedDurationMins(getProcedureDuration(firstProcedure, durations))
+    setSelectedPriority('normal')
     setSearch('')
+  }
+
+  const clearSelection = () => {
+    setSelectedPatient(null)
+    setSelectedAppointment(null)
+    setSelectedProcedure('')
+    setSelectedPriority('normal')
+  }
+
+  const handleAddToQueue = () => {
+    if (!selectedPatient) return
+    void runAction('add', async () => {
+      await addQueueEntry({
+        patient_id: selectedPatient.id,
+        appointment_id: selectedAppointment?.id ?? null,
+        patient_name: `${selectedPatient.first_name} ${selectedPatient.last_name}`,
+        sort_key: selectedAppointment
+          ? sortKeyForAppointment(selectedAppointment.date_time)
+          : sortKeyForWalkIn(),
+        procedure_name: selectedProcedure || null,
+        estimated_duration_mins: selectedDurationMins,
+        priority: selectedPriority,
+      })
+      clearSelection()
+    })
   }
 
   // Walk-ins who aren't in the system at all yet — a lighter path than the
@@ -197,7 +232,7 @@ export function QueueManagement() {
         patient_type: 'consultation',
       })
       queryClient.invalidateQueries({ queryKey: qk.patients.list })
-      addWalkIn(newPatient)
+      selectPatient(newPatient)
       setQuickAddPhone('')
     } catch (err) {
       console.error(err)
@@ -214,7 +249,7 @@ export function QueueManagement() {
       alert('Could not find that patient. Try searching by name or phone instead.')
       return
     }
-    addWalkIn(match)
+    selectPatient(match)
   }
 
   // Reception's Call goes through the same shared action as the doctor
@@ -256,18 +291,25 @@ export function QueueManagement() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-text-primary flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary" />
-          Patient Queue
-        </h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            Today's Patient Queue
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+              {serving.length + waiting.length + onHold.length} Active
+            </span>
+          </h1>
+          <p className="text-xs text-text-muted mt-0.5">Real-time waiting room state & AI queue management</p>
+        </div>
         <a
           href="/queue-display"
           target="_blank"
           rel="noreferrer"
-          className="text-sm font-semibold text-primary hover:underline"
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
         >
-          Open Display Board
+          <Monitor className="w-4 h-4" />
+          Open Waiting Room TV
         </a>
       </div>
 
@@ -432,92 +474,175 @@ export function QueueManagement() {
           </div>
         </section>
 
-        {/* Right: today's schedule + walk-in search */}
-        <section className="space-y-4">
+        {/* Right: unified "Add Patient to Queue" wizard — replaces the old
+            split Today's Schedule / Walk-in panels. Step 1 covers both
+            check-in from the schedule and walk-in search/quick-add in one
+            place; steps 2-3 (procedure, chair time, priority) only appear
+            once a patient is actually selected. */}
+        <section className="bg-white rounded-2xl border border-gray-200 p-4 space-y-4 self-start">
           <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-2">Today's Schedule</h2>
-            {scheduleCandidates.length === 0 ? (
-              <div className="text-xs text-text-muted py-3 text-center bg-surface-subtle rounded-xl border border-gray-100">
-                Nothing left to check in.
+            <h2 className="text-sm font-bold text-text-primary">Add Patient to Queue</h2>
+            <p className="text-xs text-text-muted">Walk-in or registered check-in</p>
+          </div>
+
+          {/* Step 1: patient */}
+          <div>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">1. Select Patient</h3>
+
+            {selectedPatient ? (
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20">
+                <span className="text-sm font-semibold truncate">
+                  {selectedPatient.first_name} {selectedPatient.last_name}
+                  {selectedAppointment && (
+                    <span className="text-xs text-text-muted font-normal"> · {format(new Date(selectedAppointment.date_time), 'h:mm a')}</span>
+                  )}
+                </span>
+                <button onClick={clearSelection} className="p-1 text-text-muted hover:text-text-primary shrink-0" title="Change patient">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {scheduleCandidates.map((a: any) => (
-                  <div key={a.id} className="p-2.5 rounded-lg border border-gray-200 flex items-center justify-between gap-2">
-                    <div className="truncate">
-                      <div className="text-sm font-semibold truncate">
-                        {a.patients.first_name} {a.patients.last_name}
-                      </div>
-                      <div className="text-[11px] text-text-muted truncate">
-                        {format(new Date(a.date_time), 'h:mm a')} · {a.type}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => addFromAppointment(a)}
-                      className="px-2.5 py-1 bg-primary/10 text-primary rounded-lg text-xs font-bold shrink-0"
-                    >
-                      Add to Queue
-                    </button>
+              <>
+                <div className="flex gap-2 mb-2">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search name, phone, code (PT-)…"
+                      className="w-full pl-8 pr-2 py-2 text-sm border border-gray-200 rounded-lg"
+                    />
                   </div>
-                ))}
-              </div>
+                  <button onClick={() => setShowScanner(true)} className="p-2 border border-gray-200 rounded-lg shrink-0" title="Scan Prescription QR">
+                    <QrCode className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {search.trim().length === 0 ? (
+                  scheduleCandidates.length === 0 ? (
+                    <div className="text-xs text-text-muted py-3 text-center bg-surface-subtle rounded-lg border border-gray-100">
+                      Nothing left to check in from today's schedule.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {scheduleCandidates.map((a: any) => (
+                        <button
+                          key={a.id}
+                          onClick={() => selectFromAppointment(a)}
+                          className="w-full flex items-center justify-between gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-left"
+                        >
+                          <span className="truncate">
+                            <span className="text-sm font-semibold truncate">{a.patients.first_name} {a.patients.last_name}</span>
+                            <span className="block text-[11px] text-text-muted truncate">{format(new Date(a.date_time), 'h:mm a')} · {a.type}</span>
+                          </span>
+                          <span className="text-[11px] font-bold text-primary shrink-0">Check In</span>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                ) : searchResults.length > 0 ? (
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {searchResults.slice(0, 8).map((p: any) => (
+                      <button
+                        key={p.id}
+                        onClick={() => selectPatient(p)}
+                        className="w-full flex items-center justify-between gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-left"
+                      >
+                        <span className="text-sm truncate">{p.first_name} {p.last_name}</span>
+                        <UserPlus className="w-4 h-4 text-primary shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                ) : search.trim().length > 1 ? (
+                  <div className="p-3 rounded-lg border border-dashed border-gray-300 bg-surface-subtle">
+                    <p className="text-xs text-text-muted mb-2">
+                      No existing patient matches "{search.trim()}". Add as a walk-in not yet in the system —
+                      registered as a consultation-only patient, upgradeable to a full record later.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        value={quickAddPhone}
+                        onChange={(e) => setQuickAddPhone(e.target.value)}
+                        placeholder="Phone number"
+                        className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+                      />
+                      <button
+                        disabled={quickAddBusy || !quickAddPhone.trim()}
+                        onClick={handleQuickAddWalkIn}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold disabled:opacity-40 shrink-0"
+                      >
+                        {quickAddBusy ? 'Adding…' : `Quick Add "${search.trim()}"`}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
 
-          <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-2">Walk-in</h2>
-            <div className="flex gap-2 mb-2">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search patient by name/phone/code"
-                  className="w-full pl-8 pr-2 py-2 text-sm border border-gray-200 rounded-lg"
-                />
+          {/* Steps 2-3: only once a patient is actually picked */}
+          {selectedPatient && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">2. Clinical Procedure</h3>
+                  <a href="/catalog" className="text-[11px] font-bold text-primary hover:underline">+ Add Custom</a>
+                </div>
+                <select
+                  value={selectedProcedure}
+                  onChange={(e) => {
+                    setSelectedProcedure(e.target.value)
+                    setSelectedDurationMins(getProcedureDuration(e.target.value, durations))
+                  }}
+                  className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                >
+                  <option value="">General Consultation</option>
+                  {Object.keys(durations).map((name) => (
+                    <option key={name} value={name}>
+                      {name} ({durations[name]}m)
+                    </option>
+                  ))}
+                </select>
               </div>
-              <button onClick={() => setShowScanner(true)} className="p-2 border border-gray-200 rounded-lg" title="Scan patient QR">
-                <QrCode className="w-4 h-4" />
-              </button>
-            </div>
-            {searchResults.length > 0 && (
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                {searchResults.slice(0, 8).map((p: any) => (
-                  <button
-                    key={p.id}
-                    onClick={() => addWalkIn(p)}
-                    className="w-full flex items-center justify-between gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-left"
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">Est. Chair Time</h3>
+                  <select
+                    value={selectedDurationMins}
+                    onChange={(e) => setSelectedDurationMins(Number(e.target.value))}
+                    className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
                   >
-                    <span className="text-sm truncate">{p.first_name} {p.last_name}</span>
-                    <UserPlus className="w-4 h-4 text-primary shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
-            {search.trim().length > 1 && searchResults.length === 0 && (
-              <div className="p-3 rounded-lg border border-dashed border-gray-300 bg-surface-subtle">
-                <p className="text-xs text-text-muted mb-2">
-                  No existing patient matches "{search.trim()}". Add as a walk-in not yet in the system —
-                  registered as a consultation-only patient, upgradeable to a full record later.
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    value={quickAddPhone}
-                    onChange={(e) => setQuickAddPhone(e.target.value)}
-                    placeholder="Phone number"
-                    className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
-                  />
+                    {[10, 15, 20, 30, 45, 60].map((m) => (
+                      <option key={m} value={m}>{m} mins</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">Triage Priority</h3>
                   <button
-                    disabled={quickAddBusy || !quickAddPhone.trim()}
-                    onClick={handleQuickAddWalkIn}
-                    className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold disabled:opacity-40 shrink-0"
+                    type="button"
+                    onClick={() => setSelectedPriority((p) => (p === 'normal' ? 'urgent' : 'normal'))}
+                    className={`w-full px-2 py-2 text-sm font-bold rounded-lg border ${
+                      selectedPriority === 'urgent'
+                        ? 'bg-red-50 border-red-300 text-red-700'
+                        : 'bg-white border-gray-200 text-text-primary'
+                    }`}
                   >
-                    {quickAddBusy ? 'Adding…' : `Quick Add "${search.trim()}"`}
+                    {selectedPriority === 'urgent' ? 'Urgent' : 'Normal'}
                   </button>
                 </div>
               </div>
-            )}
-          </div>
+
+              <button
+                disabled={busyId === 'add'}
+                onClick={handleAddToQueue}
+                className="w-full py-2.5 bg-primary hover:bg-primary-dark text-white font-bold text-sm rounded-xl disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                {busyId === 'add' ? 'Adding…' : '+ Add Patient to Queue'}
+              </button>
+            </>
+          )}
         </section>
       </div>
 
