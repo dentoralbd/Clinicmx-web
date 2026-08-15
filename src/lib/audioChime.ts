@@ -165,15 +165,16 @@ export function announcePatientCall({
     }
 
     return new Promise<void>((resolve) => {
-      let text = `রোগী ${patientName}`
-      if (serialNumber) {
-        text = `টোকেন নম্বর ${serialNumber}, রোগী ${patientName}`
+      // Caller must pass a name with no "#N" prefix baked in — the serial
+      // is spoken here, in words, via serialNumber. A prefixed name (e.g.
+      // formatPatientDisplay()'s "#1 Riyadh") would say the number twice:
+      // once correctly as "টোকেন নম্বর ১", once mangled as "hash one".
+      let text = serialNumber ? `টোকেন নম্বর ${serialNumber}` : ''
+      if (patientName) {
+        text += text ? `, রোগী ${patientName}` : `রোগী ${patientName}`
       }
-      if (roomNumber) {
-        text += `, অনুগ্রহ করে ${roomNumber} এ আসুন।`
-      } else {
-        text += `, অনুগ্রহ করে ডাক্তারের রুমে যান।`
-      }
+      const goPhrase = roomNumber ? `অনুগ্রহ করে ${roomNumber} এ আসুন।` : `অনুগ্রহ করে ডাক্তারের রুমে যান।`
+      text += text ? `, ${goPhrase}` : goPhrase
 
       const utterance = new SpeechSynthesisUtterance(text)
       utterance.lang = 'bn-BD'

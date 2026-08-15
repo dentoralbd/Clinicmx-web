@@ -13,7 +13,7 @@ import {
 } from '@/lib/queueApi'
 import { sortQueueEntries, computePositions } from '@/lib/queueOrder'
 import { calculateQueueEtas } from '@/lib/queueEstimation'
-import { formatPatientDisplay } from '@/lib/queueDisplay'
+import { formatPatientDisplay, formatSpokenName } from '@/lib/queueDisplay'
 import { announcePatientCall, unlockAudio, isAudioUnlocked } from '@/lib/audioChime'
 import { isAppAuthenticated, getAppRole } from '@/lib/appSession'
 
@@ -89,7 +89,7 @@ export function QueueDisplay() {
       if (announcedIds.current.has(e.id)) continue
       announcedIds.current.add(e.id)
       announcePatientCall({
-        patientName: formatPatientDisplay(e, privacyMode),
+        patientName: formatSpokenName(e, privacyMode),
         roomNumber: e.room_number,
         serialNumber: e.serial_number,
       })

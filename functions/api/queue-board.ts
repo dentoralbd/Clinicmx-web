@@ -60,6 +60,8 @@ function computeCanonicalOrder(rows: QueueEntryRow[]): QueueEntryRow[] {
   })
 }
 
+// On-screen formatter — includes the "#N" serial prefix, correct for a
+// visual board (a token badge next to a name reads fine).
 function formatDisplay(row: QueueEntryRow, privacyMode: string): string {
   switch (privacyMode) {
     case 'token_only':
@@ -74,6 +76,27 @@ function formatDisplay(row: QueueEntryRow, privacyMode: string): string {
     case 'full':
     default:
       return `#${row.serial_number} ${row.patient_name}`
+  }
+}
+
+// Spoken counterpart — never includes "#N". The AGY board's TTS speaks the
+// serial separately, in words ("টোকেন নম্বর ১"); handing it a "#1"-prefixed
+// name gets that number read a second time, mangled, as "hash one" (found
+// live, 2026-08-15). token_only returns '' — no name spoken, token only.
+function formatSpokenName(row: QueueEntryRow, privacyMode: string): string {
+  switch (privacyMode) {
+    case 'token_only':
+      return ''
+    case 'masked': {
+      const parts = row.patient_name.trim().split(/\s+/)
+      const last = parts[parts.length - 1] ?? ''
+      const initial = last ? `${last[0].toUpperCase()}.` : ''
+      const firstPart = parts.slice(0, -1).join(' ')
+      return (firstPart ? `${firstPart} ${initial}` : initial).trim()
+    }
+    case 'full':
+    default:
+      return row.patient_name
   }
 }
 
@@ -114,7 +137,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const serving = ordered
     .filter((e) => e.status === 'serving')
-    .map((e) => ({ id: e.id, display: formatDisplay(e, privacyMode), room: hasValidToken ? e.room_number : null, procedure: hasValidToken ? e.procedure_name : null }))
+    .map((e) => ({
+      id: e.id,
+      display: formatDisplay(e, privacyMode),
+      // serial + spokenName are for the TTS announcement only — never
+      // build spoken text from `display`, see formatSpokenName()'s comment.
+      serial: e.serial_number,
+      spokenName: formatSpokenName(e, privacyMode),
+      room: hasValidToken ? e.room_number : null,
+      procedure: hasValidToken ? e.procedure_name : null,
+    }))
 
   const onHold = ordered
     .filter((e) => e.status === 'on_hold')
