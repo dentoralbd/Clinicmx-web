@@ -4,6 +4,44 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-15 — Patient Queue System
+
+New `/queue` (reception) and two display boards: `/queue-display` (staff/backroom, inside
+ClinicMx) and `dentoralbd.com/queue` (the actual patient-facing waiting-room board, on the
+separate DentOral site so ClinicMx stays invisible to patients — mirrors the DentOral booking
+bridge in the opposite direction). Migration 061 (`queue_entries`, `queue_settings`,
+`next_queue_serial()`, `treatment_catalog_items.default_duration_mins`); new Cloudflare Function
+`functions/api/queue-board.ts` + AGY's `functions/api/queue.js`/`queue.html`.
+
+Ported and redesigned from a queue system built in the (untracked) `Clinicmx-web-redesign` UI
+sandbox — that implementation was real working code (~3,200 LOC) but had a serious PHI exposure
+(anon-key SELECT on today's named patient roster, reversing the 2026-07-26 RLS lockdown) and was
+strictly check-in-order FIFO. This version instead orders the queue by the **appointment
+schedule** — a scheduled check-in's position derives from its appointment time, a walk-in's from
+arrival time, both the same expression so a walk-in naturally slots in among passed appointment
+times with no special-case code (`sort_key` + fractional/"between" ordering, see DATABASE.md).
+"Absent" pushes a patient down a configurable number of places instead of removing them or
+sending them to the back. Position on screen is computed at read time from this order, never
+stored, so an insert/reorder/absent-mark never has to rewrite other rows.
+
+The board reads through a Cloudflare Function pair holding the Supabase `service_role` key
+server-side instead of an `anon` grant — the browser never sees a Supabase credential, and
+`queue_entries` keeps zero `anon` access. An untokened request gets a masked, serial-numbers-only
+fallback rather than an error. Privacy mode (full name / masked / token-only) is a real
+server-persisted setting applied identically to on-screen text and the Bengali TTS announcement —
+the sandbox's version only ever changed the on-screen text, so even its "token only" mode still
+spoke the patient's full name aloud.
+
+Also fixed during the port: a doctor-widget/reception Call-button disagreement that could leave
+two patients in `serving` at once (unified into one shared `callNextPatient()` action); a
+read-max-then-insert token/serial race between two simultaneous check-ins (now an atomic
+`SECURITY DEFINER` RPC); `assigned_doctor` existing in the schema but never actually written by
+any code path; and a Rules-of-Hooks violation in the floating widget. Deferred: the animated
+"Ayesha" avatar and announcement ticker; a patient-facing mobile queue tracker (`/q/:token`).
+
+See FEATURES.md §4b, DATABASE.md's "Patient Queue" table section, and API.md §2 for the full
+detail.
+
 ## 2026-08-15 — Fix duplicate Smart-upload backups (race condition)
 Reported: two near-identical "Daily backup uploaded ✓ verified" notifications 10 seconds apart on
 the same day. Root cause: `BackupReminderBanner`'s auto-upload check loop (every open session,

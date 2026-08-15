@@ -10,4 +10,8 @@ export const qk = {
     day: (isoDate: string) => ['appointments', 'day', isoDate] as const,
     week: (isoStartDate: string) => ['appointments', 'week', isoStartDate] as const,
   },
+  queue: {
+    today: (isoDate: string) => ['queue', isoDate] as const,
+    settings: ['queue', 'settings'] as const,
+  },
 }

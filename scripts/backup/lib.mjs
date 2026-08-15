@@ -45,6 +45,8 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
   'activity_log',
   'app_notifications', // shared notification center (migration 032)
   'appointments',
+  'queue_settings', // singleton config row (migration 061)
+  'queue_entries', // after patients/appointments/app_users: queue_entries FKs all three (migration 061)
   'patient_visits',
   'patient_files',
   'dental_records',
@@ -61,6 +63,7 @@ export const TABLES_IN_DEPENDENCY_ORDER = [
 // Tables with a patient_id column, for --patient restores.
 export const PATIENT_LINKED_TABLES = [
   'appointments',
+  'queue_entries', // migration 061 — patient_id is nullable (walk-ins may be unlinked)
   'patient_visits',
   'patient_files',
   'dental_records',
