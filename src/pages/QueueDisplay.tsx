@@ -18,6 +18,25 @@ import { formatPatientDisplay, formatSpokenName } from '@/lib/queueDisplay'
 import { announcePatientCall, unlockAudio, isAudioUnlocked } from '@/lib/audioChime'
 import { isAppAuthenticated, getAppRole } from '@/lib/appSession'
 
+interface QueueSlide {
+  title: string
+  href: string
+  blurb: string
+}
+
+// Same fallback list as AGY's queue.html / admin.js (three copies now,
+// unavoidable — this one's React/Tailwind, those are vanilla HTML/CSS with
+// no shared build step to import from). Slides themselves are managed in
+// one place: AGY's admin.html CMS, fetched cross-origin below (CORS is
+// already open on that endpoint — it's public content, no credential
+// involved). Falls back to this list before an admin has ever saved any.
+const DEFAULT_QUEUE_SLIDES: QueueSlide[] = [
+  { href: 'https://dentoralbd.com/brushing-flossing.html', title: 'Brushing & Flossing', blurb: 'The daily habits that keep your smile healthy between visits.' },
+  { href: 'https://dentoralbd.com/orthodontic-retention.html', title: 'After Braces: Retention', blurb: 'Why wearing your retainer matters just as much as the braces did.' },
+  { href: 'https://dentoralbd.com/retainer-instructions.html', title: 'Caring for Your Retainer', blurb: 'Simple steps to keep your retainer clean and lasting longer.' },
+  { href: 'https://dentoralbd.com/general-dentistry.html', title: 'General Dentistry', blurb: 'Routine checkups and cleanings — the foundation of a healthy mouth.' },
+]
+
 /**
  * Staff/backroom display — behind normal auth, showing full operational
  * detail (assigned doctor, room, all statuses). This is NOT the
@@ -38,6 +57,8 @@ export function QueueDisplay() {
   const [audioUnlocked, setAudioUnlocked] = useState(isAudioUnlocked())
   const [showSettings, setShowSettings] = useState(false)
   const [showQr, setShowQr] = useState(false)
+  const [slides, setSlides] = useState<QueueSlide[]>(DEFAULT_QUEUE_SLIDES)
+  const [slideIndex, setSlideIndex] = useState(0)
   const announcedIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -108,6 +129,46 @@ export function QueueDisplay() {
     setSettings((s) => (s ? { ...s, privacy_mode: mode } : s))
     await updateQueueSettings({ privacy_mode: mode })
   }
+
+  // Slides are managed centrally in AGY's admin CMS, not duplicated here —
+  // poll slowly (this screen can run for days) so an admin's edit shows up
+  // without anyone reloading the display.
+  useEffect(() => {
+    const fetchSlides = () => {
+      fetch('https://dentoralbd.com/api/cms-config', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((config) => {
+          const raw: QueueSlide[] = Array.isArray(config.queueSlides) ? config.queueSlides : DEFAULT_QUEUE_SLIDES
+          // admin.html stores relative hrefs meant for AGY's own domain
+          // (e.g. "brushing-flossing.html") — resolve them against
+          // dentoralbd.com so a link clicked on this ClinicMx-hosted screen
+          // doesn't 404 against clinicmx-web.pages.dev instead.
+          const resolved = raw.map((s) => ({
+            ...s,
+            href: /^https?:\/\//.test(s.href) ? s.href : `https://dentoralbd.com/${s.href.replace(/^\//, '')}`,
+          }))
+          setSlides(resolved)
+        })
+        .catch(() => {
+          // Keep whatever slides are already showing — a fetch failure
+          // shouldn't blank out a working carousel.
+        })
+    }
+    fetchSlides()
+    const id = window.setInterval(fetchSlides, 5 * 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const infotainmentEnabled = settings?.infotainment_enabled ?? true
+  const infotainmentIntervalSecs = settings?.infotainment_interval_secs ?? 12
+
+  useEffect(() => {
+    if (!infotainmentEnabled || slides.length <= 1) return
+    const id = window.setInterval(() => {
+      setSlideIndex((i) => (i + 1) % slides.length)
+    }, Math.max(5, infotainmentIntervalSecs) * 1000)
+    return () => window.clearInterval(id)
+  }, [infotainmentEnabled, infotainmentIntervalSecs, slides.length])
 
   const role = getAppRole()
   const canEditSettings = role === 'admin'
@@ -200,6 +261,18 @@ export function QueueDisplay() {
           </div>
         </div>
       </div>
+
+      {infotainmentEnabled && slides.length > 0 && slides[slideIndex] && (
+        <a
+          href={slides[slideIndex].href}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-2xl border border-white/10 bg-white/5 p-6 text-inherit no-underline hover:bg-white/[0.07] transition-colors"
+        >
+          <h3 className="text-lg font-bold text-teal-300">{slides[slideIndex].title}</h3>
+          <p className="mt-1 text-sm text-gray-400">{slides[slideIndex].blurb}</p>
+        </a>
+      )}
 
       {showSettings && (
         <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4">
