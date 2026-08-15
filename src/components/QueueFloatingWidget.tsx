@@ -34,6 +34,7 @@ export function QueueFloatingWidget() {
   const [roomNumber, setRoomNumber] = useState<string>(() => localStorage.getItem('clinicmx_doctor_room') || 'Room 1')
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null)
   const [selectedHoldReason, setSelectedHoldReason] = useState<string>(HOLD_REASONS[0])
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const role = getAppRole()
   const user = getAppUser()
@@ -77,30 +78,57 @@ export function QueueFloatingWidget() {
   const onHold = entries.filter((e) => e.status === 'on_hold' && e.assigned_doctor === doctorId)
   const backlogMins = doctorId ? calculateDoctorBacklogMins(entries, doctorId) : 0
 
-  const handleCallNext = async () => {
+  // None of these handlers had error handling before — a failed write
+  // (RLS denial, dropped connection, anything) rejected silently with no
+  // re-render and no message, which looked exactly like "the button does
+  // nothing" (reported live, 2026-08-15 — Resume specifically, but the gap
+  // was the same across every action here). runAction surfaces the real
+  // failure instead of swallowing it, matching QueueManagement.tsx's
+  // existing convention for the same actions on the reception screen.
+  const runAction = async (id: string, fn: () => Promise<unknown>) => {
+    setBusyId(id)
+    try {
+      await fn()
+    } catch (err) {
+      console.error(err)
+      alert(`That action failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleCallNext = () => {
     if (!doctorId || waiting.length === 0) return
-    await callNextPatient(entries, doctorId, roomNumber)
-    setExpanded(true)
+    void runAction('call-next', async () => {
+      await callNextPatient(entries, doctorId, roomNumber)
+      setExpanded(true)
+    })
   }
 
-  const handleCompleteCurrent = async (id: string) => {
-    await completeAndBillEntry(id)
+  const handleCompleteCurrent = (id: string) => {
+    void runAction(id, () => completeAndBillEntry(id))
   }
 
-  const handleConfirmHold = async () => {
+  const handleConfirmHold = () => {
     if (!holdTargetId) return
-    await holdQueueEntry(holdTargetId, selectedHoldReason)
-    setHoldTargetId(null)
+    const id = holdTargetId
+    void runAction(id, async () => {
+      await holdQueueEntry(id, selectedHoldReason)
+      setHoldTargetId(null)
+    })
   }
 
-  const handleResume = async (id: string) => {
+  const handleResume = (id: string) => {
     if (!doctorId) return
-    // Resuming brings this patient back into the chair — anyone else this
-    // doctor currently has in 'serving' is completed & billed first, same
-    // rule as Call Next, via the shared action so the two paths can't drift.
-    const current = entries.find((e) => e.status === 'serving' && e.assigned_doctor === doctorId)
-    if (current) await completeAndBillEntry(current.id)
-    await resumeQueueEntry(id)
+    void runAction(id, async () => {
+      // Resuming brings this patient back into the chair — anyone else
+      // this doctor currently has in 'serving' is completed & billed
+      // first, same rule as Call Next, via the shared action so the two
+      // paths can't drift.
+      const current = entries.find((e) => e.status === 'serving' && e.assigned_doctor === doctorId)
+      if (current) await completeAndBillEntry(current.id)
+      await resumeQueueEntry(id)
+    })
   }
 
   // bottom-36 on mobile clears both PatientProfile's own bottom-20 quick-add
@@ -186,8 +214,9 @@ export function QueueFloatingWidget() {
 
                   <div className="grid grid-cols-2 gap-1.5 mt-2.5">
                     <button
+                      disabled={busyId === s.id}
                       onClick={() => setHoldTargetId(s.id)}
-                      className="py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-colors shadow-sm"
+                      className="py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-colors shadow-sm disabled:opacity-40"
                       title="Hold for Local Anesthesia or X-Ray"
                     >
                       <PauseCircle className="w-3.5 h-3.5" />
@@ -195,12 +224,13 @@ export function QueueFloatingWidget() {
                     </button>
 
                     <button
+                      disabled={busyId === s.id}
                       onClick={() => handleCompleteCurrent(s.id)}
-                      className="py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-colors shadow-sm"
+                      className="py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-colors shadow-sm disabled:opacity-40"
                       title="Mark Complete & Hand off to Front Desk Billing"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      Complete & Bill
+                      {busyId === s.id ? 'Working…' : 'Complete & Bill'}
                     </button>
                   </div>
                 </div>
@@ -234,12 +264,13 @@ export function QueueFloatingWidget() {
                   </div>
 
                   <button
+                    disabled={busyId === h.id}
                     onClick={() => handleResume(h.id)}
-                    className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 shadow-sm"
+                    className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 shadow-sm disabled:opacity-40"
                     title="Resume consultation"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    Resume
+                    {busyId === h.id ? 'Working…' : 'Resume'}
                   </button>
                 </div>
               ))}
@@ -274,11 +305,11 @@ export function QueueFloatingWidget() {
 
           <button
             onClick={handleCallNext}
-            disabled={waiting.length === 0}
+            disabled={waiting.length === 0 || busyId === 'call-next'}
             className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-xl disabled:opacity-40 flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            Call Next
+            {busyId === 'call-next' ? 'Working…' : 'Call Next'}
           </button>
         </div>
       </div>
@@ -323,10 +354,11 @@ export function QueueFloatingWidget() {
               Cancel
             </button>
             <button
+              disabled={busyId === holdTargetId}
               onClick={handleConfirmHold}
-              className="flex-1 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm"
+              className="flex-1 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm disabled:opacity-40"
             >
-              Confirm Hold
+              {busyId === holdTargetId ? 'Working…' : 'Confirm Hold'}
             </button>
           </div>
         </div>
