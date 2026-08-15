@@ -26,6 +26,8 @@ const FinancialAnalysis = lazy(() => import('./pages/FinancialAnalysis').then(m 
 const HRPayroll = lazy(() => import('./pages/HRPayroll').then(m => ({ default: m.HRPayroll })))
 const OfflineOutbox = lazy(() => import('./pages/OfflineOutbox').then(m => ({ default: m.OfflineOutbox })))
 const Catalog = lazy(() => import('./pages/Catalog').then(m => ({ default: m.Catalog })))
+const QueueManagement = lazy(() => import('./pages/QueueManagement').then(m => ({ default: m.QueueManagement })))
+const QueueDisplay = lazy(() => import('./pages/QueueDisplay').then(m => ({ default: m.QueueDisplay })))
 
 function PageLoader() {
   return (
@@ -53,6 +55,16 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            {/* Sibling of "/", not a DashboardLayout child — DashboardLayout
+                hard-wires h-screen/overflow-hidden + sidebar + header, so a
+                true full-screen board can't live inside it. Still behind
+                ProtectedRoute: this is the staff/backroom display, not the
+                patient-facing board (that's dentoralbd.com/queue). */}
+            <Route path="/queue-display" element={
+              <ProtectedRoute>
+                <QueueDisplay />
+              </ProtectedRoute>
+            } />
             <Route path="/" element={
               <ProtectedRoute>
                 <DashboardLayout />
@@ -71,6 +83,7 @@ function App() {
               <Route path="inventory" element={<RequirePage page="inventory"><Inventory /></RequirePage>} />
               <Route path="qr-search" element={<RequirePage page="qr-search"><QrSearch /></RequirePage>} />
               <Route path="catalog" element={<RequirePage page="catalog"><Catalog /></RequirePage>} />
+              <Route path="queue" element={<RequirePage page="queue"><QueueManagement /></RequirePage>} />
               <Route path="doctor-profile" element={<DoctorProfile />} />
               <Route path="admin" element={<DoctorProfile />} />
               <Route path="backup" element={<BackupRestore />} />

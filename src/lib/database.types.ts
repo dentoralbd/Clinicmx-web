@@ -1449,6 +1449,7 @@ export interface Database {
           category_id: string
           name: string
           default_fee: number | null
+          default_duration_mins: number | null
           sort_order: number
           created_at: string
           updated_at: string
@@ -1458,6 +1459,7 @@ export interface Database {
           category_id: string
           name: string
           default_fee?: number | null
+          default_duration_mins?: number | null
           sort_order?: number
           created_at?: string
           updated_at?: string
@@ -1467,6 +1469,7 @@ export interface Database {
           category_id?: string
           name?: string
           default_fee?: number | null
+          default_duration_mins?: number | null
           sort_order?: number
           created_at?: string
           updated_at?: string
@@ -1480,6 +1483,124 @@ export interface Database {
             referencedColumns: ['id']
           }
         ]
+      }
+      queue_entries: {
+        Row: {
+          id: string
+          patient_id: string | null
+          appointment_id: string | null
+          patient_name: string
+          serial_number: number
+          sort_key: number
+          status: 'waiting' | 'serving' | 'on_hold' | 'completed' | 'skipped'
+          assigned_doctor: string | null
+          room_number: string | null
+          procedure_name: string | null
+          estimated_duration_mins: number
+          priority: 'normal' | 'urgent'
+          hold_reason: string | null
+          billing_status: 'none' | 'pending_payment' | 'paid_and_dispensed'
+          queue_date: string
+          absent_marks: number
+          last_absent_at: string | null
+          called_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          patient_id?: string | null
+          appointment_id?: string | null
+          patient_name: string
+          serial_number: number
+          sort_key: number
+          status?: 'waiting' | 'serving' | 'on_hold' | 'completed' | 'skipped'
+          assigned_doctor?: string | null
+          room_number?: string | null
+          procedure_name?: string | null
+          estimated_duration_mins?: number
+          priority?: 'normal' | 'urgent'
+          hold_reason?: string | null
+          billing_status?: 'none' | 'pending_payment' | 'paid_and_dispensed'
+          queue_date?: string
+          absent_marks?: number
+          last_absent_at?: string | null
+          called_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string | null
+          appointment_id?: string | null
+          patient_name?: string
+          serial_number?: number
+          sort_key?: number
+          status?: 'waiting' | 'serving' | 'on_hold' | 'completed' | 'skipped'
+          assigned_doctor?: string | null
+          room_number?: string | null
+          procedure_name?: string | null
+          estimated_duration_mins?: number
+          priority?: 'normal' | 'urgent'
+          hold_reason?: string | null
+          billing_status?: 'none' | 'pending_payment' | 'paid_and_dispensed'
+          queue_date?: string
+          absent_marks?: number
+          last_absent_at?: string | null
+          called_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'queue_entries_patient_id_fkey'
+            columns: ['patient_id']
+            isOneToOne: false
+            referencedRelation: 'patients'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'queue_entries_appointment_id_fkey'
+            columns: ['appointment_id']
+            isOneToOne: false
+            referencedRelation: 'appointments'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'queue_entries_assigned_doctor_fkey'
+            columns: ['assigned_doctor']
+            isOneToOne: false
+            referencedRelation: 'app_users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      queue_settings: {
+        Row: {
+          id: boolean
+          privacy_mode: 'full' | 'masked' | 'token_only'
+          infotainment_enabled: boolean
+          infotainment_interval_secs: number
+          absent_pushdown_places: number
+          updated_at: string
+        }
+        Insert: {
+          id?: boolean
+          privacy_mode?: 'full' | 'masked' | 'token_only'
+          infotainment_enabled?: boolean
+          infotainment_interval_secs?: number
+          absent_pushdown_places?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: boolean
+          privacy_mode?: 'full' | 'masked' | 'token_only'
+          infotainment_enabled?: boolean
+          infotainment_interval_secs?: number
+          absent_pushdown_places?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       custom_medications: {
         Row: {
@@ -1728,7 +1849,12 @@ export interface Database {
       }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      next_queue_serial: {
+        Args: { p_queue_date: string }
+        Returns: number
+      }
+    }
     Enums: Record<string, never>
   }
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet, BookOpen } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet, BookOpen, ListOrdered } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, type AppPageKey } from '@/lib/appSession'
 import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
+import { getQueueEntries, todayQueueDate, subscribeToQueue, pollQueue } from '@/lib/queueApi'
 
 interface SidebarProps {
   isOpen: boolean
@@ -43,7 +44,13 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
           { icon: BookOpen, label: 'Catalog', path: '/catalog', page: 'catalog' },
         ],
       },
-      { icon: Calendar, label: 'Appointments', path: '/appointments', page: 'appointments' },
+      {
+        icon: Calendar,
+        label: 'Appointments',
+        path: '/appointments',
+        page: 'appointments',
+        children: [{ icon: ListOrdered, label: 'Patient Queue', path: '/queue', page: 'queue' }],
+      },
       { icon: FileText, label: 'Prescriptions', path: '/prescriptions', page: 'prescriptions' },
     ],
   },
@@ -115,6 +122,28 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
     return () => {
       cancelled = true
       window.removeEventListener('clinicmx_outbox_updated', refresh)
+    }
+  }, [])
+
+  const [queueWaitingCount, setQueueWaitingCount] = useState(0)
+
+  useEffect(() => {
+    if (!hasPageAccess('queue')) return
+    let cancelled = false
+    const refresh = () => {
+      getQueueEntries(todayQueueDate())
+        .then((entries) => {
+          if (!cancelled) setQueueWaitingCount(entries.filter((e) => e.status === 'waiting').length)
+        })
+        .catch(() => {})
+    }
+    refresh()
+    const unsubscribe = subscribeToQueue(refresh)
+    const stopPolling = pollQueue(refresh, 30000)
+    return () => {
+      cancelled = true
+      unsubscribe()
+      stopPolling()
     }
   }, [])
 
@@ -223,6 +252,11 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                                     {child.path === '/offline-outbox' && outboxCount > 0 && (
                                       <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white animate-pulse">
                                         {outboxCount}
+                                      </span>
+                                    )}
+                                    {child.path === '/queue' && queueWaitingCount > 0 && (
+                                      <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white animate-pulse">
+                                        {queueWaitingCount}
                                       </span>
                                     )}
                                   </>

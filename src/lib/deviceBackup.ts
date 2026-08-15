@@ -83,6 +83,8 @@ export const BACKUP_TABLES = [
   'activity_log',
   'app_notifications', // shared notification center (migration 032) — was missing from this list until 2026-08-03
   'appointments',
+  'queue_settings', // singleton config row (migration 061)
+  'queue_entries', // after patients/appointments/app_users: queue_entries FKs all three (migration 061)
   'patient_visits',
   'patient_files',
   'dental_records',

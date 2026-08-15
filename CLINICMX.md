@@ -105,6 +105,8 @@ All routes nested under `ProtectedRoute` → `DashboardLayout` (`src/App.tsx`):
 | `/dashboard` | Dashboard (stats, today's appointments) | auth |
 | `/patients`, `/patients/:id` | Patients list, PatientProfile (tabbed hub — the app's core screen, ~5,900 lines) | page `patients` |
 | `/appointments` | Appointments (day/week calendar, conflicts, reschedule) | page `appointments` |
+| `/queue` | QueueManagement (Patient Queue — reception check-in, doctor call/hold/complete) | page `queue` |
+| `/queue-display` | QueueDisplay (staff/backroom board — full-screen, sibling of `/`, not nested in `DashboardLayout`) | auth |
 | `/treatments` | Treatments | page `treatments` |
 | `/prescriptions` | Prescriptions | page `prescriptions` |
 | `/billing` | Billing (invoices, payments, reports) | page `billing` |

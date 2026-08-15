@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock, List, LayoutGrid } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, ClipboardCheck, Calendar, CalendarClock, List, LayoutGrid, ListOrdered } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { qk } from '@/repositories/keys'
 import { fetchDayAppointments, fetchWeekAppointments } from '@/repositories/appointmentsRepo'
+import { fetchTodayQueue } from '@/repositories/queueRepo'
+import { addQueueEntry, todayQueueDate, type QueueEntry } from '@/lib/queueApi'
+import { sortKeyForAppointment } from '@/lib/queueOrder'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { AppointmentModal } from '@/components/AppointmentModal'
 import { RescheduleModal } from '@/components/RescheduleModal'
@@ -65,6 +68,43 @@ export function Appointments() {
   })
 
   const activeAppointmentsCount = appointments.filter(a => a.status !== 'Cancelled').length
+
+  const queryClient = useQueryClient()
+  const queueDate = todayQueueDate()
+  const { data: queueEntriesToday = [] } = useQuery({
+    queryKey: qk.queue.today(queueDate),
+    queryFn: () => fetchTodayQueue(queueDate),
+    enabled: isSelectedDateToday,
+  })
+  const queueEntryByAppointmentId = new Map(
+    queueEntriesToday.filter((e) => e.appointment_id).map((e) => [e.appointment_id as string, e])
+  )
+
+  // Deliberately does NOT set the appointment to a new "Arrived" status —
+  // ReminderQueue.tsx and TreatmentFollowUpCard.tsx both filter
+  // .in('status', ['Scheduled', 'Confirmed']), so a new status would
+  // silently drop checked-in patients out of both. queue_entries is the
+  // source of truth for check-in; the appointment just gets auto-confirmed
+  // if it wasn't already.
+  const handleCheckIn = async (appointment: Appointment) => {
+    try {
+      await addQueueEntry({
+        patient_id: appointment.patient_id,
+        appointment_id: appointment.id,
+        patient_name: `${appointment.patients.first_name} ${appointment.patients.last_name}`,
+        sort_key: sortKeyForAppointment(appointment.date_time),
+        procedure_name: appointment.type,
+        estimated_duration_mins: appointment.duration || 15,
+      })
+      if (appointment.status === 'Scheduled') {
+        await updateStatus(appointment.id, 'Confirmed')
+      }
+      queryClient.invalidateQueries({ queryKey: qk.queue.today(queueDate) })
+    } catch (err) {
+      console.error(err)
+      alert('Could not check in this patient. Please try again.')
+    }
+  }
 
   const {
     data: weekAppointmentsData,
@@ -302,6 +342,9 @@ export function Appointments() {
                 onCancel={() => cancelAppointment(appointment.id)}
                 onStatusChange={(status) => updateStatus(appointment.id, status)}
                 onReschedule={() => setRescheduleAppointment(appointment)}
+                isSelectedDateToday={isSelectedDateToday}
+                queueEntry={queueEntryByAppointmentId.get(appointment.id) ?? null}
+                onCheckIn={() => handleCheckIn(appointment)}
               />
             ))}
           </div>
@@ -356,11 +399,22 @@ export function Appointments() {
   )
 }
 
-function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }: {
+function AppointmentRow({
+  appointment,
+  onCancel,
+  onStatusChange,
+  onReschedule,
+  isSelectedDateToday,
+  queueEntry,
+  onCheckIn,
+}: {
   appointment: Appointment
   onCancel: () => void
   onStatusChange: (status: string) => void
   onReschedule: () => void
+  isSelectedDateToday: boolean
+  queueEntry: QueueEntry | null
+  onCheckIn: () => void
 }) {
   if (!appointment || !appointment.patients) {
     return (
@@ -421,6 +475,26 @@ function AppointmentRow({ appointment, onCancel, onStatusChange, onReschedule }:
                 Confirm
               </button>
             )}
+            {isSelectedDateToday &&
+              (appointment.status === 'Scheduled' || appointment.status === 'Confirmed') &&
+              (queueEntry ? (
+                <span
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl"
+                  title="Already checked in"
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  In Queue (#{queueEntry.serial_number} · {queueEntry.status})
+                </span>
+              ) : (
+                <button
+                  onClick={onCheckIn}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors shadow-sm"
+                  title="Check in to the waiting queue"
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  Check In
+                </button>
+              ))}
             {appointment.status === 'Confirmed' && (
               <button
                 onClick={() => onStatusChange('Completed')}

@@ -41,6 +41,7 @@ Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev 
 | `/api/list-backups` | GET | Lists backups (filenames/dates/sizes only, no content) in Drive — feeds the Dashboard freshness tile and the restore-from-Drive picker. **Requires a signed-in staff session.** |
 | `/api/download-backup` | GET | Streams a chosen Drive backup's actual **content** back for restore. **Requires admin auth.** |
 | `/api/admin-otp` | POST | Admin login second factor: `action:'request'` (PIN + optional trusted-device token → Telegram OTP or `trusted`/`unconfigured`), `action:'verify'` (code or recovery code → 7-day signed device token) |
+| `/api/queue-board` | GET | Sanitised, read-only Patient Queue feed for `dentoralbd.com/queue` (AGY repo's `functions/api/queue.js` proxies here with a shared bridge token). Reads `queue_entries`/`queue_settings` server-side with `SUPABASE_SERVICE_ROLE_KEY` and returns only what a public waiting-room board needs — the browser never sees a Supabase credential. **No auth required to call it**, but the response differs: a valid `X-Bridge-Token`/`?t=` matching `QUEUE_BOARD_TOKEN` gets the full payload (names per `queue_settings.privacy_mode`, room, procedure); a missing/invalid token gets a masked, serial-numbers-only fallback — deliberately never an error, so a wrong/missing token degrades gracefully rather than breaking the public board. Mirrors `dentoral-bridge.ts`'s cross-site bridge-token pattern in the opposite direction (there ClinicMx pulls FROM DentOral; here DentOral pulls FROM ClinicMx). |
 
 **CORS for the Tauri desktop build (added 2026-08-08):** `functions/api/_middleware.ts` runs in front of every route above and adds `Access-Control-Allow-Origin` only for `Origin: http://tauri.localhost` / `https://tauri.localhost` — the origin the Windows exe (`D:\Claude\Clinicmx-web-redesign`, packaged with Tauri v2) serves its UI from. That lets the desktop app reach this deployment's `/api/*` for admin 2FA, Users management, and Drive backup, since it has no Functions layer of its own. All existing per-endpoint auth (PIN, device token, staff session) is unchanged — this only unblocks the cross-origin fetch at the browser/WebView2 level; every other origin gets no CORS headers and is still blocked as before.
 
@@ -71,6 +72,13 @@ download) pick the right one per call. `requireAdminToken`/`X-ClinicMx-Auth` als
 `admin-users.ts` (Admin → Users management, genuinely admin-only) — unaffected throughout.
 
 **Admin 2FA endpoint** (`admin-otp.ts`, helpers in `_authLib.ts`, delivery channels in `_otpChannels.ts` — Telegram now, Gmail slot reserved): needs its own env family (encrypted, Cloudflare dashboard): `ADMIN_PIN`, `ADMIN_AUTH_SECRET` (HMAC key for device tokens — also what gates the backup endpoints above), `ADMIN_RECOVERY_CODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, optional `OTP_CHANNEL` (default `telegram`) — plus a **KV namespace bound as `ADMIN_AUTH`** (OTP hashes, TTL 300s; per-IP failure/send counters, TTL 1h). Missing config → `{unconfigured:true}`; in production this now **hard-fails** the login (see `CLINICMX-GPT.md` §3) rather than silently falling back to PIN-only — confirmed live that all of these vars are actually set, so a future `unconfigured` response in production means something broke and should be loud. Local dev (plain `npm run dev`, no Functions layer) still gets PIN-only, gated on `import.meta.env.DEV`. Local Functions testing: same vars in `.dev.vars` + `npx wrangler pages dev dist --kv ADMIN_AUTH`. Client counterpart: `src/lib/adminOtp.ts` (device token in `localStorage.clinicmx_admin_device`).
+
+**Patient Queue board env (added 2026-08-15):** `queue-board.ts` reuses the existing
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` secrets (already set for `admin-otp.ts`) plus a new
+`QUEUE_BOARD_TOKEN` secret, set as an encrypted var in **both** Cloudflare Pages projects
+(ClinicMx and the DentOral/AGY project — env changes need a **redeploy** to reach an already-built
+deployment, as with every other secret here). Local testing: add `QUEUE_BOARD_TOKEN` to
+`.dev.vars` alongside the other secrets, `npx wrangler pages dev dist`.
 
 ## 3. Backup scripts (`scripts/backup/`)
 

@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { BackupReminderBanner } from '@/components/BackupReminderBanner'
+import { QueueFloatingWidget } from '@/components/QueueFloatingWidget'
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -52,6 +53,8 @@ export function DashboardLayout() {
           </main>
         )}
       </div>
+      {/* Self-gates on role (doctor/admin only) and renders nothing otherwise. */}
+      <QueueFloatingWidget />
     </div>
   )
 }
