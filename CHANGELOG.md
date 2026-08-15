@@ -4,6 +4,22 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-15 — Fix duplicate Smart-upload backups (race condition)
+Reported: two near-identical "Daily backup uploaded ✓ verified" notifications 10 seconds apart on
+the same day. Root cause: `BackupReminderBanner`'s auto-upload check loop (every open session,
+every 60s) decides a category is "overdue" by reading Drive's last-backup timestamp, then builds
+and uploads — but nothing stopped two sessions that both polled in the same ~1-minute window (two
+tabs, two devices, or admin + operator now that both roles run this loop) from both seeing "not
+done yet" and both uploading before either result was visible to the other. Not a new bug — it
+predates today's operator-access change, which only doubled the number of sessions that could hit
+it. Fixed with an atomic claim, same compare-and-swap pattern as the offline-sync outbox's
+`claimMutation()`: new `backup_upload_claims` table (migration 060, one pre-seeded row per
+category) and `claimBackupUpload()` in `backupReminders.ts` do an `UPDATE ... WHERE` that only one
+session's request can win for a given scheduled instant; the loser skips the upload entirely
+(no wasted build, no misleading "failed" notification — the winner's own success notification
+covers it). Wired into `BackupReminderBanner.tsx`'s auto-upload branch, right before the claim
+would otherwise start building the backup.
+
 ## 2026-08-11 — Clinic Expenses tab on Financial Analysis
 - **New "Clinic Expenses" tab** alongside "Doctor Analytics & Payouts" on `/financial-analysis`, admin-only (plain `getAppRole() === 'admin'`, no permission-flag override, unlike the sibling tab). Fulfills the "Expense tracking / cashbook alongside income reports" line from PRODUCT-ROADMAP.md. Rolls up Doctor Payouts + Staff Salary (both cash-basis, actually-paid amounts) + Lab Charges (only `lab_work` rows marked paid, bucketed by `date_sent`) + a new categorized "Other Expenses" ledger (`clinic_expenses` table, migration 059 — Instrument Purchase / Material Purchase / Machine Repair / Other, full add/edit/delete CRUD) into a Total Expenses figure, and shows Profit/Loss against Total Collected (raw payment sum for the month — deliberately not `DoctorFinancialSummary.totalPaid`, which excludes unattributed payments). See FEATURES.md §15b-vi for the full breakdown and the accounting-basis reasoning.
 

@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Tables (32)
+## 1. Tables (33)
 
 ### Core clinical
 
@@ -86,6 +86,7 @@ not an error.
 | `activity_log` | Fire-and-forget usage log: actor, action, entity_type/id, details JSONB, `occurred_at`. |
 | `edit_history` | Snapshot-before-edit per entity (017); powers revert. `entity_type` check constraint — **must be extended (020-style) when a new entity becomes trackable**. |
 | `delete_history` | Full-row snapshot on delete (015), `restored_at` (016); powers restore. Same check-constraint caveat. |
+| `backup_upload_claims` (060) | Cross-session lock for Smart-upload auto-backups: one pre-seeded row per category (`daily`/`weekly`/`monthly`) holding `instant`/`claimed_at`/`claimed_by_device`. `claimBackupUpload()` (`backupReminders.ts`) does an atomic `UPDATE ... WHERE` compare-and-swap (same pattern as `offline_edit_queue`'s `claimMutation()`) so only one session actually uploads a given scheduled instant. Deliberately excluded from device/nightly backups (transient lock state, not clinic data — same reasoning as `offline_edit_queue`, also excluded). |
 
 ## 2. Patient code generation
 

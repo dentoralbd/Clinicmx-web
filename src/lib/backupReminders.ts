@@ -214,6 +214,56 @@ export interface OverdueCategory {
   autoUpload: boolean
 }
 
+// --- Auto-upload claim (prevents two sessions racing the same instant) -----
+
+const DEVICE_ID_KEY = 'clinicmx_device_id'
+// A claim older than this is stealable — recovers a category whose claiming
+// session died mid-upload instead of wedging it forever. Same value as the
+// offline-sync outbox's claimMutation() (offlineSync.ts) for consistency.
+const CLAIM_STALE_MS = 10 * 60 * 1000
+
+/** Stable per-browser id, shared with offlineSync.ts (same localStorage key)
+ * — diagnostics/claim-ownership only, never security-relevant (RLS never
+ * checks this). */
+function getDeviceId(): string {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return 'unknown'
+  let id = localStorage.getItem(DEVICE_ID_KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(DEVICE_ID_KEY, id)
+  }
+  return id
+}
+
+/**
+ * Atomic compare-and-swap so two sessions (two tabs, two devices, admin +
+ * operator) can never both auto-upload the same scheduled instant — replaces
+ * a check-then-upload read, which is a race (both see "not done yet", both
+ * upload). Postgres row-locks serialize concurrent claim attempts; the loser
+ * sees zero rows updated and should skip the upload entirely (not just the
+ * notification). True = this session now holds the claim, proceed. False =
+ * someone else holds an active claim on this exact instant, or the claim
+ * table is unreachable/predates migration 060 — fail closed (skip) rather
+ * than risk a duplicate, since a missed auto-upload just means the plain
+ * "overdue" reminder banner catches it on the next check cycle instead.
+ */
+export async function claimBackupUpload(category: BackupCategory, instant: Date): Promise<boolean> {
+  try {
+    const instantIso = instant.toISOString()
+    const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString()
+    const { data, error } = await (supabase as any)
+      .from('backup_upload_claims')
+      .update({ instant: instantIso, claimed_at: new Date().toISOString(), claimed_by_device: getDeviceId() })
+      .eq('category', category)
+      .or(`instant.neq.${instantIso},claimed_at.lt.${staleBefore}`)
+      .select('category')
+    if (error) return false
+    return !!(data && data.length > 0)
+  } catch {
+    return false
+  }
+}
+
 /** Shape of deviceBackup.ts's DriveBackupStatus, duplicated here (not
  * imported) to avoid a circular dependency between the two modules. */
 export interface DriveBackupTimes {

@@ -1089,6 +1089,27 @@ export interface Database {
         }
         Relationships: []
       }
+      backup_upload_claims: {
+        Row: {
+          category: string
+          instant: string
+          claimed_at: string
+          claimed_by_device: string | null
+        }
+        Insert: {
+          category: string
+          instant: string
+          claimed_at?: string
+          claimed_by_device?: string | null
+        }
+        Update: {
+          category?: string
+          instant?: string
+          claimed_at?: string
+          claimed_by_device?: string | null
+        }
+        Relationships: []
+      }
       app_notifications: {
         Row: {
           id: string

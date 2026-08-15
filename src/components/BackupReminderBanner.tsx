@@ -13,6 +13,7 @@ import {
   fireBrowserNotification,
   shouldNudgeRestoreDrill,
   markRestoreDrillNudged,
+  claimBackupUpload,
   type BackupCategory,
 } from '@/lib/backupReminders'
 import { buildSerializedBackup, uploadSerializedBackup, getDriveBackupStatus } from '@/lib/deviceBackup'
@@ -75,6 +76,13 @@ export function BackupReminderBanner() {
           markNotified(category, instant)
 
           if (autoUpload) {
+            // Cross-session guard: without this, two sessions that both see
+            // "not done yet" in the same poll window both build + upload —
+            // found live 2026-08-12 (two near-identical files 10s apart).
+            // Losing the claim means another session already has it; skip
+            // entirely, no notification (it'll post its own on success).
+            if (!(await claimBackupUpload(category, instant))) continue
+
             try {
               // Smart upload runs unattended: a suspicious count drop can't ask
               // anyone, so it warns via notification but still backs up — a
