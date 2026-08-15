@@ -57,14 +57,23 @@ function App() {
             <Route path="/login" element={<Login />} />
             {/* Sibling of "/", not a DashboardLayout child — DashboardLayout
                 hard-wires h-screen/overflow-hidden + sidebar + header, so a
-                true full-screen board can't live inside it. Still behind
-                ProtectedRoute: this is the staff/backroom display, not the
-                patient-facing board (that's dentoralbd.com/queue). */}
-            <Route path="/queue-display" element={
-              <ProtectedRoute>
-                <QueueDisplay />
-              </ProtectedRoute>
-            } />
+                true full-screen board can't live inside it.
+
+                Deliberately NOT wrapped in <ProtectedRoute>: this link is
+                meant to be opened in a new tab (QueueManagement's "Open
+                Display Board", target="_blank") — the natural way to put a
+                TV display on its own screen. ProtectedRoute's check
+                requires hasSessionEncryptionKey(), whose key lives in
+                sessionStorage, which does NOT share across tabs even on
+                the same origin (secureLocalStorage.ts, "dies when the tab
+                closes") — a brand-new tab would always fail that check and
+                bounce to /login despite being genuinely logged in. This
+                route instead relies on QueueDisplay's own internal
+                isAppAuthenticated() check, which is plain localStorage and
+                correctly shared across tabs. Still the staff/backroom
+                display, not the patient-facing board (that's
+                dentoralbd.com/queue). */}
+            <Route path="/queue-display" element={<QueueDisplay />} />
             <Route path="/" element={
               <ProtectedRoute>
                 <DashboardLayout />
