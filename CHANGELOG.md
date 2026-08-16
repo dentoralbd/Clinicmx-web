@@ -4,6 +4,18 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-17 — Previous Visits panel in Add Visit
+
+Add Visit modal now opens with a read-only, collapsible "Previous Visits" panel above Chief
+Complaint, so the doctor can check the last visit's plan/treatment-done/payment/notes without
+leaving the form. Reuses the existing Visit History chip rendering; adds a "Also recorded that
+day" line for same-calendar-day treatments/prescriptions (visits have no DB link to either, so
+this is a display heuristic, labeled as such). Scoped by default to the patient's current
+treatment episode (new `currentPlanStart()` helper in `PatientProfile.tsx`) with a "Show earlier
+visits" toggle for full history — a patient who finished one plan and started a new one later
+isn't shown the old plan's visits by default. Purely additive/read-only: no schema change, no new
+query, no change to `handleVisitSubmit` or the Visit History tab. See FEATURES.md §10.
+
 ## 2026-08-16 — Recurring Expenses sub-menu (Clinic Expenses)
 - **New "Recurring Expenses" inner tab inside Clinic Expenses** (`/financial-analysis`) for monthly-repeating bills — rent, electricity, subscriptions — instead of re-entering the same one-off expense every month. New `recurring_expenses` table (migration 062, admin-only RLS) holds templates (category `Rent`/`Utilities`/`Subscription`/`Other`, amount/month, optional vendor/notes, active/inactive). A "Generate `<month>`" button creates one real `clinic_expenses` row per active template for the selected month (tagged via a new `clinic_expenses.recurring_expense_id` column, shown with a "Recurring" badge in Other Expenses) — idempotent via `UNIQUE (recurring_expense_id, expense_date)`, mirroring `staff.ts`'s monthly-generation pattern. `clinic_expenses.category`'s CHECK constraint widened to accept the three recurring-only categories alongside the four one-off ones. See FEATURES.md §15b-vi for the full breakdown.
 

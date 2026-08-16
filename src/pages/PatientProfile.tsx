@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { qk } from '@/repositories/keys'
@@ -295,6 +295,61 @@ function buildVisitPaymentChips(
   return result
 }
 
+// Reuses the "same plan" definition already established for Treatment History
+// grouping (renderOperationsSection's getTreatmentOriginId): rows created
+// together via the Treatment Plan form share a treatment_plan_group_id, rows
+// created via a prescription share a prescription_entry_id. Ad-hoc treatments
+// added directly at a visit (VisitTreatmentEntry, no plan form involved) have
+// neither, so each becomes its own singleton "group" — an ad-hoc item never
+// gets merged into a larger plan it wasn't actually part of.
+function getTreatmentPlanOriginId(t: any): string {
+  return t.treatment_plan_group_id || t.prescription_entry_id || t.id
+}
+
+const STALE_OPEN_PLAN_DAYS = 180
+
+// Finds when the patient's *current* treatment episode began, so the Add Visit
+// modal's previous-visits panel can default to "since this plan started"
+// instead of the patient's entire visit history. Returns null when there's
+// nothing to scope against (no treatments at all yet) — callers should treat
+// that as "show everything".
+function currentPlanStart(treatments: any[]): Date | null {
+  if (!treatments || treatments.length === 0) return null
+
+  const groups = new Map<string, { firstActivity: number; lastActivity: number; open: boolean }>()
+  for (const t of treatments) {
+    const key = getTreatmentPlanOriginId(t)
+    const created = new Date(t.created_at).getTime()
+    const activity = new Date(t.completed_at || t.created_at).getTime()
+    if (Number.isNaN(created)) continue
+    const existing = groups.get(key)
+    const isOpen = t.status !== 'Completed' && t.status !== 'Cancelled'
+    if (!existing) {
+      groups.set(key, { firstActivity: created, lastActivity: Number.isNaN(activity) ? created : activity, open: isOpen })
+    } else {
+      existing.firstActivity = Math.min(existing.firstActivity, created)
+      if (!Number.isNaN(activity)) existing.lastActivity = Math.max(existing.lastActivity, activity)
+      existing.open = existing.open || isOpen
+    }
+  }
+  if (groups.size === 0) return null
+
+  const now = Date.now()
+  const staleCutoff = STALE_OPEN_PLAN_DAYS * 24 * 60 * 60 * 1000
+  const mostRecentByActivity = [...groups.values()].reduce((latest, g) =>
+    g.lastActivity > latest.lastActivity ? g : latest
+  )
+  // Every group still open (and not abandoned long ago, unless it's the only
+  // group there is), plus whichever group was worked on most recently — a
+  // completed plan finished a month before a fresh one started shouldn't drag
+  // the episode start back to it.
+  const episodeGroups = [...groups.values()].filter(
+    (g) => g === mostRecentByActivity || (g.open && now - g.lastActivity <= staleCutoff)
+  )
+  const episodeStart = Math.min(...episodeGroups.map((g) => g.firstActivity))
+  return new Date(episodeStart)
+}
+
 type SectionId =
   | 'profile'
   | 'medical'
@@ -556,6 +611,11 @@ export function PatientProfile() {
   const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
   const [nextApptPrompt, setNextApptPrompt] = useState(false)
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
+  // Double-submit guards: without these, a slow save (or a network stall) leaves
+  // Save Visit / Save Changes clickable, and a repeat click fires an independent
+  // second submit — duplicating the invoice/payment or the visit edit.
+  const [savingVisit, setSavingVisit] = useState(false)
+  const [savingVisitEdit, setSavingVisitEdit] = useState(false)
   // Treatment plan cost confirmation: prescription submit is gated behind this
   // dialog whenever the prescription has plan entries; the doctor enters costs or defers.
   const [rxCostDialogEntries, setRxCostDialogEntries] = useState<ClinicalEntry[] | null>(null)
@@ -1166,7 +1226,7 @@ export function PatientProfile() {
 
   async function handleVisitSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!id) return
+    if (!id || savingVisit) return
 
     const doneEntries = visitTreatmentsDone.filter((entry) => entry.description.trim())
     const doneFromPlan = plannedTreatments
@@ -1230,6 +1290,7 @@ export function PatientProfile() {
       .filter(Boolean)
       .join('\n')
 
+    setSavingVisit(true)
     try {
       const visitGroupId = newGroupId()
       let visitSeq = 0
@@ -1494,6 +1555,8 @@ export function PatientProfile() {
     } catch (error) {
       console.error('Error saving visit:', error)
       alert(`Failed to save visit: ${getFriendlySupabaseErrorMessage(error)}`)
+    } finally {
+      setSavingVisit(false)
     }
   }
 
@@ -1845,7 +1908,8 @@ export function PatientProfile() {
 
   async function handleVisitEditSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!editingVisit) return
+    if (!editingVisit || savingVisitEdit) return
+    setSavingVisitEdit(true)
     try {
       let isOffline = !navigator.onLine
       const groupId = newGroupId()
@@ -1908,6 +1972,8 @@ export function PatientProfile() {
     } catch (error) {
       console.error('Error updating visit:', error)
       alert('Failed to update visit')
+    } finally {
+      setSavingVisitEdit(false)
     }
   }
 
@@ -5064,8 +5130,12 @@ export function PatientProfile() {
           payment={visitPayment}
           setPayment={setVisitPayment}
           dentitionType={patientDentition}
+          visits={visits}
+          prescriptions={prescriptions}
+          payments={payments}
           onSubmit={handleVisitSubmit}
           onClose={() => setShowVisitForm(false)}
+          saving={savingVisit}
         />
       )}
 
@@ -5207,7 +5277,7 @@ export function PatientProfile() {
                 />
               </div>
               <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1">Save Changes</Button>
+                <Button type="submit" className="flex-1" disabled={savingVisitEdit}>{savingVisitEdit ? 'Saving...' : 'Save Changes'}</Button>
                 <Button type="button" variant="outline" onClick={() => setEditingVisit(null)} className="flex-1">Cancel</Button>
               </div>
             </form>
@@ -5652,6 +5722,344 @@ async function bootstrapVisitMemory(): Promise<void> {
   }
 }
 
+// One collapsible previous-visit row inside PreviousVisitsPanel. Read-only —
+// no Edit/Delete — this is reference material while filling out today's
+// visit, not the Visit History tab. Shared by both the "current plan" list
+// and the "earlier visits" list so the two don't fork into duplicate JSX.
+function VisitSnapshotRow({
+  visit,
+  isExpanded,
+  onToggle,
+  sameDay,
+  invoices,
+  payments,
+  visits,
+}: {
+  visit: any
+  isExpanded: boolean
+  onToggle: () => void
+  sameDay: { treatments: any[]; prescriptions: any[] } | undefined
+  invoices: any[]
+  payments: any[]
+  visits: any[]
+}) {
+  const parsedNotes = splitVisitNotes(visit.notes)
+  const teaser = visit.chief_complaint || visit.diagnosis || 'Visit'
+  const hasSameDayExtras = !!sameDay && (sameDay.treatments.length > 0 || sameDay.prescriptions.length > 0)
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="min-w-0 flex items-baseline gap-2">
+          <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+            {formatDateValue(visit.visit_date, 'MMM d, yyyy')}
+          </span>
+          {!isExpanded && <span className="text-xs text-text-secondary truncate">{teaser}</span>}
+        </span>
+        {isExpanded ? (
+          <ChevronUp className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
+        )}
+      </button>
+
+      {isExpanded && (
+        <div className="px-3 pb-3 pt-1.5 border-t border-gray-100">
+          {(visit.chief_complaint || visit.examination_findings) && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {visit.chief_complaint && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[11px] font-medium border border-amber-200">
+                  CC: {visit.chief_complaint}
+                </span>
+              )}
+              {visit.examination_findings && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-[11px] font-medium border border-purple-200">
+                  O/E: {visit.examination_findings}
+                </span>
+              )}
+            </div>
+          )}
+
+          {visit.diagnosis && (
+            <div className="mb-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[11px] font-medium">
+                {visit.diagnosis}
+              </span>
+            </div>
+          )}
+
+          {visit.treatment_plan && (
+            <div className="mb-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 text-[11px] font-medium border border-indigo-200">
+                Plan: {visit.treatment_plan}
+              </span>
+            </div>
+          )}
+
+          {parsedNotes.treatmentDone && (
+            <div className="mb-2">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                <Activity className="w-3 h-3" /> Treatment Done
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {parseTreatmentDoneChips(parsedNotes.treatmentDone).map((chip, i) => (
+                  <span
+                    key={i}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium border ${treatmentDoneChipClass(chip.status)}`}
+                  >
+                    {chip.label}{chip.status ? ` · ${chip.status}` : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parsedNotes.payment && (
+            <div className="mb-2">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                <DollarSign className="w-3 h-3" /> Payment
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {buildVisitPaymentChips(visit, parsedNotes.payment, invoices, payments, visits).map((chip, i) => (
+                  <span
+                    key={i}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium border ${paymentChipClass(chip)}`}
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parsedNotes.rest && (
+            <blockquote className="mt-2 border-l-2 border-primary/30 pl-2 text-xs text-gray-600 italic whitespace-pre-line">
+              {parsedNotes.rest}
+            </blockquote>
+          )}
+
+          {hasSameDayExtras && (
+            <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
+              {/* Visits have no DB link to treatments/prescriptions (see
+                  currentPlanStart's comment above) — this is everything dated
+                  the same calendar day as this visit, not necessarily rows
+                  created at this specific visit. Labeled accordingly. */}
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                Also recorded that day
+              </div>
+              {sameDay!.treatments.length > 0 && (
+                <div className="text-[11px] text-gray-600 space-y-0.5">
+                  {sameDay!.treatments.map((t) => (
+                    <div key={t.id} className="flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      <span>
+                        {buildTreatmentLabel(t)} · {t.status}
+                        {t.cost ? ` · ${formatCurrency(t.cost)}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sameDay!.prescriptions.length > 0 && (
+                <div className="text-[11px] text-gray-600 mt-1 flex items-start gap-1">
+                  <Pill className="w-3 h-3 text-gray-400 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {sameDay!.prescriptions
+                      .flatMap((p) => (Array.isArray(p.medications) ? p.medications : []))
+                      .map((m: any) => m?.name)
+                      .filter(Boolean)
+                      .join(', ') || 'Prescription recorded'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const PREVIOUS_VISITS_VISIBLE_CAP = 10
+
+// Read-only snapshot of previous visits, shown at the top of the Add Visit
+// modal so the doctor can check what happened last time without leaving the
+// form. Scoped to the current treatment plan by default (currentPlanStart) —
+// a patient who finished one plan and started a new one later shouldn't have
+// to scroll past the old plan's visits — with a toggle to reveal full history.
+function PreviousVisitsPanel({
+  visits,
+  treatments,
+  prescriptions,
+  invoices,
+  payments,
+}: {
+  visits: any[]
+  treatments: any[]
+  prescriptions: any[]
+  invoices: any[]
+  payments: any[]
+}) {
+  const [panelOpen, setPanelOpen] = useState(true)
+  // visits arrives sorted visit_date desc from fetchPatientBundle, so [0] is the latest.
+  const [expandedVisitIds, setExpandedVisitIds] = useState<Set<string>>(
+    () => new Set(visits[0] ? [visits[0].id] : [])
+  )
+  const [showAll, setShowAll] = useState(false)
+  const [showEarlier, setShowEarlier] = useState(false)
+
+  const toggleVisit = (visitId: string) =>
+    setExpandedVisitIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(visitId)) next.delete(visitId)
+      else next.add(visitId)
+      return next
+    })
+
+  const sameDayByKey = useMemo(() => {
+    const map = new Map<string, { treatments: any[]; prescriptions: any[] }>()
+    const dayKey = (value: any): string | null => {
+      const d = new Date(value)
+      return Number.isNaN(d.getTime()) ? null : format(d, 'yyyy-MM-dd')
+    }
+    const bucket = (key: string) => {
+      let entry = map.get(key)
+      if (!entry) {
+        entry = { treatments: [], prescriptions: [] }
+        map.set(key, entry)
+      }
+      return entry
+    }
+    for (const t of treatments) {
+      const key = dayKey(t.completed_at || t.created_at)
+      if (key) bucket(key).treatments.push(t)
+    }
+    for (const p of prescriptions) {
+      const key = dayKey(p.prescribed_date)
+      if (key) bucket(key).prescriptions.push(p)
+    }
+    return map
+  }, [treatments, prescriptions])
+
+  const planStart = useMemo(() => currentPlanStart(treatments), [treatments])
+
+  const { currentVisits, earlierVisits } = useMemo(() => {
+    if (!planStart) return { currentVisits: visits, earlierVisits: [] as any[] }
+    const startOfPlanDay = new Date(planStart.getFullYear(), planStart.getMonth(), planStart.getDate())
+    const current: any[] = []
+    const earlier: any[] = []
+    for (const v of visits) {
+      const d = new Date(v.visit_date)
+      if (!Number.isNaN(d.getTime()) && d >= startOfPlanDay) current.push(v)
+      else earlier.push(v)
+    }
+    // A brand-new plan whose only visit so far is the one being recorded right
+    // now would otherwise show an empty "current plan" panel — fall back to a
+    // little recent history instead of nothing.
+    if (current.length === 0 && earlier.length > 0) {
+      return { currentVisits: earlier.slice(0, 3), earlierVisits: earlier.slice(3) }
+    }
+    return { currentVisits: current, earlierVisits: earlier }
+  }, [visits, planStart])
+
+  if (visits.length === 0) return null
+
+  const visibleVisits = showAll ? currentVisits : currentVisits.slice(0, PREVIOUS_VISITS_VISIBLE_CAP)
+  const dayKeyOf = (visit: any): string | null => {
+    const d = new Date(visit.visit_date)
+    return Number.isNaN(d.getTime()) ? null : format(d, 'yyyy-MM-dd')
+  }
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50/60 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((prev) => !prev)}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-100/60 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+          <CalendarIcon className="w-4 h-4 text-text-secondary" />
+          Previous Visits ({currentVisits.length})
+          {planStart && (
+            <span className="text-xs font-normal text-text-secondary">
+              · current plan since {formatDateValue(planStart.toISOString(), 'MMM d, yyyy')}
+            </span>
+          )}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform duration-150 ${panelOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {panelOpen && (
+        <div className="px-4 pb-4 space-y-2">
+          {visibleVisits.length === 0 ? (
+            <div className="text-sm text-text-secondary py-2">No previous visits on this plan yet</div>
+          ) : (
+            visibleVisits.map((visit) => (
+              <VisitSnapshotRow
+                key={visit.id}
+                visit={visit}
+                isExpanded={expandedVisitIds.has(visit.id)}
+                onToggle={() => toggleVisit(visit.id)}
+                sameDay={(() => {
+                  const key = dayKeyOf(visit)
+                  return key ? sameDayByKey.get(key) : undefined
+                })()}
+                invoices={invoices}
+                payments={payments}
+                visits={visits}
+              />
+            ))
+          )}
+
+          {!showAll && currentVisits.length > PREVIOUS_VISITS_VISIBLE_CAP && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Show all {currentVisits.length}
+            </button>
+          )}
+
+          {earlierVisits.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowEarlier((prev) => !prev)}
+              className="text-xs font-medium text-primary hover:underline block"
+            >
+              {showEarlier ? 'Hide earlier visits' : `Show earlier visits (${earlierVisits.length})`}
+            </button>
+          )}
+
+          {showEarlier && (
+            <div className="pt-2 space-y-2 border-t border-dashed border-gray-200">
+              {earlierVisits.map((visit) => (
+                <VisitSnapshotRow
+                  key={visit.id}
+                  visit={visit}
+                  isExpanded={expandedVisitIds.has(visit.id)}
+                  onToggle={() => toggleVisit(visit.id)}
+                  sameDay={(() => {
+                    const key = dayKeyOf(visit)
+                    return key ? sameDayByKey.get(key) : undefined
+                  })()}
+                  invoices={invoices}
+                  payments={payments}
+                  visits={visits}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function VisitFormModal({
   formData,
   setFormData,
@@ -5665,8 +6073,12 @@ function VisitFormModal({
   payment,
   setPayment,
   dentitionType,
+  visits,
+  prescriptions,
+  payments,
   onSubmit,
   onClose,
+  saving,
 }: any) {
   // Grouping is opt-in per plan-item type so visits with many planned treatments
   // (e.g. a full-mouth plan) don't force a long scroll through one card each —
@@ -5735,6 +6147,14 @@ function VisitFormModal({
         </div>
 
         <form onSubmit={onSubmit} className="p-6 space-y-4">
+          <PreviousVisitsPanel
+            visits={visits}
+            treatments={allTreatments}
+            prescriptions={prescriptions}
+            invoices={invoices}
+            payments={payments}
+          />
+
           <div>
             <label className="block text-sm font-medium mb-1">Chief Complaint</label>
             <SuggestTextInput
@@ -6013,7 +6433,7 @@ function VisitFormModal({
           </div>
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1">Save Visit</Button>
+            <Button type="submit" className="flex-1" disabled={saving}>{saving ? 'Saving...' : 'Save Visit'}</Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
           </div>
         </form>
