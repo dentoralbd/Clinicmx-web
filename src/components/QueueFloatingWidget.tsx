@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Play, Check, ChevronDown, MonitorPlay, PauseCircle, RotateCcw, Flame, X, DoorOpen } from 'lucide-react'
 import {
@@ -24,6 +24,36 @@ function formatBacklog(mins: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+const WIDGET_POS_KEY = 'clinicmx_queue_widget_pos'
+const DRAG_THRESHOLD_PX = 6
+const VIEWPORT_MARGIN_PX = 8
+
+interface WidgetPos {
+  top: number
+  left: number
+}
+
+function clampToViewport(top: number, left: number, width: number, height: number): WidgetPos {
+  const maxLeft = Math.max(VIEWPORT_MARGIN_PX, window.innerWidth - width - VIEWPORT_MARGIN_PX)
+  const maxTop = Math.max(VIEWPORT_MARGIN_PX, window.innerHeight - height - VIEWPORT_MARGIN_PX)
+  return {
+    left: Math.min(Math.max(left, VIEWPORT_MARGIN_PX), maxLeft),
+    top: Math.min(Math.max(top, VIEWPORT_MARGIN_PX), maxTop),
+  }
+}
+
+function loadStoredPos(): WidgetPos | null {
+  try {
+    const raw = localStorage.getItem(WIDGET_POS_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (typeof parsed?.top === 'number' && typeof parsed?.left === 'number') return parsed
+  } catch {
+    // Corrupt/foreign value — fall back to the default corner rather than crash.
+  }
+  return null
+}
+
 export function QueueFloatingWidget() {
   // Hooks run unconditionally, before any early return — the sandbox this
   // was ported from returned null (based on role) ABOVE its useState calls,
@@ -36,10 +66,31 @@ export function QueueFloatingWidget() {
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null)
   const [selectedHoldReason, setSelectedHoldReason] = useState<string>(HOLD_REASONS[0])
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [dragPos, setDragPos] = useState<WidgetPos | null>(loadStoredPos)
   const location = useLocation()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragInfo = useRef<{ startX: number; startY: number; originTop: number; originLeft: number; moved: boolean } | null>(null)
 
   const role = getAppRole()
   const user = getAppUser()
+
+  // Re-clamp whenever the widget's own footprint changes size (collapsed
+  // FAB vs. the much larger expanded panel) or the viewport resizes (phone
+  // rotation) — a position that was valid for the small button could push
+  // the expanded panel partly off-screen otherwise.
+  useEffect(() => {
+    function reclamp() {
+      setDragPos((pos) => {
+        if (!pos || !containerRef.current) return pos
+        const rect = containerRef.current.getBoundingClientRect()
+        const next = clampToViewport(pos.top, pos.left, rect.width, rect.height)
+        return next.top === pos.top && next.left === pos.left ? pos : next
+      })
+    }
+    reclamp()
+    window.addEventListener('resize', reclamp)
+    return () => window.removeEventListener('resize', reclamp)
+  }, [expanded])
 
   useEffect(() => {
     if (role !== 'doctor' && role !== 'admin') return
@@ -83,6 +134,67 @@ export function QueueFloatingWidget() {
   const handleRoomChange = (newRoom: string) => {
     setRoomNumber(newRoom)
     localStorage.setItem('clinicmx_doctor_room', newRoom)
+  }
+
+  // Press-and-drag on the handle repositions the widget; a plain tap (no
+  // real movement) still runs onTap. Distinguishing the two by a movement
+  // threshold — rather than treating pointerdown as an immediate drag — is
+  // what lets a normal tap-to-open/collapse keep working, and what stops a
+  // page-scroll gesture that merely starts on the handle from being
+  // mistaken for a drag.
+  const startDrag = (e: React.PointerEvent, onTap: () => void) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    dragInfo.current = { startX: e.clientX, startY: e.clientY, originTop: rect.top, originLeft: rect.left, moved: false }
+
+    const handleMove = (ev: PointerEvent) => {
+      const info = dragInfo.current
+      if (!info) return
+      const dx = ev.clientX - info.startX
+      const dy = ev.clientY - info.startY
+      if (!info.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+      info.moved = true
+      const currentRect = el.getBoundingClientRect()
+      setDragPos(clampToViewport(info.originTop + dy, info.originLeft + dx, currentRect.width, currentRect.height))
+    }
+
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      const info = dragInfo.current
+      dragInfo.current = null
+      if (info?.moved) {
+        setDragPos((pos) => {
+          if (pos) {
+            try {
+              localStorage.setItem(WIDGET_POS_KEY, JSON.stringify(pos))
+            } catch {
+              // Private browsing / storage full — position just won't persist across reloads.
+            }
+          }
+          return pos
+        })
+      } else {
+        onTap()
+      }
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp, { once: true })
+  }
+
+  // Escape hatch for "dragged it somewhere I can't get back to" (behind the
+  // keyboard, off a small phone's usable area) — double-tap/double-click
+  // the handle to snap back to the default corner.
+  const resetPosition = () => {
+    setDragPos(null)
+    try {
+      localStorage.removeItem(WIDGET_POS_KEY)
+    } catch {
+      // Nothing to clean up if storage isn't available.
+    }
   }
 
   const doctorId = user?.id ?? null
@@ -146,11 +258,17 @@ export function QueueFloatingWidget() {
 
   if (!expanded) {
     return (
-      <div className={`fixed ${bottomOffsetClass} right-6 z-50`}>
+      <div
+        ref={containerRef}
+        className={`fixed z-50 ${dragPos ? '' : `${bottomOffsetClass} right-6`}`}
+        style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
+      >
         <button
-          onClick={() => setExpanded(true)}
-          className="bg-white rounded-full p-4 shadow-elevation-lg border border-gray-200 text-primary hover:bg-gray-50 transition-all flex items-center gap-3 relative group"
-          title="Open Queue Caller"
+          onPointerDown={(e) => startDrag(e, () => setExpanded(true))}
+          onDoubleClick={resetPosition}
+          style={{ touchAction: 'none' }}
+          className="bg-white rounded-full p-4 shadow-elevation-lg border border-gray-200 text-primary hover:bg-gray-50 transition-all flex items-center gap-3 relative group cursor-grab active:cursor-grabbing"
+          title="Open Queue Caller — drag to move, double-tap to reset position"
         >
           <MonitorPlay className="w-6 h-6 text-primary" />
           {waiting.length > 0 && (
@@ -164,10 +282,17 @@ export function QueueFloatingWidget() {
   }
 
   return (
-    <div className={`fixed ${bottomOffsetClass} right-6 z-50 w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}>
+    <div
+      ref={containerRef}
+      className={`fixed z-50 ${dragPos ? '' : `${bottomOffsetClass} right-6`} w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}
+      style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
+    >
       <div
-        className="bg-primary text-white p-3.5 px-4 flex justify-between items-center cursor-pointer shadow-sm"
-        onClick={() => setExpanded(false)}
+        onPointerDown={(e) => startDrag(e, () => setExpanded(false))}
+        onDoubleClick={resetPosition}
+        style={{ touchAction: 'none' }}
+        className="bg-primary text-white p-3.5 px-4 flex justify-between items-center cursor-grab active:cursor-grabbing shadow-sm"
+        title="Drag to move, double-tap to reset position"
       >
         <div className="font-bold text-sm flex items-center gap-2">
           <MonitorPlay className="w-4 h-4" />
