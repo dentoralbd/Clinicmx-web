@@ -19,6 +19,7 @@ export interface TreatmentCatalogItem {
   category_id: string
   name: string
   default_fee: number | null
+  default_duration_mins: number | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -101,12 +102,14 @@ export async function createTreatmentCatalogItem(input: {
   category_id: string
   name: string
   default_fee?: number | null
+  default_duration_mins?: number | null
   sort_order?: number
 }): Promise<TreatmentCatalogItem> {
   const payload = {
     category_id: input.category_id,
     name: input.name.trim(),
     default_fee: input.default_fee ?? null,
+    default_duration_mins: input.default_duration_mins ?? null,
     sort_order: input.sort_order ?? 0,
   }
   const { data, error } = await supabase.from('treatment_catalog_items').insert(payload).select().single()
@@ -118,7 +121,7 @@ export async function createTreatmentCatalogItem(input: {
 export async function updateTreatmentCatalogItem(
   id: string,
   previous: TreatmentCatalogItem,
-  patch: { category_id?: string; name?: string; default_fee?: number | null; sort_order?: number }
+  patch: { category_id?: string; name?: string; default_fee?: number | null; default_duration_mins?: number | null; sort_order?: number }
 ): Promise<void> {
   await logEdit({
     entityType: 'treatment_catalog_item',

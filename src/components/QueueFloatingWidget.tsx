@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Play, Check, ChevronDown, MonitorPlay, PauseCircle, RotateCcw, Flame, X, DoorOpen } from 'lucide-react'
 import {
   getQueueEntries,
@@ -35,6 +36,7 @@ export function QueueFloatingWidget() {
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null)
   const [selectedHoldReason, setSelectedHoldReason] = useState<string>(HOLD_REASONS[0])
   const [busyId, setBusyId] = useState<string | null>(null)
+  const location = useLocation()
 
   const role = getAppRole()
   const user = getAppUser()
@@ -66,6 +68,17 @@ export function QueueFloatingWidget() {
   }, [role])
 
   if (role !== 'doctor' && role !== 'admin') return null
+
+  // bottom-36 clears PatientProfile's own bottom-20 quick-add FAB and the
+  // fixed bottom tab bar beneath it — but this widget is mounted globally
+  // (DashboardLayout renders it on every page), and that extra offset has
+  // no matching bottom bar to clear anywhere else. On pages with normal
+  // scrolling content (e.g. Patient Queue), a fixed bottom-36 instead sits
+  // mid-page and overlaps whatever card happens to scroll underneath it
+  // (found live, 2026-08-16). Scope the taller offset to the one route
+  // that actually needs it.
+  const onPatientProfile = location.pathname.startsWith('/patients/')
+  const bottomOffsetClass = onPatientProfile ? 'bottom-36 md:bottom-6' : 'bottom-6'
 
   const handleRoomChange = (newRoom: string) => {
     setRoomNumber(newRoom)
@@ -131,14 +144,9 @@ export function QueueFloatingWidget() {
     })
   }
 
-  // bottom-36 on mobile clears both PatientProfile's own bottom-20 quick-add
-  // FAB and the fixed bottom tab bar beneath it (PatientProfile.tsx renders
-  // this widget globally via DashboardLayout, so it overlays every page);
-  // md:bottom-6 reverts once neither of those exist on desktop. Found live
-  // 2026-08-15 — a flat bottom-6 covered the Billing tab on mobile.
   if (!expanded) {
     return (
-      <div className="fixed bottom-36 right-6 md:bottom-6 z-50">
+      <div className={`fixed ${bottomOffsetClass} right-6 z-50`}>
         <button
           onClick={() => setExpanded(true)}
           className="bg-white rounded-full p-4 shadow-elevation-lg border border-gray-200 text-primary hover:bg-gray-50 transition-all flex items-center gap-3 relative group"
@@ -156,7 +164,7 @@ export function QueueFloatingWidget() {
   }
 
   return (
-    <div className="fixed bottom-36 right-6 md:bottom-6 z-50 w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200">
+    <div className={`fixed ${bottomOffsetClass} right-6 z-50 w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}>
       <div
         className="bg-primary text-white p-3.5 px-4 flex justify-between items-center cursor-pointer shadow-sm"
         onClick={() => setExpanded(false)}

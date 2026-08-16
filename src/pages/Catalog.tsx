@@ -174,17 +174,20 @@ function ProcedureForm({
 }: {
   categories: CatalogCategory[]
   editing: TreatmentCatalogItem | null
-  onSave: (input: { category_id: string; name: string; default_fee: number | null }) => void
+  onSave: (input: { category_id: string; name: string; default_fee: number | null; default_duration_mins: number | null }) => void
   onCancel: () => void
   isBusy: boolean
 }) {
   const [name, setName] = useState(editing?.name ?? '')
   const [categoryId, setCategoryId] = useState(editing?.category_id ?? categories[0]?.id ?? '')
   const [fee, setFee] = useState(editing?.default_fee != null ? String(editing.default_fee) : '')
+  const [durationMins, setDurationMins] = useState(
+    editing?.default_duration_mins != null ? String(editing.default_duration_mins) : ''
+  )
 
   return (
     <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-      <div className="grid sm:grid-cols-3 gap-2">
+      <div className="grid sm:grid-cols-4 gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -209,6 +212,14 @@ function ProcedureForm({
           inputMode="decimal"
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
         />
+        <input
+          value={durationMins}
+          onChange={(e) => setDurationMins(e.target.value)}
+          placeholder="Chair time, mins (optional)"
+          inputMode="numeric"
+          title="Used to estimate wait times on the Patient Queue"
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        />
       </div>
       <div className="flex items-center gap-2">
         <Button
@@ -220,6 +231,7 @@ function ProcedureForm({
               category_id: categoryId,
               name: name.trim(),
               default_fee: fee.trim() ? Number(fee) : null,
+              default_duration_mins: durationMins.trim() ? Number(durationMins) : null,
             })
           }
         >
@@ -337,6 +349,9 @@ function ProceduresSection() {
                     <span className="text-xs text-gray-500 ml-2">{item.category?.name}</span>
                     {item.default_fee != null && (
                       <span className="text-xs text-gray-500 ml-2">৳{item.default_fee}</span>
+                    )}
+                    {item.default_duration_mins != null && (
+                      <span className="text-xs text-gray-500 ml-2">{item.default_duration_mins}m chair time</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">

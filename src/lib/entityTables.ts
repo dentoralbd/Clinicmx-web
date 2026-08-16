@@ -44,7 +44,7 @@ export const ENTITY_TABLE_COLUMNS: Record<TrackedEntityType, { table: string; co
   },
   treatment_catalog_item: {
     table: 'treatment_catalog_items',
-    columns: ['id', 'category_id', 'name', 'default_fee', 'sort_order', 'created_at', 'updated_at'],
+    columns: ['id', 'category_id', 'name', 'default_fee', 'default_duration_mins', 'sort_order', 'created_at', 'updated_at'],
   },
   custom_medication: {
     table: 'custom_medications',

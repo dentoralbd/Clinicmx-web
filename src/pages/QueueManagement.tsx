@@ -418,7 +418,7 @@ export function QueueManagement() {
               </h3>
               <div className="space-y-2">
                 {onHold.map((e) => (
-                  <div key={e.id} className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50/80 flex items-center justify-between gap-3">
+                  <div key={e.id} className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-amber-500 text-white font-mono font-bold text-sm flex items-center justify-center shrink-0">
                         #{e.serial_number}
@@ -431,7 +431,7 @@ export function QueueManagement() {
                     <button
                       disabled={busyId === e.id}
                       onClick={() => runAction(e.id, () => resumeQueueEntry(e.id))}
-                      className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shrink-0 shadow-sm"
+                      className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1 shrink-0 shadow-sm"
                       title="Call back to doctor's chamber"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -459,7 +459,7 @@ export function QueueManagement() {
                   return (
                     <div
                       key={e.id}
-                      className={`p-3.5 rounded-2xl border bg-white flex items-center justify-between gap-3 transition-all ${
+                      className={`p-3.5 rounded-2xl border bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
                         e.priority === 'urgent' ? 'border-red-300 bg-red-50/30' : 'border-gray-200/80 hover:border-primary/40'
                       }`}
                     >
@@ -490,7 +490,7 @@ export function QueueManagement() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 flex-wrap justify-end md:justify-start shrink-0">
                         <button disabled={idx === 0 || busyId === e.id} onClick={() => handleMove(e, 'up')} className="p-1.5 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-lg disabled:opacity-30 transition-colors" title="Move up">
                           <ArrowUp className="w-3.5 h-3.5" />
                         </button>
@@ -674,6 +674,19 @@ export function QueueManagement() {
                   className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
                 >
                   <option value="">General Consultation</option>
+                  {/* A patient checked in from an appointment carries that
+                      appointment's own procedure type, which may not (yet)
+                      be a catalog item with a set chair time — e.g. before
+                      an admin has filled in Catalog durations, or a legacy
+                      free-text appointment type. Without this, a <select>
+                      whose value doesn't match any <option> silently
+                      displays "General Consultation" even though the real
+                      procedure is still held in state and gets saved
+                      correctly — misleading the receptionist into thinking
+                      the appointment's procedure was lost. */}
+                  {selectedProcedure && !(selectedProcedure in durations) && (
+                    <option value={selectedProcedure}>{selectedProcedure}</option>
+                  )}
                   {Object.keys(durations).map((name) => (
                     <option key={name} value={name}>
                       {name} ({durations[name]}m)
