@@ -26,6 +26,7 @@ import {
   Repeat,
   Power,
   RefreshCw,
+  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
@@ -121,6 +122,7 @@ export function ClinicExpensesSection() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey())
   const [categoryFilter, setCategoryFilter] = useState<ClinicExpenseCategory | 'ALL'>('ALL')
   const [expenseTab, setExpenseTab] = useState<'other' | 'recurring'>('other')
+  const [expenseSearch, setExpenseSearch] = useState('')
 
   const [expenseModal, setExpenseModal] = useState<'create' | 'edit' | null>(null)
   const [editingExpense, setEditingExpense] = useState<ClinicExpenseRecord | null>(null)
@@ -221,10 +223,26 @@ export function ClinicExpensesSection() {
     [summary]
   )
 
-  const filteredOtherExpenses = useMemo(
-    () => (categoryFilter === 'ALL' ? otherThisMonth : otherThisMonth.filter((e) => e.category === categoryFilter)),
-    [otherThisMonth, categoryFilter]
-  )
+  const isSearching = expenseSearch.trim().length > 0
+
+  const filteredOtherExpenses = useMemo(() => {
+    // A search query looks across every saved expense (not just the selected
+    // month) since the point of searching is usually "which month was this
+    // in?" — the month/category filters still narrow it further if set.
+    const source = isSearching ? expenses : otherThisMonth
+    const byCategory = categoryFilter === 'ALL' ? source : source.filter((e) => e.category === categoryFilter)
+    if (!isSearching) return byCategory
+    const q = expenseSearch.trim().toLowerCase()
+    return byCategory.filter(
+      (e) =>
+        e.description.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        (e.vendor || '').toLowerCase().includes(q) ||
+        (e.notes || '').toLowerCase().includes(q) ||
+        String(e.amount).includes(q) ||
+        e.expense_date.includes(q)
+    )
+  }, [expenses, otherThisMonth, categoryFilter, isSearching, expenseSearch])
 
   function openCreateModal() {
     setEditingExpense(null)
@@ -474,6 +492,19 @@ export function ClinicExpensesSection() {
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">Instrument/material purchases, machine repairs, and any other special expense — including generated recurring entries.</p>
             </div>
+            <div className="w-full sm:w-64">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={expenseSearch}
+                  onChange={(e) => setExpenseSearch(e.target.value)}
+                  placeholder="Search description, vendor, notes, amount..."
+                  className="w-full text-xs pl-8 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              {isSearching && <p className="text-[10px] text-slate-400 mt-1">Searching all months, not just {selectedMonth}</p>}
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
@@ -505,7 +536,11 @@ export function ClinicExpensesSection() {
           </div>
 
           {filteredOtherExpenses.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500">No other expenses recorded for {selectedMonth}{categoryFilter !== 'ALL' ? ` in "${categoryFilter}"` : ''}.</div>
+            <div className="p-8 text-center text-xs text-slate-500">
+              {isSearching
+                ? `No expenses match "${expenseSearch.trim()}"${categoryFilter !== 'ALL' ? ` in "${categoryFilter}"` : ''}.`
+                : `No other expenses recorded for ${selectedMonth}${categoryFilter !== 'ALL' ? ` in "${categoryFilter}"` : ''}.`}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
