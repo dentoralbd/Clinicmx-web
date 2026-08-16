@@ -532,7 +532,10 @@ export function ClinicExpensesSection() {
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 font-medium text-slate-800">{expense.description}</td>
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-slate-800">{expense.description}</p>
+                        {expense.notes && <p className="text-xs text-slate-400 mt-0.5">{expense.notes}</p>}
+                      </td>
                       <td className="px-5 py-3 text-slate-500">{expense.vendor || '-'}</td>
                       <td className="px-5 py-3 text-slate-500">{new Date(expense.expense_date).toLocaleDateString()}</td>
                       <td className="px-5 py-3 text-right font-semibold text-slate-800">{formatBDT(expense.amount)}</td>
@@ -600,7 +603,10 @@ export function ClinicExpensesSection() {
                           {item.category}
                         </span>
                       </td>
-                      <td className="px-5 py-3 font-medium text-slate-800">{item.description}</td>
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-slate-800">{item.description}</p>
+                        {item.notes && <p className="text-xs text-slate-400 mt-0.5">{item.notes}</p>}
+                      </td>
                       <td className="px-5 py-3 text-slate-500">{item.vendor || '-'}</td>
                       <td className="px-5 py-3 text-right font-semibold text-slate-800">{formatBDT(item.amount)}</td>
                       <td className="px-5 py-3 text-center">
