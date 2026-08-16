@@ -36,6 +36,13 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     .order('date_time')
     .limit(5)
 
+  const { count: todayAppointmentsCount } = await supabase
+    .from('appointments')
+    .select('*', { count: 'exact', head: true })
+    .gte('date_time', todayStart.toISOString())
+    .lte('date_time', todayEnd.toISOString())
+    .neq('status', 'Cancelled')
+
   // Pending Bills = any non-Merged invoice with a due balance (includes Partial).
   // Revenue = payments ledger rows dated this month, i.e. cash actually collected
   // this month regardless of when the invoice was raised (matches the Analytics
@@ -69,7 +76,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
   return {
     stats: {
       totalPatients: patientsCount || 0,
-      todayAppointments: appointments?.length || 0,
+      todayAppointments: todayAppointmentsCount || 0,
       pendingInvoices: pendingCount || 0,
       monthRevenue: revenue,
     },
