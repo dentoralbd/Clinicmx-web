@@ -76,6 +76,8 @@ export function QueueDisplay() {
   const [showQr, setShowQr] = useState(false)
   const [slides, setSlides] = useState<QueueSlide[]>(DEFAULT_QUEUE_SLIDES)
   const [slideIndex, setSlideIndex] = useState(0)
+  const [notices, setNotices] = useState<string[]>([])
+  const [ticker, setTicker] = useState('')
   const announcedIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -165,6 +167,8 @@ export function QueueDisplay() {
             href: /^https?:\/\//.test(s.href) ? s.href : `https://dentoralbd.com/${s.href.replace(/^\//, '')}`,
           }))
           setSlides(resolved)
+          setNotices(Array.isArray(config.clinicNotices) ? config.clinicNotices.filter(Boolean) : [])
+          setTicker(typeof config.announcementTicker === 'string' ? config.announcementTicker.trim() : '')
         })
         .catch(() => {
           // Keep whatever slides are already showing — a fetch failure
@@ -227,100 +231,135 @@ export function QueueDisplay() {
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[1.3fr,1fr]">
-        <div>
-          <div className="text-sm uppercase tracking-widest text-emerald-400 font-bold mb-3">Now Serving</div>
-          {serving.length === 0 && onHold.length === 0 ? (
-            <div className="text-4xl font-black text-gray-600 py-16 text-center border-2 border-dashed border-gray-800 rounded-3xl">
-              — Waiting for next patient —
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {serving.map((e) => (
-                <div key={e.id} className="bg-emerald-500/10 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl">
-                  <div className="text-5xl font-black tracking-tight">{formatPatientDisplay(e, privacyMode)}</div>
-                  <div className="mt-2 text-lg text-emerald-300 font-semibold">
-                    {e.procedure_name || 'Consultation'} {e.room_number ? `· ${e.room_number}` : ''}
-                  </div>
-                </div>
-              ))}
-              {onHold.map((e) => (
-                <div key={e.id} className="bg-amber-500/10 border border-amber-500/40 rounded-3xl p-5">
-                  <div className="text-3xl font-bold">{formatPatientDisplay(e, privacyMode)}</div>
-                  <div className="mt-1 text-amber-300 font-medium">{e.hold_reason} — in preparation</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="text-sm uppercase tracking-widest text-gray-400 font-bold mb-3">Next in Line</div>
-          <div className="space-y-2">
-            {waiting.length === 0 && <div className="text-gray-600 text-lg">Queue is empty</div>}
-            {waiting.map((e) => {
-              const eta = etaById.get(e.id)
-              return (
-                <div key={e.id} className="flex items-center justify-between bg-white/5 rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-mono font-bold text-sm">
-                      {positions.get(e.id)}
-                    </span>
-                    <div>
-                      <div className="font-semibold">{formatPatientDisplay(e, privacyMode)}</div>
-                      <div className="text-xs text-gray-400">{e.procedure_name || 'Consultation'}</div>
+      <div className="grid gap-8 lg:grid-cols-[1.2fr,1fr] items-start">
+        <div className="flex flex-col gap-8">
+          <div>
+            <div className="text-sm uppercase tracking-widest text-emerald-400 font-bold mb-3">Now Serving</div>
+            {serving.length === 0 && onHold.length === 0 ? (
+              <div className="text-4xl font-black text-gray-600 py-16 text-center border-2 border-dashed border-gray-800 rounded-3xl">
+                — Waiting for next patient —
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {serving.map((e) => (
+                  <div key={e.id} className="bg-emerald-500/10 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl">
+                    <div className="text-5xl font-black tracking-tight">{formatPatientDisplay(e, privacyMode)}</div>
+                    <div className="mt-2 text-lg text-emerald-300 font-semibold">
+                      {e.procedure_name || 'Consultation'} {e.room_number ? `· ${e.room_number}` : ''}
                     </div>
                   </div>
-                  {eta && <div className="text-sm text-teal-300 font-mono">~{eta.etaMinutesFromNow}m</div>}
-                </div>
-              )
-            })}
+                ))}
+                {onHold.map((e) => (
+                  <div key={e.id} className="bg-amber-500/10 border border-amber-500/40 rounded-3xl p-5">
+                    <div className="text-3xl font-bold">{formatPatientDisplay(e, privacyMode)}</div>
+                    <div className="mt-1 text-amber-300 font-medium">{e.hold_reason} — in preparation</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          <div>
+            <div className="text-sm uppercase tracking-widest text-gray-400 font-bold mb-3">Next in Line</div>
+            <div className="space-y-2">
+              {waiting.length === 0 && <div className="text-gray-600 text-lg">Queue is empty</div>}
+              {waiting.map((e) => {
+                const eta = etaById.get(e.id)
+                return (
+                  <div key={e.id} className="flex items-center justify-between bg-white/5 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-mono font-bold text-sm">
+                        {positions.get(e.id)}
+                      </span>
+                      <div>
+                        <div className="font-semibold">{formatPatientDisplay(e, privacyMode)}</div>
+                        <div className="text-xs text-gray-400">{e.procedure_name || 'Consultation'}</div>
+                      </div>
+                    </div>
+                    {eta && <div className="text-sm text-teal-300 font-mono">~{eta.etaMinutesFromNow}m</div>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-8">
+          {infotainmentEnabled && slides.length > 0 && slides[slideIndex] && (
+            <div
+              className={`relative min-h-[9.5rem] rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br ${
+                SLIDE_THEME_CLASSES[slides[slideIndex].theme ?? 'teal']
+              }`}
+            >
+              {/* key={slideIndex} forces remount on rotation so the fade-in
+                  animation replays each time, rather than a single element's
+                  text just changing in place with no transition. */}
+              <a
+                key={slideIndex}
+                href={slides[slideIndex].href}
+                target="_blank"
+                rel="noreferrer"
+                className="block p-7 pb-10 text-inherit no-underline hover:brightness-110 transition-all animate-in fade-in slide-in-from-bottom-1 duration-500"
+              >
+                {slides[slideIndex].category && (
+                  <span className="inline-block text-[11px] font-bold uppercase tracking-wide text-white bg-white/20 px-2.5 py-1 rounded-full mb-3">
+                    {slides[slideIndex].category}
+                  </span>
+                )}
+                <h3 className="text-xl font-bold text-white max-w-[75%]">{slides[slideIndex].title}</h3>
+                <p className="mt-1 text-sm text-white/85 leading-relaxed max-w-[75%]">{slides[slideIndex].blurb}</p>
+                <span className="absolute top-6 right-7 text-white/30">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-9 h-9">
+                    <path d="M12 5c-2.5 0-4.5 2-4.5 4.5 0 3 1.5 4 1.5 7.5 0 1 .5 2 1.5 2s1.5-1 1.5-2c0-1 .3-1.5 1-1.5s1 .5 1 1.5c0 1 .5 2 1.5 2s1.5-1 1.5-2c0-3.5 1.5-4.5 1.5-7.5C16.5 7 14.5 5 12 5z" />
+                  </svg>
+                </span>
+                <span className="absolute bottom-3.5 right-7 text-[11px] font-semibold text-white/55">DentOral BD</span>
+              </a>
+              {slides.length > 1 && (
+                <div className="absolute bottom-4 left-7 flex gap-1.5">
+                  {slides.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 rounded-full transition-all duration-500 ${
+                        i === slideIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/35'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {notices.length > 0 && (
+            <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-6">
+              <div className="text-sm uppercase tracking-widest text-gray-400 font-bold mb-4">Clinic Notices</div>
+              <ul className="space-y-3">
+                {notices.map((n, i) => (
+                  <li key={i} className="relative pl-4 text-sm leading-relaxed text-gray-200">
+                    <span className="absolute left-0 top-2 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
-      {infotainmentEnabled && slides.length > 0 && slides[slideIndex] && (
-        <div
-          className={`relative min-h-[9.5rem] rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br ${
-            SLIDE_THEME_CLASSES[slides[slideIndex].theme ?? 'teal']
-          }`}
-        >
-          {/* key={slideIndex} forces remount on rotation so the fade-in
-              animation replays each time, rather than a single element's
-              text just changing in place with no transition. */}
-          <a
-            key={slideIndex}
-            href={slides[slideIndex].href}
-            target="_blank"
-            rel="noreferrer"
-            className="block p-7 pb-10 text-inherit no-underline hover:brightness-110 transition-all animate-in fade-in slide-in-from-bottom-1 duration-500"
+      {ticker && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 py-3 overflow-hidden whitespace-nowrap">
+          <div
+            className="inline-block font-bold text-sm text-amber-300"
+            style={{ paddingLeft: '100%', animation: 'queue-ticker-scroll 26s linear infinite' }}
           >
-            {slides[slideIndex].category && (
-              <span className="inline-block text-[11px] font-bold uppercase tracking-wide text-white bg-white/20 px-2.5 py-1 rounded-full mb-3">
-                {slides[slideIndex].category}
-              </span>
-            )}
-            <h3 className="text-xl font-bold text-white max-w-[75%]">{slides[slideIndex].title}</h3>
-            <p className="mt-1 text-sm text-white/85 leading-relaxed max-w-[75%]">{slides[slideIndex].blurb}</p>
-            <span className="absolute top-6 right-7 text-white/30">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-9 h-9">
-                <path d="M12 5c-2.5 0-4.5 2-4.5 4.5 0 3 1.5 4 1.5 7.5 0 1 .5 2 1.5 2s1.5-1 1.5-2c0-1 .3-1.5 1-1.5s1 .5 1 1.5c0 1 .5 2 1.5 2s1.5-1 1.5-2c0-3.5 1.5-4.5 1.5-7.5C16.5 7 14.5 5 12 5z" />
-              </svg>
-            </span>
-            <span className="absolute bottom-3.5 right-7 text-[11px] font-semibold text-white/55">DentOral BD</span>
-          </a>
-          {slides.length > 1 && (
-            <div className="absolute bottom-4 left-7 flex gap-1.5">
-              {slides.map((_, i) => (
-                <span
-                  key={i}
-                  className={`h-1.5 rounded-full transition-all duration-500 ${
-                    i === slideIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/35'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
+            {ticker}
+          </div>
+          <style>{`
+            @keyframes queue-ticker-scroll {
+              0% { transform: translateX(0); }
+              100% { transform: translateX(-100%); }
+            }
+          `}</style>
         </div>
       )}
 

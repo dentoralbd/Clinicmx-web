@@ -562,11 +562,6 @@ export function QueueManagement() {
           <p className="text-xs text-text-secondary">Walk-in or registered check-in</p>
         </div>
         <div className="p-5 flex-1 overflow-y-auto space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-text-primary">Add Patient to Queue</h2>
-            <p className="text-xs text-text-muted">Walk-in or registered check-in</p>
-          </div>
-
           {/* Step 1: patient */}
           <div>
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">1. Select Patient</h3>
