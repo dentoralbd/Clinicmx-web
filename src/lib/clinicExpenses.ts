@@ -2,10 +2,16 @@ import { supabase } from '@/lib/supabase'
 import { csvCell } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
 
+// One-off categories plus the recurring-template categories (Rent/Utilities/
+// Subscription — see recurringExpenses.ts) that a generated row can carry.
+// clinic_expenses' CHECK constraint (migration 062) accepts this full union.
 export const CLINIC_EXPENSE_CATEGORIES = [
   'Instrument Purchase',
   'Material Purchase',
   'Machine Repair',
+  'Rent',
+  'Utilities',
+  'Subscription',
   'Other',
 ] as const
 export type ClinicExpenseCategory = (typeof CLINIC_EXPENSE_CATEGORIES)[number]
@@ -19,12 +25,13 @@ export interface ClinicExpenseRecord {
   vendor: string | null
   notes: string | null
   created_by: string | null
+  recurring_expense_id: string | null
   created_at: string
   updated_at: string
 }
 
 const EXPENSE_COLUMNS =
-  'id, category, description, amount, expense_date, vendor, notes, created_by, created_at, updated_at'
+  'id, category, description, amount, expense_date, vendor, notes, created_by, recurring_expense_id, created_at, updated_at'
 
 export async function listExpenses(): Promise<ClinicExpenseRecord[]> {
   const { data, error } = await supabase

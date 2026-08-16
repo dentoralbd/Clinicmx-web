@@ -23,6 +23,9 @@ import {
   X,
   TrendingUp,
   TrendingDown,
+  Repeat,
+  Power,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatBDT } from '@/lib/utils'
@@ -44,6 +47,17 @@ import {
   type ClinicExpenseCategory,
   type ClinicExpensesSummary,
 } from '@/lib/clinicExpenses'
+import {
+  RECURRING_EXPENSE_CATEGORIES,
+  listRecurringExpenses,
+  createRecurringExpense,
+  updateRecurringExpense,
+  setRecurringExpenseActive,
+  deleteRecurringExpense,
+  generateRecurringExpensesForMonth,
+  type RecurringExpenseRecord,
+  type RecurringExpenseCategory,
+} from '@/lib/recurringExpenses'
 import { ChartCard, ChartEmptyState, CHART_COLORS, formatBDTCompact, TOOLTIP_ITEM_STYLE } from '@/components/analytics/ChartCard'
 
 const PAGE_SIZE = 1000
@@ -80,6 +94,16 @@ function emptyExpenseForm() {
   }
 }
 
+function emptyRecurringForm() {
+  return {
+    category: 'Rent' as RecurringExpenseCategory,
+    description: '',
+    amount: '',
+    vendor: '',
+    notes: '',
+  }
+}
+
 export function ClinicExpensesSection() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [treatments, setTreatments] = useState<any[]>([])
@@ -89,12 +113,14 @@ export function ClinicExpensesSection() {
   const [staff, setStaff] = useState<StaffRecord[]>([])
   const [staffPayments, setStaffPayments] = useState<StaffSalaryPayment[]>([])
   const [expenses, setExpenses] = useState<ClinicExpenseRecord[]>([])
+  const [recurring, setRecurring] = useState<RecurringExpenseRecord[]>([])
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey())
   const [categoryFilter, setCategoryFilter] = useState<ClinicExpenseCategory | 'ALL'>('ALL')
+  const [expenseTab, setExpenseTab] = useState<'other' | 'recurring'>('other')
 
   const [expenseModal, setExpenseModal] = useState<'create' | 'edit' | null>(null)
   const [editingExpense, setEditingExpense] = useState<ClinicExpenseRecord | null>(null)
@@ -102,6 +128,14 @@ export function ClinicExpensesSection() {
   const [expenseFormError, setExpenseFormError] = useState('')
   const [expenseSaving, setExpenseSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ClinicExpenseRecord | null>(null)
+
+  const [recurringModal, setRecurringModal] = useState<'create' | 'edit' | null>(null)
+  const [editingRecurring, setEditingRecurring] = useState<RecurringExpenseRecord | null>(null)
+  const [recurringForm, setRecurringForm] = useState(emptyRecurringForm())
+  const [recurringFormError, setRecurringFormError] = useState('')
+  const [recurringSaving, setRecurringSaving] = useState(false)
+  const [recurringDeleteTarget, setRecurringDeleteTarget] = useState<RecurringExpenseRecord | null>(null)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     loadAll()
@@ -111,7 +145,7 @@ export function ClinicExpensesSection() {
     try {
       setLoading(true)
       setLoadError(null)
-      const [invoiceRows, treatmentRows, patientRows, paymentRows, labWorkRows, staffRows, staffPaymentRows, expenseRows] = await Promise.all([
+      const [invoiceRows, treatmentRows, patientRows, paymentRows, labWorkRows, staffRows, staffPaymentRows, expenseRows, recurringRows] = await Promise.all([
         fetchAllRowsSafe<any>('invoices', (q) => q.neq('status', 'Merged')),
         fetchAllRowsSafe<any>('treatments'),
         fetchAllRowsSafe<any>('patients'),
@@ -120,6 +154,7 @@ export function ClinicExpensesSection() {
         listStaff(),
         listSalaryPayments(),
         listExpenses(),
+        listRecurringExpenses(),
       ])
       setInvoices(invoiceRows)
       setTreatments(treatmentRows)
@@ -129,6 +164,7 @@ export function ClinicExpensesSection() {
       setStaff(staffRows)
       setStaffPayments(staffPaymentRows)
       setExpenses(expenseRows)
+      setRecurring(recurringRows)
     } catch (err) {
       console.error('Error loading clinic expenses:', err)
       setLoadError(
@@ -262,6 +298,95 @@ export function ClinicExpensesSection() {
     exportClinicExpensesCSV(summary, otherThisMonth)
   }
 
+  const activeRecurring = useMemo(() => recurring.filter((r) => r.is_active), [recurring])
+
+  function openCreateRecurringModal() {
+    setEditingRecurring(null)
+    setRecurringForm(emptyRecurringForm())
+    setRecurringFormError('')
+    setRecurringModal('create')
+  }
+
+  function openEditRecurringModal(item: RecurringExpenseRecord) {
+    setEditingRecurring(item)
+    setRecurringForm({
+      category: item.category,
+      description: item.description,
+      amount: String(item.amount),
+      vendor: item.vendor || '',
+      notes: item.notes || '',
+    })
+    setRecurringFormError('')
+    setRecurringModal('edit')
+  }
+
+  async function handleRecurringSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const amount = Number(recurringForm.amount)
+    if (!recurringForm.description.trim()) {
+      setRecurringFormError('Description is required.')
+      return
+    }
+    if (!amount || amount <= 0) {
+      setRecurringFormError('Amount must be greater than 0.')
+      return
+    }
+    setRecurringSaving(true)
+    setRecurringFormError('')
+    try {
+      const input = {
+        category: recurringForm.category,
+        description: recurringForm.description,
+        amount,
+        vendor: recurringForm.vendor || null,
+        notes: recurringForm.notes || null,
+      }
+      if (recurringModal === 'edit' && editingRecurring) {
+        await updateRecurringExpense(editingRecurring.id, input)
+      } else {
+        await createRecurringExpense(input)
+      }
+      setRecurring(await listRecurringExpenses())
+      setRecurringModal(null)
+    } catch (err) {
+      setRecurringFormError(err instanceof Error ? err.message : 'Failed to save recurring expense.')
+    } finally {
+      setRecurringSaving(false)
+    }
+  }
+
+  async function handleToggleRecurringActive(item: RecurringExpenseRecord) {
+    try {
+      await setRecurringExpenseActive(item.id, !item.is_active, item.description)
+      setRecurring(await listRecurringExpenses())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update recurring expense.')
+    }
+  }
+
+  async function handleDeleteRecurringConfirm() {
+    if (!recurringDeleteTarget) return
+    try {
+      await deleteRecurringExpense(recurringDeleteTarget.id, recurringDeleteTarget.description)
+      setRecurring(await listRecurringExpenses())
+      setRecurringDeleteTarget(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete recurring expense.')
+    }
+  }
+
+  async function handleGenerateMonth() {
+    try {
+      setGenerating(true)
+      await generateRecurringExpensesForMonth(selectedMonth, activeRecurring)
+      setExpenses(await listExpenses())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to generate month.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full min-h-[40vh]">
@@ -335,88 +460,175 @@ export function ClinicExpensesSection() {
         )}
       </ChartCard>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-teal-600" /> Other Expenses
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">Instrument/material purchases, machine repairs, and any other special expense.</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('ALL')}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                  categoryFilter === 'ALL' ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-gray-200 text-slate-600 hover:border-teal-300'
-                }`}
-              >
-                All
-              </button>
-              {CLINIC_EXPENSE_CATEGORIES.map((c) => (
+      <div className="flex items-center gap-2 border-b border-gray-200 flex-wrap">
+        <InnerTabButton active={expenseTab === 'other'} onClick={() => setExpenseTab('other')} icon={<Receipt className="w-4 h-4" />} label="Other Expenses" />
+        <InnerTabButton active={expenseTab === 'recurring'} onClick={() => setExpenseTab('recurring')} icon={<Repeat className="w-4 h-4" />} label="Recurring Expenses" />
+      </div>
+
+      {expenseTab === 'other' && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-teal-600" /> Other Expenses
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Instrument/material purchases, machine repairs, and any other special expense — including generated recurring entries.</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
-                  key={c}
                   type="button"
-                  onClick={() => setCategoryFilter(c)}
+                  onClick={() => setCategoryFilter('ALL')}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    categoryFilter === c ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-gray-200 text-slate-600 hover:border-teal-300'
+                    categoryFilter === 'ALL' ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-gray-200 text-slate-600 hover:border-teal-300'
                   }`}
                 >
-                  {c}
+                  All
                 </button>
-              ))}
-            </div>
-            <Button size="sm" onClick={openCreateModal} className="bg-teal-600 hover:bg-teal-700 text-white text-xs">
-              <Plus className="w-4 h-4 mr-1.5" /> Add Expense
-            </Button>
-          </div>
-        </div>
-
-        {filteredOtherExpenses.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500">No other expenses recorded for {selectedMonth}{categoryFilter !== 'ALL' ? ` in "${categoryFilter}"` : ''}.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-semibold">
-                <tr>
-                  <th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3">Description</th>
-                  <th className="px-5 py-3">Vendor</th>
-                  <th className="px-5 py-3">Date</th>
-                  <th className="px-5 py-3 text-right">Amount</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredOtherExpenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-5 py-3">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
-                        {expense.category}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 font-medium text-slate-800">{expense.description}</td>
-                    <td className="px-5 py-3 text-slate-500">{expense.vendor || '-'}</td>
-                    <td className="px-5 py-3 text-slate-500">{new Date(expense.expense_date).toLocaleDateString()}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-800">{formatBDT(expense.amount)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEditModal(expense)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Edit">
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setDeleteTarget(expense)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors" title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                {CLINIC_EXPENSE_CATEGORIES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCategoryFilter(c)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                      categoryFilter === c ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-gray-200 text-slate-600 hover:border-teal-300'
+                    }`}
+                  >
+                    {c}
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </div>
+              <Button size="sm" onClick={openCreateModal} className="bg-teal-600 hover:bg-teal-700 text-white text-xs">
+                <Plus className="w-4 h-4 mr-1.5" /> Add Expense
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+
+          {filteredOtherExpenses.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">No other expenses recorded for {selectedMonth}{categoryFilter !== 'ALL' ? ` in "${categoryFilter}"` : ''}.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-semibold">
+                  <tr>
+                    <th className="px-5 py-3">Category</th>
+                    <th className="px-5 py-3">Description</th>
+                    <th className="px-5 py-3">Vendor</th>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3 text-right">Amount</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredOtherExpenses.map((expense) => (
+                    <tr key={expense.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-5 py-3">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                          {expense.category}
+                        </span>
+                        {expense.recurring_expense_id && (
+                          <span className="ml-1.5 px-2 py-1 rounded-full text-xs font-medium bg-teal-50 text-teal-700 border border-teal-100 inline-flex items-center gap-1">
+                            <Repeat className="w-3 h-3" /> Recurring
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 font-medium text-slate-800">{expense.description}</td>
+                      <td className="px-5 py-3 text-slate-500">{expense.vendor || '-'}</td>
+                      <td className="px-5 py-3 text-slate-500">{new Date(expense.expense_date).toLocaleDateString()}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-800">{formatBDT(expense.amount)}</td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => openEditModal(expense)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Edit">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setDeleteTarget(expense)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors" title="Delete">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {expenseTab === 'recurring' && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-teal-600" /> Recurring Expenses
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Monthly bills like rent, electricity, and subscriptions. Generate the month to create this month's entries below in Other Expenses.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={handleGenerateMonth} disabled={generating || activeRecurring.length === 0} className="text-xs">
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${generating ? 'animate-spin' : ''}`} />
+                {generating ? 'Generating…' : `Generate ${selectedMonth}`}
+              </Button>
+              <Button size="sm" onClick={openCreateRecurringModal} className="bg-teal-600 hover:bg-teal-700 text-white text-xs">
+                <Plus className="w-4 h-4 mr-1.5" /> Add Recurring Expense
+              </Button>
+            </div>
+          </div>
+
+          {recurring.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">No recurring expenses set up yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-semibold">
+                  <tr>
+                    <th className="px-5 py-3">Category</th>
+                    <th className="px-5 py-3">Description</th>
+                    <th className="px-5 py-3">Vendor</th>
+                    <th className="px-5 py-3 text-right">Amount / Month</th>
+                    <th className="px-5 py-3 text-center">Status</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {recurring.map((item) => (
+                    <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${!item.is_active ? 'opacity-50' : ''}`}>
+                      <td className="px-5 py-3">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-100">
+                          {item.category}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 font-medium text-slate-800">{item.description}</td>
+                      <td className="px-5 py-3 text-slate-500">{item.vendor || '-'}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-800">{formatBDT(item.amount)}</td>
+                      <td className="px-5 py-3 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${item.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                          {item.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => handleToggleRecurringActive(item)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={item.is_active ? 'Mark inactive' : 'Mark active'}>
+                            <Power className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openEditRecurringModal(item)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Edit">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setRecurringDeleteTarget(item)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors" title="Delete">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {expenseModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -527,6 +739,105 @@ export function ClinicExpensesSection() {
           </div>
         </div>
       )}
+
+      {recurringModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full my-8 max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-display text-lg font-bold">{recurringModal === 'edit' ? 'Edit Recurring Expense' : 'Add Recurring Expense'}</h2>
+              <button type="button" onClick={() => setRecurringModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleRecurringSubmit} className="p-5 space-y-3">
+              {recurringFormError && <p className="text-xs text-red-600 font-medium">{recurringFormError}</p>}
+              <div>
+                <label className="block text-sm font-medium mb-1">Category *</label>
+                <select
+                  value={recurringForm.category}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, category: e.target.value as RecurringExpenseCategory })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                >
+                  {RECURRING_EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Description *</label>
+                <input
+                  type="text"
+                  required
+                  value={recurringForm.description}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="e.g. Clinic space rent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Amount / Month (BDT) *</label>
+                <input
+                  type="number"
+                  required
+                  min="0.01"
+                  step="0.01"
+                  value={recurringForm.amount}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Vendor / Payee</label>
+                <input
+                  type="text"
+                  value={recurringForm.vendor}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, vendor: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Notes</label>
+                <textarea
+                  value={recurringForm.notes}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setRecurringModal(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={recurringSaving} className="bg-teal-600 hover:bg-teal-700 text-white">
+                  {recurringSaving ? 'Saving…' : 'Save Recurring Expense'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {recurringDeleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5">
+            <h2 className="font-display text-lg font-bold mb-2">Delete Recurring Expense?</h2>
+            <p className="text-sm text-slate-600 mb-4">
+              This will stop "{recurringDeleteTarget.description}" ({formatBDT(recurringDeleteTarget.amount)}/mo) from being generated in future months.
+              Any months already generated stay in Other Expenses.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setRecurringDeleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleDeleteRecurringConfirm} className="bg-red-600 hover:bg-red-700 text-white">
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -538,5 +849,19 @@ function KpiTile({ icon, label, value, accent }: { icon: React.ReactNode; label:
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
       <p className="text-lg font-display font-bold text-slate-900 mt-0.5">{value}</p>
     </div>
+  )
+}
+
+function InnerTabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+        active ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {icon} {label}
+    </button>
   )
 }

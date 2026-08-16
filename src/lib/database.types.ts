@@ -336,6 +336,7 @@ export interface Database {
           vendor: string | null
           notes: string | null
           created_by: string | null
+          recurring_expense_id: string | null
           created_at: string
           updated_at: string
         }
@@ -348,6 +349,7 @@ export interface Database {
           vendor?: string | null
           notes?: string | null
           created_by?: string | null
+          recurring_expense_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -360,6 +362,51 @@ export interface Database {
           vendor?: string | null
           notes?: string | null
           created_by?: string | null
+          recurring_expense_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'clinic_expenses_recurring_expense_id_fkey'
+            columns: ['recurring_expense_id']
+            isOneToOne: false
+            referencedRelation: 'recurring_expenses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      recurring_expenses: {
+        Row: {
+          id: string
+          category: string
+          description: string
+          amount: number
+          vendor: string | null
+          notes: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category: string
+          description: string
+          amount: number
+          vendor?: string | null
+          notes?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          category?: string
+          description?: string
+          amount?: number
+          vendor?: string | null
+          notes?: string | null
+          is_active?: boolean
           created_at?: string
           updated_at?: string
         }

@@ -262,7 +262,7 @@ calculations:
 - Export: CSV and PDF, both following whichever view (Statement/Detailed) is currently active on
   screen, so the downloaded file always matches what was visible when it was generated.
 
-### 15b-vi. Clinic Expenses tab (admin-only, added 2026-08-11, migration 059)
+### 15b-vi. Clinic Expenses tab (admin-only, added 2026-08-11, migration 059; Recurring Expenses sub-menu added 2026-08-11, migration 062)
 
 Fulfills the "Expense tracking / cashbook alongside income reports" line from PRODUCT-ROADMAP.md.
 Rolls up four cash-basis expense lines for a selected month into a Total Expenses figure and a
@@ -295,6 +295,36 @@ tabs — kept `DoctorAnalytics.tsx` untouched rather than lifting its fetch into
 - No new route, no new sidebar entry — this stays a tab inside `/financial-analysis`. No new
   grantable permission flag; admin-only is a plain role check, matching HR & Payroll's gate rather
   than the more permissive `canAccessDoctorAnalytics()` flag that gates the sibling tab.
+
+#### Recurring Expenses sub-menu (inner tab, added 2026-08-11, migration 062)
+
+A second in-page tab nested inside Clinic Expenses (`Other Expenses` / `Recurring Expenses`, same
+`useState` + underline-tab pattern one level up) for monthly-repeating bills — rent, electricity,
+subscriptions — that would otherwise mean re-entering the same one-off expense every month.
+
+- New `recurring_expenses` table (migration 062), admin-only RLS, same `is_app_admin()` pattern as
+  `clinic_expenses`. A row is a **template**, not an expense: `category` (`Rent`, `Utilities`,
+  `Subscription`, `Other` — a separate fixed list from Other Expenses' four categories, since rent
+  isn't an instrument purchase), `description`, `amount`/month, optional `vendor`/`notes`,
+  `is_active` (soft-disable without losing history — matches `staff.is_active`).
+- **"Generate `<month>`"** button (`generateRecurringExpensesForMonth`, `src/lib/recurringExpenses.ts`)
+  creates one real `clinic_expenses` row per active template, dated the 1st of the selected month,
+  tagged via a new `clinic_expenses.recurring_expense_id` column — from that point on it's an
+  ordinary `clinic_expenses` row (editable/deletable in the Other Expenses tab like any other, shown
+  there with a "Recurring" badge), so the recurring and one-off ledgers stay unified instead of
+  duplicating totals logic. Idempotent: `UNIQUE (recurring_expense_id, expense_date)` on
+  `clinic_expenses` + an `upsert(..., { ignoreDuplicates: true })` means re-clicking "Generate" for a
+  month that's already been generated is a safe no-op — directly mirrors `staff.ts`'s
+  `ensureMonthRows()`/`staff_salary_payments` `UNIQUE(staff_id, period_month)` pattern.
+- `clinic_expenses.category`'s CHECK constraint was widened (migration 062) to accept both the
+  one-off categories and the three recurring-only ones, so a generated row's category always
+  validates. Deleting a recurring template (`ON DELETE SET NULL`) unlinks — but does not delete —
+  any `clinic_expenses` rows already generated from it; they remain as plain one-off entries.
+- Full CRUD (`src/lib/recurringExpenses.ts`, same shape as `clinicExpenses.ts`) — add/edit modal,
+  active/inactive toggle, delete with confirmation. Deliberately monthly-only (no
+  weekly/quarterly/yearly frequency) and manual generation only (no automatic month-start
+  generation) — matches how Staff Salary's own "Generate `<month>`" step already works, and avoids
+  silently counting a recurring bill before anyone's reviewed/adjusted that month's amount.
 
 ## 15c. HR & Payroll (`/hr-payroll`, admin-only, added 2026-08-08)
 
