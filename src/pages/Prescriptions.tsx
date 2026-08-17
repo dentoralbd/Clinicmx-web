@@ -95,6 +95,7 @@ export function Prescriptions() {
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
     investigations: [{ name: '', description: '', urgency: 'Routine' }],
     language: 'bn' as PrescriptionLanguage,
+    discount_percent: null as number | null,
   })
 
   const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
@@ -463,6 +464,7 @@ export function Prescriptions() {
         investigations: formData.investigations.filter((i) => i.name.trim()),
         weight_at_prescription: prescriptionWeight ? Number.parseFloat(prescriptionWeight) : null,
         language: formData.language,
+        discount_percent: formData.discount_percent,
       }
 
       await supabase
@@ -668,6 +670,7 @@ export function Prescriptions() {
           ? prescription.investigations
           : [{ name: '', description: '' }],
       language: (prescription.language as PrescriptionLanguage) || 'bn',
+      discount_percent: prescription.discount_percent ?? null,
     })
     setPatientMode('existing')
     selectPatientHistory(prescription.patient_id || '')
@@ -709,6 +712,7 @@ export function Prescriptions() {
       medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '', route: '' }],
       investigations: [{ name: '', description: '', urgency: 'Routine' }],
       language: 'bn',
+      discount_percent: null,
     })
     setMedicalHistoryForm({ checked: [], other: '' })
     setPatientMode('existing')
@@ -1971,6 +1975,38 @@ export function Prescriptions() {
                 )}
               </div>
 
+              {/* ── Discount ── */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.discount_percent != null}
+                    onChange={(e) =>
+                      setFormData({ ...formData, discount_percent: e.target.checked ? 30 : null })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  Discount
+                </label>
+                {formData.discount_percent != null && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Please discount</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      value={formData.discount_percent}
+                      onChange={(e) =>
+                        setFormData({ ...formData, discount_percent: e.target.value === '' ? 0 : Number(e.target.value) })
+                      }
+                      className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="text-sm text-gray-600">%</span>
+                  </div>
+                )}
+              </div>
+
               {/* ── Notes ── */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">📝 Clinician's Notes &amp; Follow-up Instructions</label>
@@ -2035,6 +2071,7 @@ export function Prescriptions() {
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
             language: printingPrescription.language,
+            discount_percent: printingPrescription.discount_percent ?? null,
           }}
           patient={{
             first_name: printingPatient?.first_name || printingPrescription.patients?.first_name || '',
@@ -2068,6 +2105,7 @@ export function Prescriptions() {
             investigations: formData.investigations.filter((i) => i.name.trim()),
             notes: formData.notes,
             language: formData.language,
+            discount_percent: formData.discount_percent,
           }}
           patient={buildPreviewPatient()}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}

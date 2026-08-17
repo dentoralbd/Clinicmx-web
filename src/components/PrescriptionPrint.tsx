@@ -94,6 +94,7 @@ interface PrescriptionPrintProps {
     }>
     investigations: Array<{ name: string; description: string; urgency?: string }>
     notes?: string
+    discount_percent?: number | null
   }
   patient: {
     first_name: string
@@ -227,7 +228,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
 
     const { buildPdfFromElement } = await import('@/lib/domToPdf')
     const pdf = await buildPdfFromElement('prescription-print-root')
-    const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : 'Prescription'
     const fileName = `Prescription_${namePart}_${idPart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
     const subject = `Prescription - ${patient.first_name} ${patient.last_name}`
@@ -317,7 +318,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       <div className="flex-1 overflow-y-auto flex items-start justify-center p-4 print:p-0 print:block print:overflow-visible">
       <div
         id="prescription-print-root"
-        className="prescription-print-container bg-white w-full max-w-3xl my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900"
+        className="prescription-print-container bg-white w-full max-w-3xl min-h-[1085px] print:min-h-0 my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900 flex flex-col print:block"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* ── Letterhead: doctors (left/right, from Admin > Prescription Doctors) · logo + clinic (center) ── */}
@@ -496,6 +497,12 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               </div>
             )}
 
+            {prescription.discount_percent != null && (
+              <div className="font-semibold text-rose-700">
+                Please discount {prescription.discount_percent}%
+              </div>
+            )}
+
             {(prescription.treatment_plan_entries?.some((e) => e.text.trim()) || prescription.treatment_plan) && (
               <div>
                 <div className="font-semibold text-gray-800">Treatment Plan</div>
@@ -572,7 +579,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
         </div>
 
         {/* ── Footer (pinned to bottom of printed page) ── */}
-        <div className="prescription-print-footer mt-8 print:mt-0">
+        <div className="prescription-print-footer mt-auto pt-8 print:mt-0 print:pt-0">
           <div className="flex justify-between items-end border-t border-gray-300 pt-4">
             <div className="text-sm text-gray-500">
               <div>Follow-up: ___________________</div>
@@ -601,8 +608,8 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               </div>
             )}
           </div>
+          <div className="text-center text-[10px] text-gray-400 mt-3">Made with ❤️ by ClinicMx</div>
         </div>
-        <div className="text-center text-[10px] text-gray-400 mt-3">Made with ❤️ by ClinicMx</div>
       </div>
       </div>
     </div>

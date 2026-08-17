@@ -738,6 +738,7 @@ export interface Database {
           weight_at_prescription: number | null
           prescribed_date: string
           language: string
+          discount_percent: number | null
           created_at: string
         }
         Insert: {
@@ -758,6 +759,7 @@ export interface Database {
           weight_at_prescription?: number | null
           prescribed_date?: string
           language?: string
+          discount_percent?: number | null
           created_at?: string
         }
         Update: {
@@ -778,6 +780,7 @@ export interface Database {
           weight_at_prescription?: number | null
           prescribed_date?: string
           language?: string
+          discount_percent?: number | null
           created_at?: string
         }
         Relationships: [

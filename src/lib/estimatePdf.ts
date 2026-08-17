@@ -88,6 +88,6 @@ export function buildEstimatePdf(
 }
 
 export function estimatePdfFileName(patient: PdfPatient): string {
-  const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
+  const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
   return `Estimate_${namePart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }

@@ -185,6 +185,10 @@ export function drawTotalsBlock(
 export function drawFooter(doc: jsPDF, y: number): void {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  // Pin the footer near the bottom margin of the page (like a real letterhead) instead of
+  // floating directly under short content — but never above where the content actually ends.
+  y = Math.max(y, pageHeight - 90)
   doc.setDrawColor(190)
   doc.line(marginX, y, pageWidth - marginX, y)
   const footerY = y + 22
@@ -622,7 +626,7 @@ export function invoicePdfFileName(
   patient: PdfPatient,
   format?: 'detailed' | 'receipt'
 ): string {
-  const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
+  const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
   if (invoices.length <= 1) {
     const idPart = invoices[0]?.invoice_number || invoices[0]?.id.slice(0, 8).toUpperCase() || 'Invoice'
     const formatPart = format === 'receipt' ? '_Receipt' : format === 'detailed' ? '_Detailed' : ''

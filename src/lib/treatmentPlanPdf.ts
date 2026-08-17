@@ -108,6 +108,6 @@ export function buildTreatmentPlanPdf(
 }
 
 export function treatmentPlanPdfFileName(patient: PdfPatient): string {
-  const namePart = `${patient.first_name}_${patient.last_name}`.trim().replace(/\s+/g, '_')
+  const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
   return `Treatment_Plan_${namePart}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }

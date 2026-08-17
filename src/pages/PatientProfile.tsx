@@ -646,6 +646,7 @@ export function PatientProfile() {
     notes: '',
     weight: '',
     language: 'bn' as PrescriptionLanguage,
+    discount_percent: null as number | null,
   })
   const [aiPanelOpenIndex, setAiPanelOpenIndex] = useState<number | null>(null)
 
@@ -2120,6 +2121,7 @@ export function PatientProfile() {
       notes: prescriptionForm.notes,
       weight_at_prescription: prescriptionForm.weight ? Number.parseFloat(prescriptionForm.weight) : null,
       language: prescriptionForm.language,
+      discount_percent: prescriptionForm.discount_percent,
     }
     const prescriptionId = crypto.randomUUID()
 
@@ -2305,6 +2307,7 @@ export function PatientProfile() {
         notes: prescriptionForm.notes,
         weight_at_prescription: prescriptionForm.weight ? Number.parseFloat(prescriptionForm.weight) : null,
         language: prescriptionForm.language,
+        discount_percent: prescriptionForm.discount_percent,
       }
 
       const { error: medHistoryError, status: medHistoryStatus } = await supabase
@@ -2603,6 +2606,7 @@ export function PatientProfile() {
         notes: '',
         weight: '',
         language: 'bn',
+        discount_percent: null,
       })
       setAiPanelOpenIndex(null)
       loadPatientData()
@@ -2625,6 +2629,7 @@ export function PatientProfile() {
       notes: '',
       weight: patient?.weight != null ? String(patient.weight) : '',
       language: 'bn',
+      discount_percent: null,
     } as any)
     setAiPanelOpenIndex(null)
     seedMedicalHistoryForm()
@@ -2659,6 +2664,7 @@ export function PatientProfile() {
         ? String(prescription.weight_at_prescription)
         : (patient?.weight != null ? String(patient.weight) : ''),
       language: (prescription.language as PrescriptionLanguage) || 'bn',
+      discount_percent: prescription.discount_percent ?? null,
     })
     setAiPanelOpenIndex(null)
     seedMedicalHistoryForm()
@@ -5331,6 +5337,7 @@ export function PatientProfile() {
             investigations: Array.isArray(printingPrescription.investigations) ? printingPrescription.investigations : [],
             notes: printingPrescription.notes || '',
             language: printingPrescription.language,
+            discount_percent: printingPrescription.discount_percent ?? null,
           }}
           patient={{
             first_name: patient.first_name,
@@ -5364,6 +5371,7 @@ export function PatientProfile() {
             investigations: prescriptionForm.investigations.filter((i: any) => i.name.trim()),
             notes: prescriptionForm.notes,
             language: prescriptionForm.language,
+            discount_percent: prescriptionForm.discount_percent,
           }}
           patient={buildPreviewPrescriptionPatient()}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
@@ -7288,6 +7296,38 @@ function PrescriptionFormModal({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Discount ── */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={formData.discount_percent != null}
+                onChange={(e) =>
+                  setFormData({ ...formData, discount_percent: e.target.checked ? 30 : null })
+                }
+                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              Discount
+            </label>
+            {formData.discount_percent != null && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-sm text-gray-600">Please discount</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={formData.discount_percent}
+                  onChange={(e) =>
+                    setFormData({ ...formData, discount_percent: e.target.value === '' ? 0 : Number(e.target.value) })
+                  }
+                  className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <span className="text-sm text-gray-600">%</span>
               </div>
             )}
           </div>
