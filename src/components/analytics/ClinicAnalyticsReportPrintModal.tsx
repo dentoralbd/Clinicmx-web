@@ -223,6 +223,7 @@ export function ClinicAnalyticsReportPrintModal({
           <p>ClinicMx Dental Management System · Official Financial Statement</p>
           <p>Page 1 of 1</p>
         </div>
+        <div className="text-center text-[10px] text-slate-400 mt-2">Made with ❤️ by ClinicMx</div>
       </div>
     </div>
   )

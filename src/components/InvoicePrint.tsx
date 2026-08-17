@@ -877,6 +877,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
             </div>
           </div>
         </div>
+        <div className="text-center text-[10px] text-gray-400 mt-3">Made with ❤️ by ClinicMx</div>
       </div>
       </div>
     </div>
