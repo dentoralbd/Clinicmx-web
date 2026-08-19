@@ -25,6 +25,7 @@ import { InvoiceTimelinePanel } from '@/components/InvoiceTimelinePanel'
 import { PatientBillingLogPanel } from '@/components/PatientBillingLogPanel'
 import { TreatmentEstimatePrint } from '@/components/TreatmentEstimatePrint'
 import { TreatmentPlanPrint } from '@/components/TreatmentPlanPrint'
+import { VisitHistoryPrint } from '@/components/VisitHistoryPrint'
 import { buildTreatmentPlanRows, computeTreatmentPlanTotals } from '@/lib/treatmentPlanTotals'
 import { PrescriptionPrint } from '@/components/PrescriptionPrint'
 import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvoicePayload, buildTreatmentInvoiceItems, buildTreatmentLabel, extractTreatmentIdsFromInvoiceItems, formatInvoiceItemLabel, getFriendlySupabaseErrorMessage, getInvoiceItemLineTotal, getInvoiceItemSubtotal, getTreatmentPlanDiscountTotal, isSchemaCompatibilityError, logBillingError } from '@/lib/billing'
@@ -552,6 +553,7 @@ export function PatientProfile() {
   const [invoicePrintJob, setInvoicePrintJob] = useState<{ invoices: any[]; initialDueOnly?: boolean } | null>(null)
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
+  const [showVisitHistoryPrint, setShowVisitHistoryPrint] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
   const [editingPrescriptionId, setEditingPrescriptionId] = useState<string | null>(null)
   const [medicationTemplates, setMedicationTemplates] = useState<any[]>([])
@@ -3713,10 +3715,16 @@ export function PatientProfile() {
       <div className="bg-card rounded-3xl shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <h3 className="font-semibold">Visit History</h3>
-          <Button size="sm" onClick={() => setShowVisitForm(true)}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add Visit
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setShowVisitHistoryPrint(true)}>
+              <Printer className="w-4 h-4 mr-1" />
+              Print
+            </Button>
+            <Button size="sm" onClick={() => setShowVisitForm(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Visit
+            </Button>
+          </div>
         </div>
         {visits.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No visits recorded</div>
@@ -5497,6 +5505,17 @@ export function PatientProfile() {
           patient={patient}
           doctor={doctorProfile}
           onClose={() => setTreatmentPlanPrintJob(null)}
+        />
+      )}
+
+      {showVisitHistoryPrint && patient && (
+        <VisitHistoryPrint
+          visits={visits}
+          invoices={invoices}
+          payments={payments}
+          patient={patient}
+          doctor={doctorProfile}
+          onClose={() => setShowVisitHistoryPrint(false)}
         />
       )}
 
