@@ -67,8 +67,8 @@ export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor,
   }, [showShareMenu])
 
   function handlePrint() {
-    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
-    document.title = [namePart, 'Treatment Plan'].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') || originalTitleRef.current
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
+    document.title = `Treatment_Plan_${namePart}`.replace(/[\\/:*?"<>|]/g, '-')
     window.print()
   }
 

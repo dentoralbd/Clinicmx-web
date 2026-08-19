@@ -63,8 +63,8 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
   }, [showShareMenu])
 
   function handlePrint() {
-    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
-    document.title = [namePart, 'Estimate'].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') || originalTitleRef.current
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
+    document.title = `Estimate_${namePart}`.replace(/[\\/:*?"<>|]/g, '-')
     window.print()
   }
 

@@ -193,11 +193,9 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   }, [])
 
   const handlePrint = () => {
-    const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : ''
-    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
-    document.title =
-      [namePart, idPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
-      originalTitleRef.current
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
+    const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : 'Prescription'
+    document.title = `Prescription_${namePart}_${idPart}`.replace(/[\\/:*?"<>|]/g, '-')
     window.print()
   }
 

@@ -493,16 +493,12 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   }, [])
 
   const handlePrint = () => {
-    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
-    const idPart = combined
-      ? dueOnly
-        ? 'Statement (Due)'
-        : 'Combined Invoice'
-      : invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : '')
-    const formatPart = format === 'receipt' ? 'Receipt' : 'Detailed'
-    document.title =
-      [namePart, idPart, formatPart].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') ||
-      originalTitleRef.current
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
+    const formatPart = format === 'receipt' ? '_Receipt' : format === 'detailed' ? '_Detailed' : ''
+    const title = combined
+      ? `Statement_${namePart}_${invoices.length}invoices${formatPart}`
+      : `Invoice_${namePart}_${invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : 'Invoice')}${formatPart}`
+    document.title = title.replace(/[\\/:*?"<>|]/g, '-')
     window.print()
   }
 

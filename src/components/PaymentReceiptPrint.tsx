@@ -65,8 +65,8 @@ export function PaymentReceiptPrint({ payment, invoice, patient, remainingAfter,
   }, [])
 
   function handlePrint() {
-    const namePart = `${patient.first_name} ${patient.last_name}`.trim()
-    document.title = [namePart, 'Receipt', payment.id.slice(0, 8).toUpperCase()].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]/g, '-') || originalTitleRef.current
+    const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
+    document.title = `Receipt_${namePart}_${payment.id.slice(0, 8).toUpperCase()}`.replace(/[\\/:*?"<>|]/g, '-')
     window.print()
   }
 
