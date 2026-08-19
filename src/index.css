@@ -22,6 +22,14 @@
   }
 }
 
+/* Without this, Chrome/Edge reserve their own default page margin and fill it with a
+   built-in header (title/date) and footer (page URL) — the site's own print/save-as-PDF
+   layouts already provide their own margin via padding, so zeroing the page margin here
+   leaves no room for the browser's header/footer text to appear. */
+@page {
+  margin: 0;
+}
+
 /* ── Focus ring ── */
 input:focus-visible,
 select:focus-visible,
@@ -324,7 +332,7 @@ button:focus-visible {
     max-width: none !important;
     box-shadow: none !important;
     border: none !important;
-    padding: 0 !important;
+    padding: 32px !important;
     margin: 0 !important;
     background: #fff !important;
   }
