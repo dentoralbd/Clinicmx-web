@@ -1190,6 +1190,84 @@ export interface Database {
         }
         Relationships: []
       }
+      integrity_findings: {
+        Row: {
+          id: string
+          check_name: string
+          severity: string
+          entity_table: string
+          entity_id: string
+          details: Json
+          details_hash: string
+          first_detected_at: string
+          last_seen_at: string
+          resolved_at: string | null
+          reviewed: boolean
+          reviewed_by: string | null
+          reviewed_at: string | null
+        }
+        Insert: {
+          id?: string
+          check_name: string
+          severity: string
+          entity_table: string
+          entity_id: string
+          details: Json
+          details_hash: string
+          first_detected_at?: string
+          last_seen_at?: string
+          resolved_at?: string | null
+          reviewed?: boolean
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+        }
+        Update: {
+          id?: string
+          check_name?: string
+          severity?: string
+          entity_table?: string
+          entity_id?: string
+          details?: Json
+          details_hash?: string
+          first_detected_at?: string
+          last_seen_at?: string
+          resolved_at?: string | null
+          reviewed?: boolean
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+        }
+        Relationships: []
+      }
+      integrity_scan_runs: {
+        Row: {
+          id: string
+          started_at: string
+          finished_at: string | null
+          status: string
+          triggered_by: string | null
+          counts: Json | null
+          error: string | null
+        }
+        Insert: {
+          id?: string
+          started_at?: string
+          finished_at?: string | null
+          status?: string
+          triggered_by?: string | null
+          counts?: Json | null
+          error?: string | null
+        }
+        Update: {
+          id?: string
+          started_at?: string
+          finished_at?: string | null
+          status?: string
+          triggered_by?: string | null
+          counts?: Json | null
+          error?: string | null
+        }
+        Relationships: []
+      }
       dental_records: {
         Row: {
           id: string

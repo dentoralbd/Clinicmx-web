@@ -28,6 +28,7 @@ import {
   Clock,
   FileCheck2,
   CalendarDays,
+  ShieldAlert,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { UsersTab } from '@/components/admin/UsersTab'
@@ -36,6 +37,7 @@ import { AccessRequestsTab } from '@/components/admin/AccessRequestsTab'
 import { ClinicHoursTab } from '@/components/admin/ClinicHoursTab'
 import { PrescriptionDoctorsTab } from '@/components/admin/PrescriptionDoctorsTab'
 import { OfflineEditsTab } from '@/components/admin/OfflineEditsTab'
+import { IntegrityTab } from '@/components/admin/IntegrityTab'
 import { MyLeaveTab } from '@/components/hr/MyLeaveTab'
 import { SnapshotDetails } from '@/components/SnapshotDetails'
 import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
@@ -154,7 +156,7 @@ const HISTORY_FILTERS: Array<{ value: HistoryFilter; label: string }> = [
   { value: 'lab_work', label: 'Lab' },
 ]
 
-type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline' | 'leave' | 'prescription-doctors'
+type ZoneTab = 'profile' | 'edits' | 'history' | 'users' | 'network' | 'logs' | 'hours' | 'offline' | 'leave' | 'prescription-doctors' | 'integrity'
 
 interface ZoneTabDef {
   id: ZoneTab
@@ -177,6 +179,11 @@ function getAvailableTabs(): ZoneTabDef[] {
   // queued edits, not just the admin's own (see canActOn() in offlineSync.ts:
   // admin is the one role allowed to approve/discard someone else's).
   if (getAppRole() === 'admin') tabs.push({ id: 'offline', label: 'Offline Edits', icon: FileCheck2 })
+  // Read-only data-integrity findings (migration 064): admin can run scans
+  // and mark reviewed; doctor gets the same list read-only (RLS enforces
+  // this at the database layer too — see integrity_findings_select).
+  // Operator sees neither.
+  if (getAppRole() === 'admin' || getAppRole() === 'doctor') tabs.push({ id: 'integrity', label: 'Integrity', icon: ShieldAlert })
   // Self-service leave requests — every non-admin account gets this tab,
   // independent of any other zone permission (admins manage leave from the
   // HR & Payroll page instead).
@@ -194,6 +201,7 @@ const TAB_GRID_COLS: Record<number, string> = {
   7: 'grid-cols-2 sm:grid-cols-4',
   8: 'grid-cols-2 sm:grid-cols-4',
   9: 'grid-cols-2 sm:grid-cols-5',
+  10: 'grid-cols-2 sm:grid-cols-5',
 }
 
 export function DoctorProfile() {
@@ -590,6 +598,8 @@ export function DoctorProfile() {
       {activeTab === 'prescription-doctors' && <PrescriptionDoctorsTab />}
 
       {activeTab === 'offline' && <OfflineEditsTab />}
+
+      {activeTab === 'integrity' && <IntegrityTab />}
 
       {activeTab === 'leave' && <MyLeaveTab />}
 

@@ -42,6 +42,7 @@ Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev 
 | `/api/download-backup` | GET | Streams a chosen Drive backup's actual **content** back for restore. **Requires admin auth.** |
 | `/api/admin-otp` | POST | Admin login second factor: `action:'request'` (PIN + optional trusted-device token → Telegram OTP or `trusted`/`unconfigured`), `action:'verify'` (code or recovery code → 7-day signed device token) |
 | `/api/queue-board` | GET | Sanitised, read-only Patient Queue feed for `dentoralbd.com/queue` (AGY repo's `functions/api/queue.js` proxies here with a shared bridge token). Reads `queue_entries`/`queue_settings` server-side with `SUPABASE_SERVICE_ROLE_KEY` and returns only what a public waiting-room board needs — the browser never sees a Supabase credential. **No auth required to call it**, but the response differs: a valid `X-Bridge-Token`/`?t=` matching `QUEUE_BOARD_TOKEN` gets the full payload (names per `queue_settings.privacy_mode`, room, procedure); a missing/invalid token gets a masked, serial-numbers-only fallback — deliberately never an error, so a wrong/missing token degrades gracefully rather than breaking the public board. Mirrors `dentoral-bridge.ts`'s cross-site bridge-token pattern in the opposite direction (there ClinicMx pulls FROM DentOral; here DentOral pulls FROM ClinicMx). |
+| `/api/integrity-scan` | POST | Runs the read-only data-integrity scan (`supabase/migrations/064_integrity_findings.sql`'s `run_integrity_scan()` RPC, service_role) and returns fresh severity counts — backs the "Run scan" button on Admin → Integrity (`/admin?tab=integrity`, `src/components/admin/IntegrityTab.tsx` via `src/lib/integrity.ts`). **Requires admin auth** (`requireAdminToken`, not `requireStaffSession` — this is a write action, unlike the read-only findings list doctors get straight from Supabase under RLS). No new secrets: reuses the existing `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`. |
 
 **CORS for the Tauri desktop build (added 2026-08-08):** `functions/api/_middleware.ts` runs in front of every route above and adds `Access-Control-Allow-Origin` only for `Origin: http://tauri.localhost` / `https://tauri.localhost` — the origin the Windows exe (`D:\Claude\Clinicmx-web-redesign`, packaged with Tauri v2) serves its UI from. That lets the desktop app reach this deployment's `/api/*` for admin 2FA, Users management, and Drive backup, since it has no Functions layer of its own. All existing per-endpoint auth (PIN, device token, staff session) is unchanged — this only unblocks the cross-origin fetch at the browser/WebView2 level; every other origin gets no CORS headers and is still blocked as before.
 
@@ -88,6 +89,36 @@ Node scripts run by GitHub Actions (nightly, on `gsbanikudc-byte/Clinicmx-web` o
 - `restore.mjs` — dry-run by default; `--confirm` writes.
 - `authorize.mjs` — one-time OAuth flow to mint the refresh token. `lib.mjs` — shared helpers.
 - Full usage in `scripts/backup/README.md`. **Any change here must be pushed to both remotes.**
+
+## 3b. Integrity scan script (`scripts/integrity/`, added 2026-08-19)
+
+`scan.mjs` — thin trigger + printer for the `run_integrity_scan()` RPC (migration 064); every
+check is defined in SQL inside the migration, not duplicated here. Reuses
+`scripts/backup/.env.backup` and `scripts/backup/lib.mjs`'s `loadEnv`/`getSupabase` (same local
+creds already set up for backup/restore — precedent: `scripts/backfill-visit-invoice-links.mjs`).
+No GitHub Actions workflow — this is a manual/local entry point for after a risky change or
+migration; the in-app "Run scan" button (`/api/integrity-scan`, §2 above) and the cron worker
+(§3c below) are the other two triggers, all calling the same RPC. `--dry-run` runs every check for
+real then rolls back the writes via the RPC's own `p_dry_run` parameter (a true PL/pgSQL savepoint
+rollback, not a simulation) — use it to preview a new/changed check against production before
+trusting it. `--json` for machine-readable output.
+
+## 3c. Integrity scan cron worker (`workers/integrity-cron/`, added 2026-08-19)
+
+Standalone Cloudflare Worker, **not** part of the `clinicmx-web` Pages project — Pages projects
+don't expose Cron Triggers, only plain Workers do, so this has its own `wrangler.toml`
+(`crons = ["30 21 * * *"]`, 21:30 UTC = 3:30 AM BDT, 30 minutes after the nightly backup slot) and
+its own deploy: `npm install && npx wrangler secret put SUPABASE_URL && npx wrangler secret put
+SUPABASE_SERVICE_ROLE_KEY && npx wrangler deploy` from that directory (same secret values already
+set for the Pages project's Functions). `index.ts`'s `scheduled()` handler calls
+`run_integrity_scan({ p_triggered_by: 'cron', p_dry_run: false })` — identical RPC call to the
+other two triggers. Manual test without waiting for 3:30 AM: Cloudflare dashboard → Workers &
+Pages → `clinicmx-integrity-cron` → Triggers tab → "Trigger Cron" button.
+
+Added same day as the scanner itself, after manual-only operation (the original v1 design, chosen
+because GitHub Actions is documented as unreliable on this remote — see §3 above) let a real,
+actively-recurring bug go unwatched: `patient_code_seq` drifted back into the test-code range
+mid-session, twice, only caught because someone happened to re-run the scan by hand each time.
 
 ## 4. Google Sheets/Drive patient sync (`src/services/`)
 

@@ -1,0 +1,15 @@
+name = "clinicmx-integrity-cron"
+main = "index.ts"
+compatibility_date = "2026-08-19"
+
+# This Worker only exports a scheduled() handler, no fetch() -- it has no
+# reason to be reachable over HTTP at all. Without this, wrangler enables a
+# public workers.dev URL by default on every deploy.
+workers_dev = false
+preview_urls = false
+
+# 21:30 UTC = 3:30 AM Bangladesh time -- 30 minutes after the nightly backup
+# slot (.github/workflows/backup.yml runs at 21:00 UTC) so the two never
+# contend for the database at the same moment.
+[triggers]
+crons = ["30 21 * * *"]

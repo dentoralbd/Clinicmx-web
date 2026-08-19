@@ -4,6 +4,47 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-19 — Integrity scanner: nightly cron trigger, and a live incident it caught
+
+Added a third trigger for the integrity scanner (below): a standalone Cloudflare Worker with a
+Cron Trigger (`workers/integrity-cron/`, nightly 3:30 AM BDT) calling the same `run_integrity_scan()`
+RPC as the admin panel button and the local script. Separate deploy from the `clinicmx-web` Pages
+project — Pages doesn't expose Cron Triggers, only plain Workers do.
+
+Added same day the scanner itself shipped, not as originally planned: the first real run found
+`patient_code_seq` had drifted back into the `PT-3xxxxx` test-code range — two real patients
+(created 2026-08-17/18) had landed on `PT-300001`/`PT-300002` instead of real-looking codes,
+because an earlier test session's "bump the sequence before testing" step (`CLAUDE.md` hard rule 8)
+was never reset. Fixed by hand (renumbered both patients into two long-standing gaps in the real
+range, `PT-100027`/`PT-100033`, freed by earlier deletions — a plain sequence never reclaims a
+deleted row's number, so those gaps are permanent by design and harmless to reuse manually) and
+reset the sequence. **While fixing it, it happened again** — the sequence jumped to the 200000s a
+second time mid-session with no new patient to show for it (a burned `nextval()` from a failed/
+interrupted create-patient attempt — sequences never roll back even when the transaction that
+called them does). Manual-only triggering meant this was only caught because someone happened to
+re-run the scan by hand right when it mattered; the cron trigger exists so that stops being a
+requirement. See FEATURES.md §13b, API.md §3c.
+
+## 2026-08-19 — Read-only integrity scanner (Admin → Integrity)
+
+New Admin → Integrity tab (`/admin?tab=integrity`, admin run/review + doctor read-only) surfaces
+data-integrity problems — referential orphans, invoice `paid_amount` disagreeing with its actual
+`payments` sum, invoice totals recomputed from line items and compared to what's stored,
+treatment↔invoice sync drift (mirrors `invoiceSync.ts`'s dual-linkage invariant), a treatment's
+`doctor_name` matching no active staff account (the exact class of bug that zeroed a doctor's
+payout analytics on 2026-08-02), audit-trail gaps, and a few structural checks — before they
+surface as a broken invoice or a silently wrong number. Never writes to any clinical/financial
+table; the only writes are to its own `integrity_findings` (migration 064) and, on a new critical
+finding, one deduped `app_notifications` entry.
+
+No scheduler in v1 — every check lives in SQL inside `run_integrity_scan()` (service_role-only
+RPC), triggered either from the tab's "Run scan" button (`functions/api/integrity-scan.ts`,
+admin-gated) or locally via `node scripts/integrity/scan.mjs` (`--dry-run` does a true rollback of
+the writes via the RPC's own `p_dry_run` parameter, for previewing a new check against production
+before trusting it). `integrity_scan_runs` records every run so the panel can show "last scan: N
+ago" — the safety net a manual-trigger design needs that a cron-based one wouldn't. See
+FEATURES.md §13b, DATABASE.md, API.md §2/§3b.
+
 ## 2026-08-17 — Previous Visits panel in Add Visit
 
 Add Visit modal now opens with a read-only, collapsible "Previous Visits" panel above Chief
