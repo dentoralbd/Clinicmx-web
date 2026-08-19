@@ -283,7 +283,7 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
             </div>
           </div>
         </div>
-        <div className="text-center text-[10px] text-gray-400 mt-3">Made with ❤️ by ClinicMx</div>
+        <div className="text-center text-[10px] text-gray-400 mt-3">Crafted with ❤️ by ClinicMx</div>
       </div>
       </div>
     </div>

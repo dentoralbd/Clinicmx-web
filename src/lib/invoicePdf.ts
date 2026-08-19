@@ -199,7 +199,7 @@ export function drawFooter(doc: jsPDF, y: number): void {
   doc.text('Authorized Signature', pageWidth - marginX, footerY + 8, { align: 'right' })
   doc.setFontSize(7)
   doc.setTextColor(160)
-  doc.text('Made with love by ClinicMx', pageWidth / 2, footerY + 20, { align: 'center' })
+  doc.text('Crafted with love by ClinicMx', pageWidth / 2, footerY + 20, { align: 'center' })
   doc.setTextColor(0)
 }
 
