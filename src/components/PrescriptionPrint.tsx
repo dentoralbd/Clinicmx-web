@@ -144,9 +144,6 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       ? buildPrescriptionQrPayload({
           patientId: prescription.patient_id,
           patientCode: patient.patient_code,
-          patientName: `${patient.first_name} ${patient.last_name}`.trim(),
-          prescriptionId: prescription.id,
-          prescribedDate: prescription.prescribed_date,
         })
       : null
 
