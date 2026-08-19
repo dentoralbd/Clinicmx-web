@@ -267,10 +267,10 @@ export function QueueFloatingWidget() {
           onPointerDown={(e) => startDrag(e, () => setExpanded(true))}
           onDoubleClick={resetPosition}
           style={{ touchAction: 'none' }}
-          className="bg-white rounded-full p-4 shadow-elevation-lg border border-gray-200 text-primary hover:bg-gray-50 transition-all flex items-center gap-3 relative group cursor-grab active:cursor-grabbing"
+          className="bg-primary rounded-full p-4 shadow-elevation-lg ring-4 ring-white text-white hover:bg-primary-dark transition-all flex items-center gap-3 relative group cursor-grab active:cursor-grabbing"
           title="Open Queue Caller — drag to move, double-tap to reset position"
         >
-          <MonitorPlay className="w-6 h-6 text-primary" />
+          <MonitorPlay className="w-6 h-6 text-white" />
           {waiting.length > 0 && (
             <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-pulse">
               {waiting.length}
