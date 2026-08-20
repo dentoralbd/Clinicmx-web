@@ -208,8 +208,9 @@ export function drawFooter(doc: jsPDF, y: number, qrDataUrl?: string | null): vo
     doc.addImage(qrDataUrl, 'PNG', marginX, qrY, qrSize, qrSize)
     doc.setFontSize(6)
     doc.setTextColor(140)
-    doc.text('Scan QR to', marginX, qrY + qrSize + 10)
-    doc.text('visit www.dentoralbd.com', marginX, qrY + qrSize + 18)
+    const qrCenterX = marginX + qrSize / 2
+    doc.text('Scan QR to', qrCenterX, qrY + qrSize + 10, { align: 'center' })
+    doc.text('visit www.dentoralbd.com', qrCenterX, qrY + qrSize + 18, { align: 'center' })
     doc.setTextColor(0)
     creditY = qrY + qrSize + 32
   }

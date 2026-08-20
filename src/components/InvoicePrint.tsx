@@ -874,7 +874,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
                 {qrPayload && (
                   <div className="mt-3">
                     <QRCodeSVG value={qrPayload} size={90} />
-                    <div className="text-[9px] text-gray-400 mt-1 leading-tight">
+                    <div className="w-[90px] text-center text-[9px] text-gray-400 mt-1 leading-tight">
                       <div>Scan QR to</div>
                       <div>visit www.dentoralbd.com</div>
                     </div>
