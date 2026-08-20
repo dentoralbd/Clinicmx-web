@@ -209,12 +209,12 @@ button:focus-visible {
     background: #fff !important;
     color: #000 !important;
   }
-  body:has(.prescription-print-overlay) * {
-    visibility: hidden;
-  }
-  body:has(.prescription-print-overlay) .prescription-print-overlay,
-  body:has(.prescription-print-overlay) .prescription-print-overlay * {
-    visibility: visible !important;
+  /* display:none (not visibility:hidden) so the hidden background page contributes zero
+     height — visibility:hidden alone still occupies layout, which is what let a long page
+     behind the modal inflate the printed document past one page in the first place. */
+  body:has(.prescription-print-overlay)
+    *:not(:has(.prescription-print-overlay)):not(.prescription-print-overlay):not(.prescription-print-overlay *) {
+    display: none !important;
   }
   .prescription-print-overlay {
     position: absolute !important;
@@ -236,7 +236,7 @@ button:focus-visible {
        their footer pushed to the true page bottom via margin-top:auto below; long ones just
        grow past this and the footer follows content in normal flow, so it can never overlap
        (a fixed-position footer with a guessed reserve could, and did, for long content). */
-    min-height: 297mm;
+    min-height: 295mm;
     padding: 20px;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
@@ -244,14 +244,19 @@ button:focus-visible {
   }
   .prescription-print-footer {
     margin-top: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
 
 /* ── Print styles for invoices ── */
 @media print {
-  .invoice-print-overlay,
-  .invoice-print-overlay * {
-    visibility: visible !important;
+  /* display:none (not visibility) so the Billing page behind the modal contributes zero
+     height — this was previously missing entirely, so the printed document included the
+     whole patient list behind the modal, inflating it past one page. */
+  body:has(.invoice-print-overlay)
+    *:not(:has(.invoice-print-overlay)):not(.invoice-print-overlay):not(.invoice-print-overlay *) {
+    display: none !important;
   }
   .invoice-print-overlay {
     position: absolute !important;
@@ -275,7 +280,7 @@ button:focus-visible {
     display: flex !important;
     flex-direction: column !important;
     margin: 0;
-    min-height: 297mm;
+    min-height: 295mm;
     padding: 20px;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
@@ -288,6 +293,8 @@ button:focus-visible {
   }
   .invoice-print-footer {
     margin-top: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .statement-invoice-block,
   .statement-payments,
@@ -299,9 +306,9 @@ button:focus-visible {
 
 /* ── Print styles for invoice list ── */
 @media print {
-  .invoice-list-print-overlay,
-  .invoice-list-print-overlay * {
-    visibility: visible !important;
+  body:has(.invoice-list-print-overlay)
+    *:not(:has(.invoice-list-print-overlay)):not(.invoice-list-print-overlay):not(.invoice-list-print-overlay *) {
+    display: none !important;
   }
   .invoice-list-print-overlay {
     position: absolute !important;
@@ -333,9 +340,9 @@ button:focus-visible {
     padding: 0 !important;
     overflow: visible !important;
   }
-  .analytics-report-print-overlay,
-  .analytics-report-print-overlay * {
-    visibility: visible !important;
+  body:has(.analytics-report-print-overlay)
+    *:not(:has(.analytics-report-print-overlay)):not(.analytics-report-print-overlay):not(.analytics-report-print-overlay *) {
+    display: none !important;
   }
   .analytics-report-print-overlay {
     position: absolute !important;

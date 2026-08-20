@@ -41,23 +41,11 @@ export async function buildPdfFromElement(
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
-  let imgWidth = pageWidth
-  let imgHeight = (canvas.height * imgWidth) / canvas.width
+  const imgWidth = pageWidth
+  const imgHeight = (canvas.height * imgWidth) / canvas.width
   // JPEG (not PNG): this PDF is only ever shared (Email/WhatsApp), so file size matters more
   // than lossless quality — print/save uses window.print() and never goes through here.
   const imgData = canvas.toDataURL('image/jpeg', 0.8)
-
-  // A capture that's only marginally taller than one page — e.g. a short document whose
-  // footer nudges it a few pixels past the boundary — gets scaled down to fit on a single
-  // page instead of spilling a near-empty second page with just the last sliver of content.
-  // Genuinely long content (more than 15% over) still paginates normally below.
-  if (imgHeight <= pageHeight * 1.15) {
-    const scale = pageHeight / imgHeight
-    imgWidth *= scale
-    imgHeight = pageHeight
-    pdf.addImage(imgData, 'JPEG', (pageWidth - imgWidth) / 2, 0, imgWidth, imgHeight)
-    return pdf
-  }
 
   let heightLeft = imgHeight
   let position = 0
