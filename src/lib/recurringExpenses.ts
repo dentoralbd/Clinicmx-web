@@ -88,28 +88,40 @@ export async function deleteRecurringExpense(id: string, description?: string): 
   logActivity({ action: 'delete', entityType: 'recurring_expense', entityId: id, entityLabel: description ?? null, details: 'Recurring expense deleted' })
 }
 
+export interface GenerateRecurringExpenseItem {
+  recurring_expense_id: string
+  category: RecurringExpenseCategory
+  description: string
+  /** This month's actual amount — lets a variable bill (electricity, water)
+   * be entered at generation time instead of always using the template's
+   * default/estimated amount. */
+  amount: number
+  vendor: string | null
+  notes: string | null
+}
+
 /**
- * Creates one clinic_expenses row (dated the 1st of periodMonth) per active
- * recurring template, for admin review/editing like any other expense.
- * Idempotent: UNIQUE (recurring_expense_id, expense_date) on clinic_expenses
- * (migration 062) + ignoreDuplicates means re-running for a month that's
- * already generated is a safe no-op, mirroring staff.ts's ensureMonthRows.
+ * Creates one clinic_expenses row (dated the 1st of periodMonth) per item,
+ * for admin review/editing like any other expense afterward. Idempotent:
+ * UNIQUE (recurring_expense_id, expense_date) on clinic_expenses (migration
+ * 062) + ignoreDuplicates means re-running for a month that's already
+ * generated is a safe no-op, mirroring staff.ts's ensureMonthRows.
  */
-export async function generateRecurringExpensesForMonth(periodMonth: string, activeRecurring: RecurringExpenseRecord[]): Promise<void> {
-  if (activeRecurring.length === 0) return
+export async function generateRecurringExpensesForMonth(periodMonth: string, items: GenerateRecurringExpenseItem[]): Promise<void> {
+  if (items.length === 0) return
   const expenseDate = `${periodMonth}-01`
-  const rows = activeRecurring.map((r) => ({
-    category: r.category,
-    description: r.description,
-    amount: r.amount,
+  const rows = items.map((it) => ({
+    category: it.category,
+    description: it.description,
+    amount: it.amount,
     expense_date: expenseDate,
-    vendor: r.vendor,
-    notes: r.notes,
-    recurring_expense_id: r.id,
+    vendor: it.vendor,
+    notes: it.notes,
+    recurring_expense_id: it.recurring_expense_id,
   }))
   const { error } = await supabase
     .from('clinic_expenses')
     .upsert(rows, { onConflict: 'recurring_expense_id,expense_date', ignoreDuplicates: true })
   if (error) throw new Error(error.message)
-  logActivity({ action: 'create', entityType: 'clinic_expense', entityLabel: null, details: `Generated ${activeRecurring.length} recurring expense(s) for ${periodMonth}` })
+  logActivity({ action: 'create', entityType: 'clinic_expense', entityLabel: null, details: `Generated ${items.length} recurring expense(s) for ${periodMonth}` })
 }

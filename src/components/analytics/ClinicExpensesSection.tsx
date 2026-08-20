@@ -138,6 +138,8 @@ export function ClinicExpensesSection() {
   const [recurringSaving, setRecurringSaving] = useState(false)
   const [recurringDeleteTarget, setRecurringDeleteTarget] = useState<RecurringExpenseRecord | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [generateModalOpen, setGenerateModalOpen] = useState(false)
+  const [generateAmounts, setGenerateAmounts] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadAll()
@@ -318,6 +320,15 @@ export function ClinicExpensesSection() {
 
   const activeRecurring = useMemo(() => recurring.filter((r) => r.is_active), [recurring])
 
+  // Templates not yet generated for the selected month -- a template whose
+  // clinic_expenses row already exists for this month is left out (editing
+  // that month's actual figure happens in Other Expenses instead).
+  const pendingGenerate = useMemo(() => {
+    const expenseDate = `${selectedMonth}-01`
+    const generatedIds = new Set(expenses.filter((e) => e.recurring_expense_id && e.expense_date === expenseDate).map((e) => e.recurring_expense_id))
+    return activeRecurring.filter((r) => !generatedIds.has(r.id))
+  }, [activeRecurring, expenses, selectedMonth])
+
   function openCreateRecurringModal() {
     setEditingRecurring(null)
     setRecurringForm(emptyRecurringForm())
@@ -393,11 +404,29 @@ export function ClinicExpensesSection() {
     }
   }
 
+  function openGenerateModal() {
+    const amounts: Record<string, string> = {}
+    pendingGenerate.forEach((r) => {
+      amounts[r.id] = String(r.amount)
+    })
+    setGenerateAmounts(amounts)
+    setGenerateModalOpen(true)
+  }
+
   async function handleGenerateMonth() {
     try {
       setGenerating(true)
-      await generateRecurringExpensesForMonth(selectedMonth, activeRecurring)
+      const items = pendingGenerate.map((r) => ({
+        recurring_expense_id: r.id,
+        category: r.category,
+        description: r.description,
+        amount: Number(generateAmounts[r.id]) || r.amount,
+        vendor: r.vendor,
+        notes: r.notes,
+      }))
+      await generateRecurringExpensesForMonth(selectedMonth, items)
       setExpenses(await listExpenses())
+      setGenerateModalOpen(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to generate month.')
     } finally {
@@ -601,13 +630,14 @@ export function ClinicExpensesSection() {
                 <Repeat className="w-5 h-5 text-teal-600" /> Recurring Expenses
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Monthly bills like rent, electricity, and subscriptions. Generate the month to create this month's entries below in Other Expenses.
+                Monthly bills like rent, electricity, and subscriptions. Set a default amount for fixed bills, or leave it as an
+                estimate for variable ones (electricity, water) — you can adjust the actual figure for each month right before generating.
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="outline" onClick={handleGenerateMonth} disabled={generating || activeRecurring.length === 0} className="text-xs">
+              <Button size="sm" variant="outline" onClick={openGenerateModal} disabled={generating || pendingGenerate.length === 0} className="text-xs">
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${generating ? 'animate-spin' : ''}`} />
-                {generating ? 'Generating…' : `Generate ${selectedMonth}`}
+                {pendingGenerate.length === 0 ? `${selectedMonth} already generated` : `Generate ${selectedMonth} (${pendingGenerate.length})`}
               </Button>
               <Button size="sm" onClick={openCreateRecurringModal} className="bg-teal-600 hover:bg-teal-700 text-white text-xs">
                 <Plus className="w-4 h-4 mr-1.5" /> Add Recurring Expense
@@ -818,7 +848,11 @@ export function ClinicExpensesSection() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Amount / Month (BDT) *</label>
+                <label className="block text-sm font-medium mb-1">Default Amount / Month (BDT) *</label>
+                <p className="text-xs text-slate-500 mb-1">
+                  For a fixed bill (rent) this is the real amount every month. For a variable one (electricity, water), use your best
+                  estimate — you'll get a chance to enter the actual figure each time you generate a month.
+                </p>
                 <input
                   type="number"
                   required
@@ -875,6 +909,50 @@ export function ClinicExpensesSection() {
               <Button size="sm" onClick={handleDeleteRecurringConfirm} className="bg-red-600 hover:bg-red-700 text-white">
                 Delete
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {generateModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full my-8 max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-display text-lg font-bold">Generate {selectedMonth}</h2>
+              <button type="button" onClick={() => setGenerateModalOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-slate-500">
+                Confirm the amount for each recurring expense this month — adjust any variable bill (electricity, water) before generating.
+              </p>
+              {pendingGenerate.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{r.description}</p>
+                    <p className="text-xs text-slate-500">{r.category}{r.vendor ? ` · ${r.vendor}` : ''}</p>
+                  </div>
+                  <div className="w-32">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={generateAmounts[r.id] ?? ''}
+                      onChange={(e) => setGenerateAmounts({ ...generateAmounts, [r.id]: e.target.value })}
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setGenerateModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" size="sm" disabled={generating} onClick={handleGenerateMonth} className="bg-teal-600 hover:bg-teal-700 text-white">
+                  {generating ? 'Generating…' : `Generate ${pendingGenerate.length} Expense${pendingGenerate.length === 1 ? '' : 's'}`}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
