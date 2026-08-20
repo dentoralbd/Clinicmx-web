@@ -225,22 +225,25 @@ button:focus-visible {
     padding: 0 !important;
   }
   #prescription-print-root {
-    display: block !important;
+    display: flex !important;
+    flex-direction: column !important;
     width: 100% !important;
     max-width: none !important;
   }
   .prescription-print-container {
     margin: 0;
-    padding: 20px 20px 110px 20px;
+    /* One full A4 page tall (border-box, so padding is included) — short prescriptions get
+       their footer pushed to the true page bottom via margin-top:auto below; long ones just
+       grow past this and the footer follows content in normal flow, so it can never overlap
+       (a fixed-position footer with a guessed reserve could, and did, for long content). */
+    min-height: 297mm;
+    padding: 20px;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
     border-radius: 0 !important;
   }
   .prescription-print-footer {
-    position: fixed;
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
+    margin-top: auto !important;
   }
 }
 
@@ -259,25 +262,32 @@ button:focus-visible {
     padding: 0 !important;
   }
   #invoice-print-root {
-    display: block !important;
     width: 100% !important;
     max-width: none !important;
   }
+  /* Shared by InvoicePrint, TreatmentPlanPrint, TreatmentEstimatePrint, PaymentReceiptPrint,
+     and VisitHistoryPrint. One full A4 page tall (border-box, so padding is included) — short
+     documents get their footer pushed to the true page bottom via margin-top:auto below; long
+     ones (many items, long payment history) just grow past this and the footer follows
+     content in normal flow, so it can never overlap (a fixed-position footer with a guessed
+     reserve could, and did, once a payment-history table ran long). */
   .invoice-print-container {
+    display: flex !important;
+    flex-direction: column !important;
     margin: 0;
-    /* Bottom padding must clear the tallest fixed .invoice-print-footer that reuses this
-       class — invoices now include a QR block there, taller than the plain text/signature
-       footer the other document types (treatment plan, estimate, receipt) use. */
-    padding: 20px 20px 220px 20px;
+    min-height: 297mm;
+    padding: 20px;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
     border-radius: 0 !important;
   }
+  .invoice-print-footer-wrap {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+  }
   .invoice-print-footer {
-    position: fixed;
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
+    margin-top: auto !important;
   }
   .statement-invoice-block,
   .statement-payments,

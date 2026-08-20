@@ -846,7 +846,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         )}
 
         {/* ── Grand totals + footer kept together on print ── */}
-        <div className={combined ? 'statement-summary' : undefined}>
+        <div className={`invoice-print-footer-wrap${combined ? ' statement-summary' : ''}`}>
           {combined && (
             <div className="mt-6 border-t-2 border-gray-800 pt-3 flex justify-end">
               <div className="w-64 text-sm space-y-1">
