@@ -37,7 +37,7 @@ import { TREATMENT_PLAN_PRESETS } from '@/lib/clinicalTextPresets'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
 import { SuggestTextarea, SuggestTextInput } from '@/components/SuggestField'
 import { TreatmentPlanCostDialog } from '@/components/TreatmentPlanCostDialog'
-import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
+import { getAgeTierFromDOB, deriveDateOfBirthFromAge, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB, autoFillDosageForTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
@@ -1564,7 +1564,7 @@ export function Prescriptions() {
                               newMeds[index] = {
                                 ...newMeds[index],
                                 name: drug.name,
-                                ...translateDrugDefaults(drug, drug.ageDosing[defaultTier], formData.language),
+                                ...translateDrugDefaults(drug, autoFillDosageForTier(drug.ageDosing, defaultTier), formData.language),
                                 ageDosing: drug.ageDosing,
                                 generic: drug.generic,
                                 dosageForm: drug.dosageForm,

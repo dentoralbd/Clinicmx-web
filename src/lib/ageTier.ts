@@ -49,3 +49,11 @@ export const AGE_TIER_LABELS: Record<AgeTier, string> = {
   child: 'Child',
   adult: 'Adult',
 }
+
+// Adult age-tier text ("200mg 2x daily") only repeats the strength already in the brand name
+// and the frequency printed beside it, so it is left blank and filled on demand (age-tier chip
+// or AI weight-dose button). Pediatric tiers carry mg/kg guidance printed nowhere else, so
+// those still auto-fill.
+export function autoFillDosageForTier(ageDosing: Record<AgeTier, string>, tier: AgeTier): string {
+  return tier === 'adult' ? '' : ageDosing[tier]
+}

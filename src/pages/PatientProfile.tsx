@@ -63,7 +63,7 @@ import {
 import { format } from 'date-fns'
 import { formatBDT } from '@/lib/utils'
 import { DrugPicker } from '@/components/DrugPicker'
-import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB } from '@/lib/ageTier'
+import { getAgeTierFromDOB, AGE_TIER_LABELS, type AgeTier, getDentitionTypeFromDOB, autoFillDosageForTier } from '@/lib/ageTier'
 import { WEIGHT_DOSING_FORMULAS } from '@/lib/weightDosingFormulas'
 import { translateDrugDefaults, translateDosage, retranslateMedication, dosageToBengali, frequencyToBengali, durationToBengali, instructionsToBengali, type PrescriptionLanguage } from '@/lib/medicationBengali'
 import { PrescriptionLanguageToggle } from '@/components/PrescriptionLanguageToggle'
@@ -6913,7 +6913,7 @@ function PrescriptionFormModal({
                           newMeds[index] = {
                             ...newMeds[index],
                             name: drug.name,
-                            ...translateDrugDefaults(drug, drug.ageDosing[defaultTier], formData.language),
+                            ...translateDrugDefaults(drug, autoFillDosageForTier(drug.ageDosing, defaultTier), formData.language),
                             ageDosing: drug.ageDosing,
                             generic: drug.generic,
                             dosageForm: drug.dosageForm,
