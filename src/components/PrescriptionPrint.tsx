@@ -586,8 +586,9 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
                     </div>
                   )}
                   <QRCodeSVG value={qrPayload} size={72} />
-                  <div className="text-[9px] text-gray-400 mt-1">
-                    Scan QR to visit www.dentoralbd.com
+                  <div className="text-[9px] text-gray-400 mt-1 leading-tight">
+                    <div>Scan QR to</div>
+                    <div>visit www.dentoralbd.com</div>
                   </div>
                 </div>
               )}

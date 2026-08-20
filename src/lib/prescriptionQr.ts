@@ -8,7 +8,7 @@
 const CLINIC_SITE_URL = 'https://www.dentoralbd.com/'
 
 export interface PrescriptionQrData {
-  patientId: string
+  patientId?: string
   patientCode?: string
 }
 
@@ -23,7 +23,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 export function buildPrescriptionQrPayload(data: PrescriptionQrData): string {
   const fragment = new URLSearchParams()
-  fragment.set('pid', data.patientId)
+  if (data.patientId) fragment.set('pid', data.patientId)
   if (data.patientCode) fragment.set('code', data.patientCode)
   return `${CLINIC_SITE_URL}#${fragment.toString()}`
 }

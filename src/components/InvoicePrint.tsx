@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Mail, MessageCircle, Printer, X } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
+import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import {
   formatInvoiceItemLabel,
   getInvoiceItemDiscountShares,
@@ -394,6 +396,8 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   const [format, setFormat] = useState<'detailed' | 'receipt'>('detailed')
   const [groupSimilar, setGroupSimilar] = useState(false)
   const [payments, setPayments] = useState<StatementPaymentRow[]>([])
+
+  const qrPayload = patient.patient_code ? buildPrescriptionQrPayload({ patientCode: patient.patient_code }) : null
 
   const visibleInvoices = combined && dueOnly ? invoices.filter((invoice) => getInvoiceDue(invoice) > 0) : invoices
   const grandTotal = visibleInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
@@ -865,7 +869,18 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
           {/* ── Footer ── */}
           <div className={`invoice-print-footer ${combined ? 'mt-6' : 'mt-10'}`}>
             <div className="flex justify-between items-end border-t border-gray-300 pt-4">
-              <div className="text-xs text-gray-500">Thank you for your visit.</div>
+              <div className="text-xs text-gray-500">
+                <div>Thank you for your visit.</div>
+                {qrPayload && (
+                  <div className="mt-3">
+                    <QRCodeSVG value={qrPayload} size={90} />
+                    <div className="text-[9px] text-gray-400 mt-1 leading-tight">
+                      <div>Scan QR to</div>
+                      <div>visit www.dentoralbd.com</div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="text-right">
                 <div className="border-t border-gray-800 w-40 mb-1" />
                 <div className="text-sm font-semibold">Authorized Signature</div>
