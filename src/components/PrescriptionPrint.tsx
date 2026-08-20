@@ -313,7 +313,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
       <div className="flex-1 overflow-y-auto flex items-start justify-center p-4 print:p-0 print:block print:overflow-visible">
       <div
         id="prescription-print-root"
-        className="prescription-print-container bg-white w-full max-w-3xl min-h-[1085px] print:min-h-0 my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900 flex flex-col print:block"
+        className="prescription-print-container bg-white w-full max-w-3xl aspect-[210/297] print:aspect-auto my-4 print:my-0 rounded-2xl print:rounded-none shadow-2xl print:shadow-none p-8 print:p-6 text-gray-900 flex flex-col print:block"
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* ── Letterhead: doctors (left/right, from Admin > Prescription Doctors) · logo + clinic (center) ── */}
