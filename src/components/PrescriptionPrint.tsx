@@ -580,12 +580,15 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
               <div>Follow-up: ___________________</div>
               {qrPayload && (
                 <div className="mt-3">
-                  <QRCodeSVG value={qrPayload} size={72} />
                   {prescription.id && (
-                    <div className="text-[9px] text-gray-400 mt-1">
+                    <div className="text-[9px] text-gray-400 mb-1">
                       Prescription ID: {prescription.id.slice(0, 8).toUpperCase()}
                     </div>
                   )}
+                  <QRCodeSVG value={qrPayload} size={72} />
+                  <div className="text-[9px] text-gray-400 mt-1">
+                    Scan QR to visit www.dentoralbd.com
+                  </div>
                 </div>
               )}
             </div>
