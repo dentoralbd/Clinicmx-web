@@ -27,6 +27,7 @@
    layouts already provide their own margin via padding, so zeroing the page margin here
    leaves no room for the browser's header/footer text to appear. */
 @page {
+  size: A4;
   margin: 0;
 }
 
@@ -225,27 +226,31 @@ button:focus-visible {
     padding: 0 !important;
   }
   #prescription-print-root {
-    display: flex !important;
-    flex-direction: column !important;
     width: 100% !important;
     max-width: none !important;
   }
   .prescription-print-container {
+    display: block !important;
+    /* aspect-ratio is an on-screen-only concern (the preview card is A4-proportioned); letting it
+       apply here would force the box to exactly one page tall and push the footer over the break. */
+    aspect-ratio: auto !important;
     margin: 0;
-    /* One full A4 page tall (border-box, so padding is included) — short prescriptions get
-       their footer pushed to the true page bottom via margin-top:auto below; long ones just
-       grow past this and the footer follows content in normal flow, so it can never overlap
-       (a fixed-position footer with a guessed reserve could, and did, for long content). */
-    min-height: 295mm;
-    padding: 20px;
+    /* Bottom padding reserves room for the fixed footer below. The value is measured from the
+       footer's real rendered height at print time (see lib/printFooterReserve.ts) rather than
+       guessed — a stale hand-picked reserve is what previously let the QR overlap content. */
+    padding: 20px 20px var(--clinicmx-print-footer-h, 240px) 20px !important;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
     border-radius: 0 !important;
   }
+  /* Fixed, so the footer contributes zero height to the document and therefore cannot create a
+     trailing blank page — the failure mode of every in-flow variant tried before it. */
   .prescription-print-footer {
-    margin-top: auto !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    position: fixed;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    margin-top: 0 !important;
   }
 }
 
@@ -271,30 +276,25 @@ button:focus-visible {
     max-width: none !important;
   }
   /* Shared by InvoicePrint, TreatmentPlanPrint, TreatmentEstimatePrint, PaymentReceiptPrint,
-     and VisitHistoryPrint. One full A4 page tall (border-box, so padding is included) — short
-     documents get their footer pushed to the true page bottom via margin-top:auto below; long
-     ones (many items, long payment history) just grow past this and the footer follows
-     content in normal flow, so it can never overlap (a fixed-position footer with a guessed
-     reserve could, and did, once a payment-history table ran long). */
+     and VisitHistoryPrint. Bottom padding reserves room for the fixed footer below, measured
+     from its real rendered height at print time (see lib/printFooterReserve.ts) rather than
+     guessed — a stale hand-picked reserve is what previously let the QR overlap content. */
   .invoice-print-container {
-    display: flex !important;
-    flex-direction: column !important;
+    display: block !important;
     margin: 0;
-    min-height: 295mm;
-    padding: 20px;
+    padding: 20px 20px var(--clinicmx-print-footer-h, 240px) 20px !important;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
     border-radius: 0 !important;
   }
-  .invoice-print-footer-wrap {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 auto !important;
-  }
+  /* Fixed, so the footer contributes zero height to the document and therefore cannot create a
+     trailing blank page — the failure mode of every in-flow variant tried before it. */
   .invoice-print-footer {
-    margin-top: auto !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    position: fixed;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    margin-top: 0 !important;
   }
   .statement-invoice-block,
   .statement-payments,

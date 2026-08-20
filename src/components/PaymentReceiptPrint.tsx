@@ -3,6 +3,7 @@ import { Printer, X } from 'lucide-react'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { loadDoctorProfile } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface PaymentReceiptPrintProps {
@@ -67,6 +68,7 @@ export function PaymentReceiptPrint({ payment, invoice, patient, remainingAfter,
   function handlePrint() {
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     document.title = `Receipt_${namePart}_${payment.id.slice(0, 8).toUpperCase()}`.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 

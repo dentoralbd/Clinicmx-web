@@ -8,6 +8,7 @@ import {
 } from '@/lib/treatmentPlanTotals'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
@@ -69,6 +70,7 @@ export function TreatmentPlanPrint({ treatments, invoices = [], patient, doctor,
   function handlePrint() {
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     document.title = `Treatment_Plan_${namePart}`.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 

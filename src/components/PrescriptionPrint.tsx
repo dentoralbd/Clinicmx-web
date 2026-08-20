@@ -9,6 +9,7 @@ import { cleanLogoSource } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { type ClinicalEntry, quadrantAbbr } from '@/lib/clinicalEntries'
 import { listActiveLetterheadDoctors, type LetterheadDoctor } from '@/lib/prescriptionLetterheadDoctors'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import {
   dosageToBengali,
   routeToBengali,
@@ -196,6 +197,7 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : 'Prescription'
     document.title = `Prescription_${namePart}_${idPart}`.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 

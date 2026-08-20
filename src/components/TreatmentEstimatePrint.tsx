@@ -12,6 +12,7 @@ import {
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
@@ -65,6 +66,7 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
   function handlePrint() {
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     document.title = `Estimate_${namePart}`.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 

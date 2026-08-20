@@ -17,6 +17,7 @@ import {
 } from '@/lib/billing'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
 import { supabase } from '@/lib/supabase'
 import { safeFormat, formatBDT } from '@/lib/utils'
@@ -503,6 +504,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
       ? `Statement_${namePart}_${invoices.length}invoices${formatPart}`
       : `Invoice_${namePart}_${invoices[0]?.invoice_number || (invoices[0]?.id ? invoices[0].id.slice(0, 8).toUpperCase() : 'Invoice')}${formatPart}`
     document.title = title.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 
@@ -846,7 +848,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
         )}
 
         {/* ── Grand totals + footer kept together on print ── */}
-        <div className={`invoice-print-footer-wrap${combined ? ' statement-summary' : ''}`}>
+        <div className={combined ? 'statement-summary' : undefined}>
           {combined && (
             <div className="mt-6 border-t-2 border-gray-800 pt-3 flex justify-end">
               <div className="w-64 text-sm space-y-1">

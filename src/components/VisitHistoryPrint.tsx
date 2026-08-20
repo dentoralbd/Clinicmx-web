@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Printer, X } from 'lucide-react'
 import type { DoctorProfileData } from '@/lib/doctorProfile'
 import { cleanLogoSource } from '@/lib/logoImage'
+import { applyPrintFooterReserve } from '@/lib/printFooterReserve'
 import { safeFormat, formatBDT } from '@/lib/utils'
 
 interface VisitHistoryPrintProps {
@@ -109,6 +110,7 @@ export function VisitHistoryPrint({ visits, invoices, payments, patient, doctor,
   function handlePrint() {
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     document.title = `Visit_History_${namePart}`.replace(/[\\/:*?"<>|]/g, '-')
+    applyPrintFooterReserve()
     window.print()
   }
 
