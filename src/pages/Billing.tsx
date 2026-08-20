@@ -532,7 +532,7 @@ export function Billing() {
     const doctor = await ensureDoctorProfile()
     const logoSrc = await resolveLogoSrc(doctor, '/logo.png')
     const patientInfo = patient || { first_name: 'Unknown', last_name: 'Patient', patient_code: null, phone: null }
-    const doc = buildInvoicePdf([invoice], patientInfo, doctor, { logoSrc })
+    const doc = await buildInvoicePdf([invoice], patientInfo, doctor, { logoSrc })
     const fileName = invoicePdfFileName([invoice], patientInfo)
     const subject = `Invoice ${invoice.invoice_number || invoice.id}`
     const text = `Dear ${patientInfo.first_name || 'Patient'},\n\nPlease find attached your invoice. Total: ${formatBDT(invoice.total_amount)}.`

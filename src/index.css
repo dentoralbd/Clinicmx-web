@@ -268,7 +268,7 @@ button:focus-visible {
     /* Bottom padding must clear the tallest fixed .invoice-print-footer that reuses this
        class — invoices now include a QR block there, taller than the plain text/signature
        footer the other document types (treatment plan, estimate, receipt) use. */
-    padding: 20px 20px 190px 20px;
+    padding: 20px 20px 220px 20px;
     font-family: 'Times New Roman', Times, serif;
     box-shadow: none !important;
     border-radius: 0 !important;

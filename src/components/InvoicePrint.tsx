@@ -529,7 +529,7 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
     }
 
     const { buildInvoicePdf, invoicePdfFileName } = await import('@/lib/invoicePdf')
-    const pdf = buildInvoicePdf(visibleInvoices, patient, doctor, {
+    const pdf = await buildInvoicePdf(visibleInvoices, patient, doctor, {
       dueOnly,
       showItems,
       payments: showPayments ? visiblePayments : [],
@@ -886,9 +886,9 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
                 <div className="text-sm font-semibold">Authorized Signature</div>
               </div>
             </div>
+            <div className="text-center text-[10px] text-gray-400 mt-3">Crafted with ❤️ by ClinicMx</div>
           </div>
         </div>
-        <div className="text-center text-[10px] text-gray-400 mt-3">Crafted with ❤️ by ClinicMx</div>
       </div>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import QRCode from 'qrcode'
+import { buildPrescriptionQrPayload } from '@/lib/prescriptionQr'
 import {
   formatInvoiceItemLabel,
   getInvoiceItemDiscountShares,
@@ -182,13 +184,14 @@ export function drawTotalsBlock(
   return cursor
 }
 
-export function drawFooter(doc: jsPDF, y: number): void {
+export function drawFooter(doc: jsPDF, y: number, qrDataUrl?: string | null): void {
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   // Pin the footer near the bottom margin of the page (like a real letterhead) instead of
   // floating directly under short content — but never above where the content actually ends.
-  y = Math.max(y, pageHeight - 90)
+  // A QR block needs more vertical room than the plain text/signature footer.
+  y = Math.max(y, pageHeight - (qrDataUrl ? 170 : 90))
   doc.setDrawColor(190)
   doc.line(marginX, y, pageWidth - marginX, y)
   const footerY = y + 22
@@ -197,18 +200,45 @@ export function drawFooter(doc: jsPDF, y: number): void {
   doc.text('Thank you for your visit.', marginX, footerY)
   doc.line(pageWidth - marginX - 120, footerY - 4, pageWidth - marginX, footerY - 4)
   doc.text('Authorized Signature', pageWidth - marginX, footerY + 8, { align: 'right' })
+
+  let creditY = footerY + 20
+  if (qrDataUrl) {
+    const qrSize = 60
+    const qrY = footerY + 10
+    doc.addImage(qrDataUrl, 'PNG', marginX, qrY, qrSize, qrSize)
+    doc.setFontSize(6)
+    doc.setTextColor(140)
+    doc.text('Scan QR to', marginX, qrY + qrSize + 10)
+    doc.text('visit www.dentoralbd.com', marginX, qrY + qrSize + 18)
+    doc.setTextColor(0)
+    creditY = qrY + qrSize + 32
+  }
+
   doc.setFontSize(7)
   doc.setTextColor(160)
-  doc.text('Crafted with love by ClinicMx', pageWidth / 2, footerY + 20, { align: 'center' })
+  doc.text('Crafted with love by ClinicMx', pageWidth / 2, creditY, { align: 'center' })
   doc.setTextColor(0)
 }
 
-function buildSingleInvoicePdf(
+async function buildInvoiceQrDataUrl(patient: PdfPatient): Promise<string | null> {
+  if (!patient.patient_code) return null
+  try {
+    return await QRCode.toDataURL(buildPrescriptionQrPayload({ patientCode: patient.patient_code }), {
+      width: 200,
+      margin: 1,
+    })
+  } catch (error) {
+    console.error('Failed to generate invoice QR code:', error)
+    return null
+  }
+}
+
+async function buildSingleInvoicePdf(
   invoice: PdfInvoice,
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
   logoSrc?: string
-): jsPDF {
+): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -283,18 +313,18 @@ function buildSingleInvoicePdf(
   lines.push(['Due', formatBDT(due), true])
 
   y = drawTotalsBlock(doc, y, lines) + 16
-  drawFooter(doc, y)
+  drawFooter(doc, y, await buildInvoiceQrDataUrl(patient))
 
   return doc
 }
 
-function buildReceiptInvoicePdf(
+async function buildReceiptInvoicePdf(
   invoice: PdfInvoice,
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
   logoSrc?: string,
   groupSimilar?: boolean
-): jsPDF {
+): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -411,18 +441,18 @@ function buildReceiptInvoicePdf(
     doc.setTextColor(0)
     y += 14
   }
-  drawFooter(doc, y)
+  drawFooter(doc, y, await buildInvoiceQrDataUrl(patient))
 
   return doc
 }
 
-function buildCombinedInvoicePdf(
+async function buildCombinedInvoicePdf(
   invoices: PdfInvoice[],
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
   options: BuildInvoicePdfOptions,
   logoSrc?: string
-): jsPDF {
+): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const marginX = 40
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -578,7 +608,7 @@ function buildCombinedInvoicePdf(
     y = lastAutoTableY(doc) + 18
   }
 
-  if (y > doc.internal.pageSize.getHeight() - 120) {
+  if (y > doc.internal.pageSize.getHeight() - 200) {
     doc.addPage()
     y = 50
   }
@@ -602,17 +632,17 @@ function buildCombinedInvoicePdf(
   )
   y += 12
 
-  drawFooter(doc, y)
+  drawFooter(doc, y, await buildInvoiceQrDataUrl(patient))
 
   return doc
 }
 
-export function buildInvoicePdf(
+export async function buildInvoicePdf(
   invoices: PdfInvoice[],
   patient: PdfPatient,
   doctor: DoctorProfileData | null,
   options: BuildInvoicePdfOptions = {}
-): jsPDF {
+): Promise<jsPDF> {
   if (invoices.length <= 1) {
     return options.format === 'receipt'
       ? buildReceiptInvoicePdf(invoices[0], patient, doctor, options.logoSrc, options.groupSimilar)

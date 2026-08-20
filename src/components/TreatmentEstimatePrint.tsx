@@ -282,8 +282,8 @@ export function TreatmentEstimatePrint({ treatments, patient, doctor, onClose }:
               <div className="text-sm font-semibold">Authorized Signature</div>
             </div>
           </div>
+          <div className="text-center text-[10px] text-gray-400 mt-3">Crafted with ❤️ by ClinicMx</div>
         </div>
-        <div className="text-center text-[10px] text-gray-400 mt-3">Crafted with ❤️ by ClinicMx</div>
       </div>
       </div>
     </div>
