@@ -191,7 +191,7 @@ export function drawFooter(doc: jsPDF, y: number, qrDataUrl?: string | null): vo
   // Pin the footer near the bottom margin of the page (like a real letterhead) instead of
   // floating directly under short content — but never above where the content actually ends.
   // A QR block needs more vertical room than the plain text/signature footer.
-  y = Math.max(y, pageHeight - (qrDataUrl ? 170 : 90))
+  y = Math.max(y, pageHeight - (qrDataUrl ? 200 : 100))
   doc.setDrawColor(190)
   doc.line(marginX, y, pageWidth - marginX, y)
   const footerY = y + 22
@@ -214,6 +214,11 @@ export function drawFooter(doc: jsPDF, y: number, qrDataUrl?: string | null): vo
     doc.setTextColor(0)
     creditY = qrY + qrSize + 32
   }
+
+  // Hard safety clamp: whatever the footer content above computed, the credit line itself
+  // must never land beyond the page — a stray page for just this one line (as happened when
+  // the footer grew taller than the reserve above accounted for) is worse than a tight fit.
+  creditY = Math.min(creditY, pageHeight - 15)
 
   doc.setFontSize(7)
   doc.setTextColor(160)
