@@ -15,6 +15,7 @@ import { logEdit } from '@/lib/editHistory'
 import { format } from 'date-fns'
 import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
+import { extractPatientAnniversary } from '@/lib/celebrationReminders'
 
 function deriveDateOfBirthFromAge(age: number) {
   const today = new Date()
@@ -55,6 +56,7 @@ export function Patients() {
     age: '',
     gender: 'Male',
     weight: '',
+    anniversary_date: '',
     address: '',
     medical_history: '',
     notes: '',
@@ -74,16 +76,30 @@ export function Patients() {
 
     const parsedWeight = formData.weight.trim() ? Number.parseFloat(formData.weight) : null
 
-    const { age: _age, ...patientPayload } = {
+    const previous = editingId ? patients.find((p) => p.id === editingId) : null
+
+    // Anniversary date isn't a real column — it rides inside notes as an
+    // [anniversary: YYYY-MM-DD] tag. Only rewrite notes when the value
+    // actually changed, so saving a patient without touching this field
+    // leaves notes byte-identical to what was already saved.
+    const existingAnniversary = previous ? extractPatientAnniversary(previous) : null
+    const newAnniversary = formData.anniversary_date.trim() || null
+    let notesValue = formData.notes
+    if (newAnniversary !== existingAnniversary) {
+      const stripped = notesValue.replace(/\[anniversary:\s*[^\]]+\]/gi, '').trim()
+      notesValue = newAnniversary ? `${stripped ? `${stripped}\n` : ''}[anniversary: ${newAnniversary}]` : stripped
+    }
+
+    const { age: _age, anniversary_date: _anniversaryDate, ...patientPayload } = {
       ...formData,
       phone: formData.phone.replace(/\D/g, ''),
       date_of_birth: dateOfBirth,
       weight: parsedWeight,
+      notes: notesValue,
     }
 
     try {
       if (editingId) {
-        const previous = patients.find((p) => p.id === editingId)
         if (previous) {
           await logEdit({
             entityType: 'patient',
@@ -143,6 +159,7 @@ export function Patients() {
       age: patient.date_of_birth ? String(calculateAgeFromDate(patient.date_of_birth)) : '',
       gender: patient.gender,
       weight: patient.weight != null ? String(patient.weight) : '',
+      anniversary_date: extractPatientAnniversary(patient) || '',
       address: patient.address || '',
       medical_history: patient.medical_history || '',
       notes: patient.notes || '',
@@ -162,6 +179,7 @@ export function Patients() {
       age: '',
       gender: 'Male',
       weight: '',
+      anniversary_date: '',
       address: '',
       medical_history: '',
       notes: '',
@@ -495,6 +513,17 @@ export function Patients() {
                     placeholder="Optional (e.g. 65.5)"
                     className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Anniversary Date</label>
+                  <input
+                    type="date"
+                    value={formData.anniversary_date}
+                    onChange={(e) => setFormData({ ...formData, anniversary_date: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
+                  />
+                  <p className="mt-1 text-[11px] text-text-secondary">Optional — powers the Celebrations reminder on the Dashboard</p>
                 </div>
               </div>
 

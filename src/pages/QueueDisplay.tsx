@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Volume2, VolumeX, Settings, X, QrCode } from 'lucide-react'
+import { Volume2, VolumeX, Settings, X, QrCode, Activity, Clock, CheckCircle2 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   getQueueEntries,
@@ -78,7 +78,14 @@ export function QueueDisplay() {
   const [slideIndex, setSlideIndex] = useState(0)
   const [notices, setNotices] = useState<string[]>([])
   const [ticker, setTicker] = useState('')
+  const [clockNow, setClockNow] = useState(new Date())
   const announcedIds = useRef<Set<string>>(new Set())
+
+  // Header clock — display-only, doesn't drive any queue logic.
+  useEffect(() => {
+    const id = window.setInterval(() => setClockNow(new Date()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
 
   useEffect(() => {
     if (!isAppAuthenticated()) {
@@ -195,7 +202,7 @@ export function QueueDisplay() {
   const canEditSettings = role === 'admin'
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6 md:p-10 flex flex-col gap-8">
+    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10 flex flex-col gap-8">
       {!audioUnlocked && (
         <button
           onClick={handleUnlock}
@@ -208,44 +215,80 @@ export function QueueDisplay() {
         </button>
       )}
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">ClinicMx — Queue (Staff Display)</h1>
-        <div className="flex items-center gap-3">
-          <span className={audioUnlocked ? 'text-emerald-400' : 'text-amber-400'}>
-            {audioUnlocked ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </span>
+      <div className="flex items-center justify-between bg-slate-900/90 backdrop-blur-lg border border-slate-800/80 rounded-3xl px-6 py-4 shadow-lg">
+        <div className="flex items-center gap-4">
+          <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain rounded-xl bg-white/5 p-1 border border-white/10" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black text-white tracking-tight">ClinicMx</h1>
+              <span className="text-[11px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                Live Queue
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 font-medium">Staff Display</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700">
+            {audioUnlocked ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-amber-400" />}
+            <span className={audioUnlocked ? 'text-emerald-400' : 'text-amber-400'}>{audioUnlocked ? 'Audio Active' : 'Tap for Audio'}</span>
+          </div>
           {/* Scan to open /queue on a phone instead of typing the local
               network address — same "Connect Devices" idea from the
               redesign sandbox this feature was ported from, just scoped to
               the one link staff actually asked for (reception's Queue
               Management page). Any staff viewing this screen can use it,
               not just admins — it's a shortcut, not a setting. */}
-          <button onClick={() => setShowQr(true)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20" title="Scan to open Queue Management">
-            <QrCode className="w-5 h-5" />
+          <button
+            onClick={() => setShowQr(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl text-slate-200 text-xs font-semibold transition-colors shadow-sm"
+            title="Scan to open Queue Management"
+          >
+            <QrCode className="w-4 h-4 text-teal-400" />
+            Connect Devices
           </button>
           {canEditSettings && (
-            <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20">
-              <Settings className="w-5 h-5" />
+            <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition-colors">
+              <Settings className="w-4 h-4" />
             </button>
           )}
+          <div className="hidden md:block pl-3 border-l border-slate-800 text-right">
+            <div className="text-xl font-bold font-mono tracking-tight text-white">
+              {clockNow.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              {clockNow.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1.2fr,1fr] items-start">
         <div className="flex flex-col gap-8">
           <div>
-            <div className="text-sm uppercase tracking-widest text-emerald-400 font-bold mb-3">Now Serving</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-2">
+                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
+                Now Serving <span className="text-slate-500 normal-case font-medium">/ এখন ডাকা হচ্ছে</span>
+              </div>
+            </div>
             {serving.length === 0 && onHold.length === 0 ? (
-              <div className="text-4xl font-black text-gray-600 py-16 text-center border-2 border-dashed border-gray-800 rounded-3xl">
-                — Waiting for next patient —
+              <div className="h-44 bg-slate-900/60 rounded-3xl border border-slate-800/80 flex flex-col items-center justify-center text-slate-500 p-6 backdrop-blur-sm">
+                <Activity className="w-10 h-10 mb-2 opacity-40 text-teal-400" />
+                <div className="text-lg font-semibold text-slate-400">No Patient Currently in Consultation</div>
+                <p className="text-xs text-slate-500 mt-1">Next waiting patient will be called shortly</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {serving.map((e) => (
-                  <div key={e.id} className="bg-emerald-500/10 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl">
-                    <div className="text-5xl font-black tracking-tight">{formatPatientDisplay(e, privacyMode)}</div>
-                    <div className="mt-2 text-lg text-emerald-300 font-semibold">
-                      {e.procedure_name || 'Consultation'} {e.room_number ? `· ${e.room_number}` : ''}
+                  <div key={e.id} className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-r from-teal-900/90 via-slate-900/90 to-emerald-950/90 border-2 border-emerald-500/50 shadow-2xl shadow-emerald-950/50">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative z-10">
+                      <div className="text-5xl font-black tracking-tight">{formatPatientDisplay(e, privacyMode)}</div>
+                      <div className="mt-2 text-lg text-emerald-300 font-semibold">
+                        {e.procedure_name || 'Consultation'} {e.room_number ? `· ${e.room_number}` : ''}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -260,9 +303,26 @@ export function QueueDisplay() {
           </div>
 
           <div>
-            <div className="text-sm uppercase tracking-widest text-gray-400 font-bold mb-3">Next in Line</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-slate-500" />
+                Next in Line <span className="text-slate-500 normal-case font-medium">/ পরবর্তী রোগীগণ</span>
+                {waiting.length > 0 && (
+                  <span className="text-[10px] font-bold text-teal-300 bg-teal-950/60 border border-teal-500/30 px-2 py-0.5 rounded-lg normal-case tracking-normal">
+                    AI Smart ETAs
+                  </span>
+                )}
+              </div>
+              <span className="text-xs text-slate-500 font-medium">{waiting.length} patient{waiting.length === 1 ? '' : 's'} waiting</span>
+            </div>
             <div className="space-y-2">
-              {waiting.length === 0 && <div className="text-gray-600 text-lg">Queue is empty</div>}
+              {waiting.length === 0 && (
+                <div className="bg-slate-900/60 rounded-2xl border border-slate-800/80 flex flex-col items-center justify-center text-slate-500 py-8 backdrop-blur-sm">
+                  <CheckCircle2 className="w-7 h-7 mb-2 opacity-50 text-teal-400" />
+                  <div className="text-sm font-semibold text-slate-400">Waiting Lounge is Clear</div>
+                  <p className="text-xs text-slate-500 mt-0.5">All arriving patients have been attended</p>
+                </div>
+              )}
               {waiting.map((e) => {
                 const eta = etaById.get(e.id)
                 return (

@@ -75,6 +75,7 @@ import { logActivity } from '@/lib/activityLog'
 import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
 import { calculateWeightDose, formatWeightDoseSuggestion } from '@/lib/weightDosing'
 import { isLiquidDosageForm, isSpoonableDosageForm, parseLiquidConcentration, calculateVolumeDose, formatVolumeDoseSuggestion } from '@/lib/liquidVolumeDosing'
+import { extractPatientAnniversary } from '@/lib/celebrationReminders'
 
 interface VisitTreatmentEntry {
   key: string
@@ -3218,6 +3219,9 @@ export function PatientProfile() {
             <InfoRow label="Phone" value={patient.phone || 'N/A'} />
             <InfoRow label="Email" value={patient.email || 'N/A'} />
             <InfoRow label="Address" value={patient.address || 'N/A'} />
+            {extractPatientAnniversary(patient) && (
+              <InfoRow label="Anniversary" value={formatDateValue(extractPatientAnniversary(patient))} />
+            )}
           </InfoCard>
 
           <InfoCard title="Quick Access">

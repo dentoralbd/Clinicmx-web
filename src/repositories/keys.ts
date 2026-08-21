@@ -4,6 +4,7 @@ export const qk = {
     all: ['patients'] as const,
     list: ['patients', 'list'] as const,
     bundle: (id: string) => ['patients', 'bundle', id] as const,
+    celebrations: ['patients', 'celebrations'] as const,
   },
   appointments: {
     all: ['appointments'] as const,
