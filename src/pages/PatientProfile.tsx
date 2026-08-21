@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
 import { AppointmentModal } from '@/components/AppointmentModal'
+import { RescheduleModal } from '@/components/RescheduleModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
@@ -539,6 +540,7 @@ export function PatientProfile() {
   const [files, setFiles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
+  const [rescheduleAppointment, setRescheduleAppointment] = useState<any | null>(null)
   const [showInvoiceForm, setShowInvoiceForm] = useState(false)
   const [invoicePlanGroupId, setInvoicePlanGroupId] = useState<string | null>(null)
   const [editingInvoiceRecord, setEditingInvoiceRecord] = useState<any | null>(null)
@@ -4390,7 +4392,16 @@ export function PatientProfile() {
                 </div>
                 <div className="flex items-center gap-2">
                   {upcomingIds.has(appointment.id) && (
-                    <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">Upcoming</span>
+                    <>
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">Upcoming</span>
+                      <button
+                        type="button"
+                        onClick={() => setRescheduleAppointment(appointment)}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        Reschedule
+                      </button>
+                    </>
                   )}
                   <span className={`text-xs ${
                     appointment.status === 'Completed' ? 'pill-success' :
@@ -5423,6 +5434,20 @@ export function PatientProfile() {
           setFormData={setMedicalHistoryForm}
           onSubmit={handleMedicalHistorySubmit}
           onClose={() => setShowMedicalHistoryForm(false)}
+        />
+      )}
+
+      {rescheduleAppointment && (
+        <RescheduleModal
+          appointment={{
+            ...rescheduleAppointment,
+            patients: patient ? { first_name: patient.first_name, last_name: patient.last_name, phone: patient.phone } : undefined,
+          }}
+          onClose={() => setRescheduleAppointment(null)}
+          onSave={() => {
+            loadPatientData()
+            setRescheduleAppointment(null)
+          }}
         />
       )}
 

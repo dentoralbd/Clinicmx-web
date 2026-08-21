@@ -3,6 +3,7 @@ import { Globe, RefreshCw, CheckCircle, Phone, MessageSquare, Calendar, UserChec
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { SlotPicker } from '@/components/SlotPicker'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 
 interface DentoralAppointment {
   id: string
@@ -40,6 +41,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
   const [slotDate, setSlotDate] = useState<Date>(new Date())
   const [slotStart, setSlotStart] = useState<Date | null>(null)
   const [apptDuration, setApptDuration] = useState<number>(30)
+  const [apptType, setApptType] = useState<string>('')
   const [confirming, setConfirming] = useState<boolean>(false)
 
   const fetchSerials = async () => {
@@ -90,6 +92,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
     setSlotDate(app.date ? new Date(app.date) : new Date())
     setSlotStart(null)
     setApptDuration(30)
+    setApptType(app.treatment || '')
     setSelectedPatientId('NEW')
 
     const cleanPhone = (app.phone || '').replace(/[^0-9]/g, '')
@@ -185,7 +188,7 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
         patient_id: finalPatientId,
         date_time: slotStart.toISOString(),
         duration: apptDuration,
-        type: selectedApp.treatment || 'Consultation',
+        type: apptType || selectedApp.treatment || 'Consultation',
         status: 'Confirmed',
         notes: `Imported from DentOral Web Serial #${selectedApp.id} (${selectedApp.doctor})`
       }])
@@ -350,7 +353,17 @@ export function DentoralBookingBridge({ onImportSuccess }: { onImportSuccess?: (
               {/* Clinic Calendar & Slots Selection */}
               <div className="bg-slate-50 p-3 rounded-lg border">
                 <label className="font-bold text-slate-800 block mb-2">2. Clinic Calendar & Time Slot Selection:</label>
-                
+
+                <div className="mb-3">
+                  <label className="block text-slate-600 font-medium mb-1">Type</label>
+                  <TreatmentTypeSelect
+                    value={apptType}
+                    onChange={(value) => setApptType(value)}
+                    extraOptions={['Follow-up']}
+                    className="w-full border rounded p-2 text-xs bg-white"
+                  />
+                </div>
+
                 <div className="mb-3">
                   <label className="block text-slate-600 font-medium mb-1">Duration (Minutes)</label>
                   <select

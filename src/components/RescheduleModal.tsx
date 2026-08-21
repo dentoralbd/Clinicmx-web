@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLog'
 import { RescheduleWhatsAppPrompt } from '@/components/RescheduleWhatsAppPrompt'
 import { SlotPicker } from '@/components/SlotPicker'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { isRangeFree, type ExistingAppointmentLite } from '@/lib/appointmentSlots'
 
 export function RescheduleModal({
@@ -17,6 +18,7 @@ export function RescheduleModal({
     id: string
     date_time: string
     duration: number
+    type: string
     patients?: {
       first_name: string
       last_name: string
@@ -29,6 +31,8 @@ export function RescheduleModal({
   const currentDate = new Date(appointment.date_time)
   const [slotDate, setSlotDate] = useState<Date>(currentDate)
   const [slotStart, setSlotStart] = useState<Date | null>(null)
+  const [duration, setDuration] = useState(String(appointment.duration))
+  const [type, setType] = useState(appointment.type)
   const [saving, setSaving] = useState(false)
   const [whatsAppPrompt, setWhatsAppPrompt] = useState<{ dateStr: string; timeStr: string } | null>(null)
 
@@ -63,7 +67,9 @@ export function RescheduleModal({
       if (fetchError) throw fetchError
       const appointmentsForDay = (dayAppts || []) as ExistingAppointmentLite[]
 
-      if (!isRangeFree(startDateTime, appointment.duration, appointmentsForDay)) {
+      const parsedDuration = parseInt(duration)
+
+      if (!isRangeFree(startDateTime, parsedDuration, appointmentsForDay)) {
         alert('An appointment is already scheduled during this time slot')
         setSaving(false)
         return
@@ -71,7 +77,7 @@ export function RescheduleModal({
 
       const { error } = await supabase
         .from('appointments')
-        .update({ date_time: startDateTime.toISOString(), status: 'Scheduled', reminder_sent_at: null })
+        .update({ date_time: startDateTime.toISOString(), duration: parsedDuration, type, status: 'Scheduled', reminder_sent_at: null })
         .eq('id', appointment.id)
 
       if (error) throw error
@@ -83,7 +89,7 @@ export function RescheduleModal({
         patientName: appointment.patients
           ? `${appointment.patients.first_name} ${appointment.patients.last_name}`
           : null,
-        details: `Rescheduled to ${format(startDateTime, 'MMM d, yyyy h:mm a')}`,
+        details: `Rescheduled to ${format(startDateTime, 'MMM d, yyyy h:mm a')} • ${parsedDuration} min • ${type}`,
       })
 
       // Always show the confirmation prompt, even with no phone on file —
@@ -118,7 +124,7 @@ export function RescheduleModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-white flex items-start justify-between">
           <div>
             <h2 className="font-display text-xl font-bold">Reschedule Appointment</h2>
@@ -127,6 +133,7 @@ export function RescheduleModal({
                 ? `${appointment.patients.first_name} ${appointment.patients.last_name} • `
                 : ''}
               Currently {format(currentDate, 'MMMM d, yyyy')} at {format(currentDate, 'h:mm a')}
+              {' '}• {appointment.type} • {appointment.duration} min
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -135,12 +142,43 @@ export function RescheduleModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Duration (min)</label>
+              <select
+                value={duration}
+                onChange={(e) => {
+                  setDuration(e.target.value)
+                  setSlotStart(null)
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="45">45 min</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Type</label>
+              <TreatmentTypeSelect
+                value={type}
+                onChange={(value) => setType(value)}
+                extraOptions={['Follow-up']}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2">New Appointment Time</label>
             <SlotPicker
               date={slotDate}
               onDateChange={setSlotDate}
-              durationMinutes={appointment.duration}
+              durationMinutes={parseInt(duration)}
               excludeAppointmentId={appointment.id}
               selectedStart={slotStart}
               onSelectStart={setSlotStart}

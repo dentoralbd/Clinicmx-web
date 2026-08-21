@@ -47,6 +47,7 @@ import { calculateQueueEtas, fetchProcedureDurations, getProcedureDuration } fro
 import { matchesPatientSearch, createPatient } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
 import { QueueQrScanner } from '@/components/QueueQrScanner'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { format } from 'date-fns'
 
 export function QueueManagement() {
@@ -665,34 +666,25 @@ export function QueueManagement() {
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">2. Clinical Procedure</h3>
                   <a href="/catalog" className="text-[11px] font-bold text-primary hover:underline">+ Add Custom</a>
                 </div>
-                <select
+                {/* A patient checked in from an appointment carries that
+                    appointment's own procedure type, which may not (yet) be
+                    a catalog item with a set chair time — e.g. before an
+                    admin has filled in Catalog durations, or a legacy
+                    free-text appointment type. TreatmentTypeSelect's legacy
+                    branch keeps that value visibly selectable instead of it
+                    silently reverting to General Consultation, even though
+                    the real procedure was still held in state and saved
+                    correctly. */}
+                <TreatmentTypeSelect
                   value={selectedProcedure}
-                  onChange={(e) => {
-                    setSelectedProcedure(e.target.value)
-                    setSelectedDurationMins(getProcedureDuration(e.target.value, durations))
+                  onChange={(value) => {
+                    setSelectedProcedure(value)
+                    setSelectedDurationMins(getProcedureDuration(value, durations))
                   }}
+                  blankOption="General Consultation"
+                  secondary="duration"
                   className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
-                >
-                  <option value="">General Consultation</option>
-                  {/* A patient checked in from an appointment carries that
-                      appointment's own procedure type, which may not (yet)
-                      be a catalog item with a set chair time — e.g. before
-                      an admin has filled in Catalog durations, or a legacy
-                      free-text appointment type. Without this, a <select>
-                      whose value doesn't match any <option> silently
-                      displays "General Consultation" even though the real
-                      procedure is still held in state and gets saved
-                      correctly — misleading the receptionist into thinking
-                      the appointment's procedure was lost. */}
-                  {selectedProcedure && !(selectedProcedure in durations) && (
-                    <option value={selectedProcedure}>{selectedProcedure}</option>
-                  )}
-                  {Object.keys(durations).map((name) => (
-                    <option key={name} value={name}>
-                      {name} ({durations[name]}m)
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

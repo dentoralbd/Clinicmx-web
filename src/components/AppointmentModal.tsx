@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
 import { SuggestTextarea } from '@/components/SuggestField'
 import { SlotPicker } from '@/components/SlotPicker'
+import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { supabase } from '@/lib/supabase'
 import { createPatient, matchesPatientSearch } from '@/lib/patients'
 import { logActivity } from '@/lib/activityLog'
@@ -27,7 +28,7 @@ export function AppointmentModal({
   const [formData, setFormData] = useState({
     patient_id: defaultPatientId || '',
     duration: '30',
-    type: 'Checkup',
+    type: '',
     status: 'Scheduled',
     notes: '',
   })
@@ -473,20 +474,13 @@ export function AppointmentModal({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
-              <select
+              <TreatmentTypeSelect
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                onChange={(value) => setFormData({ ...formData, type: value })}
+                extraOptions={['Follow-up']}
+                required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option>Checkup</option>
-                <option>Cleaning</option>
-                <option>Filling</option>
-                <option>Root Canal</option>
-                <option>Extraction</option>
-                <option>Crowning</option>
-                <option>Consultation</option>
-                <option>Follow-up</option>
-              </select>
+              />
             </div>
           </div>
 

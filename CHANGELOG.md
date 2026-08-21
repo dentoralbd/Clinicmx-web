@@ -4,6 +4,22 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-21 — Appointment type sourced from Catalog sitewide; Reschedule can edit type/duration
+
+`TreatmentTypeSelect` (previously Treatments-only) gained `extraOptions`, `blankOption`, and
+`secondary` props and is now used everywhere an appointment/procedure type is picked: New
+Appointment, Reschedule, the DentOral booking bridge's confirm step, and Patient Queue's Clinical
+Procedure field — replacing New Appointment's hardcoded 8-option list and Queue's plain `<select>`.
+"Follow-up" is pinned as a permanent non-catalog option; there is no fallback list if the Catalog
+is empty.
+
+Reschedule (`RescheduleModal.tsx`) can now also change an appointment's Duration and Type, not just
+its date/time — previously the only fix for a mis-entered duration/procedure was cancelling and
+rebooking. Duration changes clear the selected slot (mirroring the New Appointment/DentOral bridge
+pattern, since `SlotPicker` doesn't invalidate a stale selection on its own); Type changes don't. A
+matching **Reschedule** button was added to a patient's own Profile → Appts tab for upcoming
+appointments, opening the same modal without leaving the profile. See FEATURES.md §4.
+
 ## 2026-08-19 — Integrity scanner: nightly cron trigger, and a live incident it caught
 
 Added a third trigger for the integrity scanner (below): a standalone Cloudflare Worker with a

@@ -10,6 +10,12 @@ interface TreatmentTypeSelectProps {
   required?: boolean
   className?: string
   id?: string
+  /** Non-catalog values that must always be selectable (e.g. 'Follow-up' on appointments). Pinned above the catalog groups and never flagged as legacy. */
+  extraOptions?: string[]
+  /** Label for an entry that clears the value to '' (e.g. 'General Consultation' in the queue). */
+  blankOption?: string
+  /** Which catalog default to show beside an item. */
+  secondary?: 'fee' | 'duration'
 }
 
 /**
@@ -23,7 +29,7 @@ interface TreatmentTypeSelectProps {
  * never silently blank out — mirrors the DrugPicker "missing category" bug
  * class documented in CLAUDE.md.
  */
-export function TreatmentTypeSelect({ value, onChange, required, className, id }: TreatmentTypeSelectProps) {
+export function TreatmentTypeSelect({ value, onChange, required, className, id, extraOptions, blankOption, secondary = 'fee' }: TreatmentTypeSelectProps) {
   const { data: items = [] } = useQuery({ queryKey: ['treatmentCatalogItems'], queryFn: listTreatmentCatalogItems })
 
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -46,7 +52,7 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
-  const isLegacyValue = value && !items.some((item) => item.name === value)
+  const isLegacyValue = value && !items.some((item) => item.name === value) && !(extraOptions ?? []).includes(value)
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -55,6 +61,13 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
       (item) => item.name.toLowerCase().includes(q) || (item.category?.name ?? '').toLowerCase().includes(q)
     )
   }, [items, search])
+
+  const visibleExtraOptions = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const options = extraOptions ?? []
+    if (!q) return options
+    return options.filter((name) => name.toLowerCase().includes(q))
+  }, [extraOptions, search])
 
   const groups = useMemo(() => {
     const map = new Map<string, TreatmentCatalogItem[]>()
@@ -68,6 +81,11 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
 
   function pick(item: TreatmentCatalogItem) {
     onChange(item.name, item)
+    setIsOpen(false)
+  }
+
+  function pickPlain(name: string) {
+    onChange(name)
     setIsOpen(false)
   }
 
@@ -94,7 +112,7 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
         onClick={() => setIsOpen((prev) => !prev)}
         className={`${className ?? ''} flex items-center justify-between gap-2 text-left`}
       >
-        <span className={value ? '' : 'text-gray-400'}>{value || 'Select type'}</span>
+        <span className={value ? '' : 'text-gray-400'}>{value || blankOption || 'Select type'}</span>
         <ChevronDown className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -126,7 +144,37 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
               </button>
             )}
 
-            {visibleItems.length === 0 ? (
+            {blankOption && !search.trim() && (
+              <button
+                type="button"
+                onClick={() => pickPlain('')}
+                className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                  value === '' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-gray-50 text-gray-800'
+                }`}
+              >
+                {blankOption}
+              </button>
+            )}
+
+            {visibleExtraOptions.length > 0 && (
+              <div className="mb-2">
+                <div className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">General</div>
+                {visibleExtraOptions.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => pickPlain(name)}
+                    className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                      name === value ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-gray-50 text-gray-800'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {visibleItems.length === 0 && visibleExtraOptions.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-gray-400">No procedures found</div>
             ) : (
               Array.from(groups.entries()).map(([categoryName, categoryItems]) => (
@@ -142,7 +190,11 @@ export function TreatmentTypeSelect({ value, onChange, required, className, id }
                       }`}
                     >
                       {item.name}
-                      {item.default_fee != null && <span className="ml-2 text-xs text-gray-400">৳{item.default_fee}</span>}
+                      {secondary === 'duration'
+                        ? item.default_duration_mins != null && (
+                            <span className="ml-2 text-xs text-gray-400">{item.default_duration_mins}m</span>
+                          )
+                        : item.default_fee != null && <span className="ml-2 text-xs text-gray-400">৳{item.default_fee}</span>}
                     </button>
                   ))}
                 </div>
