@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Play, Check, ChevronDown, MonitorPlay, PauseCircle, RotateCcw, Flame, X, DoorOpen } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Play, Check, ChevronDown, MonitorPlay, PauseCircle, RotateCcw, Flame, X, DoorOpen, Stethoscope } from 'lucide-react'
 import {
   getQueueEntries,
   todayQueueDate,
@@ -16,6 +17,9 @@ import {
 import { calculateDoctorBacklogMins } from '@/lib/queueEstimation'
 import { sortQueueEntries } from '@/lib/queueOrder'
 import { getAppRole, getAppUser } from '@/lib/appSession'
+import { listAppUsers } from '@/lib/appUsers'
+
+const CALLING_AS_KEY = 'clinicmx_queue_calling_as'
 
 function formatBacklog(mins: number): string {
   if (mins <= 0) return '0m'
@@ -67,12 +71,41 @@ export function QueueFloatingWidget() {
   const [selectedHoldReason, setSelectedHoldReason] = useState<string>(HOLD_REASONS[0])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dragPos, setDragPos] = useState<WidgetPos | null>(loadStoredPos)
+  // Admin sessions have no app_users id of their own (Login.tsx never calls
+  // setAppUser() on the admin PIN path — see queueApi.ts's callNextPatient
+  // doc comment history), so Call Next/Resume had nothing to write to
+  // assigned_doctor and silently no-op'd (found live, 2026-08-16). Admin
+  // instead picks which real doctor they're calling as; persisted per
+  // device like roomNumber below.
+  const [callingAsId, setCallingAsId] = useState<string | null>(() => localStorage.getItem(CALLING_AS_KEY))
   const location = useLocation()
   const containerRef = useRef<HTMLDivElement>(null)
   const dragInfo = useRef<{ startX: number; startY: number; originTop: number; originLeft: number; moved: boolean } | null>(null)
 
   const role = getAppRole()
   const user = getAppUser()
+
+  // Only fetched for admin — a doctor/operator session already has its own
+  // id and never needs this list. listAppUsers() already excludes the
+  // admin row and never selects password fields (see appUsers.ts).
+  const { data: doctorRoster = [] } = useQuery({
+    queryKey: ['appUsers', 'doctors-for-queue-widget'],
+    queryFn: listAppUsers,
+    enabled: role === 'admin',
+  })
+  const activeDoctors = doctorRoster.filter((d) => d.role === 'doctor' && d.is_active)
+
+  // If the stored selection points at a doctor who's since been deleted or
+  // deactivated, drop it rather than silently writing a dead assigned_doctor
+  // FK the next time Call Next runs.
+  useEffect(() => {
+    if (role !== 'admin' || !callingAsId || activeDoctors.length === 0) return
+    if (!activeDoctors.some((d) => d.id === callingAsId)) {
+      setCallingAsId(null)
+      localStorage.removeItem(CALLING_AS_KEY)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, callingAsId, doctorRoster.length])
 
   // Re-clamp whenever the widget's own footprint changes size (collapsed
   // FAB vs. the much larger expanded panel) or the viewport resizes (phone
@@ -136,6 +169,12 @@ export function QueueFloatingWidget() {
     localStorage.setItem('clinicmx_doctor_room', newRoom)
   }
 
+  const handleCallingAsChange = (id: string) => {
+    setCallingAsId(id || null)
+    if (id) localStorage.setItem(CALLING_AS_KEY, id)
+    else localStorage.removeItem(CALLING_AS_KEY)
+  }
+
   // Press-and-drag on the handle repositions the widget; a plain tap (no
   // real movement) still runs onTap. Distinguishing the two by a movement
   // threshold — rather than treating pointerdown as an immediate drag — is
@@ -197,10 +236,19 @@ export function QueueFloatingWidget() {
     }
   }
 
-  const doctorId = user?.id ?? null
+  const doctorId = user?.id ?? callingAsId
   const waiting = sortQueueEntries(entries.filter((e) => e.status === 'waiting'))
-  const serving = entries.filter((e) => e.status === 'serving' && e.assigned_doctor === doctorId)
-  const onHold = entries.filter((e) => e.status === 'on_hold' && e.assigned_doctor === doctorId)
+  // Admin also sees reception-called patients (assigned_doctor is written
+  // null when reception calls — see QueueManagement.tsx's handleCallFront).
+  // A strict === doctorId match would hide those the moment an admin picks
+  // a "calling as" doctor, which is a regression from today: admin
+  // currently sees them precisely because doctorId is also null. A real
+  // doctor session keeps the strict match so one doctor never sees
+  // another's chair.
+  const matchesMine = (e: QueueEntry) =>
+    e.assigned_doctor === doctorId || (role === 'admin' && e.assigned_doctor === null)
+  const serving = entries.filter((e) => e.status === 'serving' && matchesMine(e))
+  const onHold = entries.filter((e) => e.status === 'on_hold' && matchesMine(e))
   const backlogMins = doctorId ? calculateDoctorBacklogMins(entries, doctorId) : 0
 
   // None of these handlers had error handling before — a failed write
@@ -325,6 +373,27 @@ export function QueueFloatingWidget() {
         </select>
       </div>
 
+      {role === 'admin' && (
+        <div className="px-4 py-2 bg-surface-subtle border-b border-gray-100 flex items-center justify-between text-xs">
+          <span className="font-semibold text-text-secondary flex items-center gap-1">
+            <Stethoscope className="w-3.5 h-3.5 text-primary" />
+            Calling as:
+          </span>
+          <select
+            value={callingAsId ?? ''}
+            onChange={(e) => handleCallingAsChange(e.target.value)}
+            className="px-2 py-0.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-text-primary outline-none focus:border-primary max-w-[11rem]"
+          >
+            <option value="">Select doctor…</option>
+            {activeDoctors.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="p-4 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-1.5 flex items-center gap-1">
@@ -397,10 +466,10 @@ export function QueueFloatingWidget() {
                   </div>
 
                   <button
-                    disabled={busyId === h.id}
+                    disabled={!doctorId || busyId === h.id}
                     onClick={() => handleResume(h.id)}
                     className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 shadow-sm disabled:opacity-40"
-                    title="Resume consultation"
+                    title={doctorId ? 'Resume consultation' : "Choose who you're calling as first"}
                   >
                     <RotateCcw className="w-3 h-3" />
                     {busyId === h.id ? 'Working…' : 'Resume'}
@@ -434,11 +503,15 @@ export function QueueFloatingWidget() {
               </div>
             )}
             {waiting.length > 1 && <div className="text-[10px] text-text-secondary font-medium">+{waiting.length - 1} more waiting</div>}
+            {role === 'admin' && !doctorId && (
+              <div className="text-[10px] text-amber-600 font-semibold mt-1">Choose who you're calling as ↑</div>
+            )}
           </div>
 
           <button
             onClick={handleCallNext}
-            disabled={waiting.length === 0 || busyId === 'call-next'}
+            disabled={!doctorId || waiting.length === 0 || busyId === 'call-next'}
+            title={doctorId ? undefined : "Choose who you're calling as first"}
             className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-xl disabled:opacity-40 flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
           >
             <Play className="w-3.5 h-3.5 fill-current" />

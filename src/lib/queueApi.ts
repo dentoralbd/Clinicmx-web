@@ -101,37 +101,36 @@ export async function moveQueueEntry(allEntries: QueueEntry[], entryId: string, 
 }
 
 // === Shared queue actions ===================================================
-// The sandbox had the doctor widget's Call Next complete+bill the current
-// patient before calling the next one, while reception's separate Call
-// button just flipped status to 'serving' with no such cleanup — so two
-// patients could sit in 'serving' at once and the board rendered both.
 // Every caller (QueueManagement, QueueFloatingWidget) MUST route through
 // these functions rather than writing queue_entries status transitions
-// directly, so the two surfaces cannot drift apart again.
+// directly, so the two surfaces cannot drift apart on what each status
+// transition means. (Call Next no longer auto-completes the current
+// patient — see callNextPatient's own doc comment — so more than one entry
+// can be 'serving' at once; that's accepted, not a bug to guard against.)
 
 /**
  * Calls the next waiting patient (canonical order — urgent first, then
  * schedule/arrival order). `doctorId` is `app_users.id` when a real doctor
- * identity is calling (the floating widget always has one) and is written
- * to `assigned_doctor` — this is what fixes the sandbox's defect where
- * assigned_doctor existed in the schema but no code path ever wrote it.
- * Pass `null` when reception calls without a specific doctor session
- * (assigned_doctor is a FK to app_users, so it must never be a placeholder
- * string) — in that case the "complete whoever's currently serving" step
- * is skipped too, since there's no single doctor to disambiguate against.
+ * identity is calling and is written to `assigned_doctor` — this is what
+ * fixes the sandbox's defect where assigned_doctor existed in the schema
+ * but no code path ever wrote it. Pass `null` when reception calls without
+ * a specific doctor session (assigned_doctor is a FK to app_users, so it
+ * must never be a placeholder string).
+ *
+ * This deliberately does NOT complete the patient already in the chair
+ * (user decision, 2026-08-16). It used to, for a doctor-identified call,
+ * as the fix for the sandbox's "two patients in serving at once" defect —
+ * that guarantee is now given up in favour of Call Next doing exactly one
+ * thing. Finishing a consultation is the separate Complete & Bill action.
+ * Consequence to keep in mind: QueueDisplay.tsx and AGY's queue.html both
+ * render EVERY serving entry, so more than one patient can legitimately
+ * show on the waiting-room board at the same time.
  */
 export async function callNextPatient(
   entries: QueueEntry[],
   doctorId: string | null,
   roomNumber: string | null
 ): Promise<QueueEntry | null> {
-  if (doctorId) {
-    const current = entries.find((e) => e.status === 'serving' && e.assigned_doctor === doctorId)
-    if (current) {
-      await completeAndBillEntry(current.id)
-    }
-  }
-
   const next = sortQueueEntries(entries.filter((e) => e.status === 'waiting'))[0]
   if (!next) return null
 
