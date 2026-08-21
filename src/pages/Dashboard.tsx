@@ -19,6 +19,7 @@ import { getStorageUsage, type StorageUsage } from '@/lib/storageUsage'
 import { countPendingIpRequests } from '@/lib/ipAccess'
 import { HardDrive } from 'lucide-react'
 import { TreatmentFollowUpCard } from '@/components/TreatmentFollowUpCard'
+import { CelebrationReminderWidget } from '@/components/CelebrationReminderWidget'
 
 interface Stats {
   totalPatients: number
@@ -240,6 +241,8 @@ export function Dashboard() {
       </div>
 
       <TreatmentFollowUpCard />
+
+      {(getAppRole() === 'admin' || getAppRole() === 'operator') && <CelebrationReminderWidget />}
 
       {(getAppRole() === 'admin' || getAppRole() === 'operator') && (
         <BackupHealthTile onClick={() => navigate('/backup')} />

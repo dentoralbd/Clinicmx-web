@@ -36,3 +36,25 @@ export function openWhatsAppMessage(phone: string | null | undefined, text: stri
   window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
   return true
 }
+
+export function buildBirthdayGreetingMessage(
+  firstName: string,
+  clinicName: string = CLINIC_NAME,
+  lang: 'en' | 'bn' = 'bn'
+): string {
+  if (lang === 'bn') {
+    return `প্রিয় ${firstName}, ${clinicName}-এর পক্ষ থেকে আপনাকে জন্মদিনের আন্তরিক শুভেচ্ছা ও অভিনন্দন! 🎂 আপনার জীবন সুস্বাস্থ্য, সুখ ও সুন্দর হাসিতে ভরে উঠুক। ✨`
+  }
+  return `Dear ${firstName}, the entire team at ${clinicName} wishes you a very Happy Birthday! 🎂 May your special day be filled with joy, happiness, and good health! ✨`
+}
+
+export function buildAnniversaryGreetingMessage(
+  firstName: string,
+  clinicName: string = CLINIC_NAME,
+  lang: 'en' | 'bn' = 'bn'
+): string {
+  if (lang === 'bn') {
+    return `প্রিয় ${firstName}, ${clinicName}-এর পক্ষ থেকে আপনাকে বিবাহবার্ষিকীর আন্তরিক শুভেচ্ছা ও অভিনন্দন! 💐 আপনার আগামী দিনগুলো ভালোবাসা, সুস্বাস্থ্য ও আনন্দে ভরে উঠুক। ✨`
+  }
+  return `Dear ${firstName}, wishing you a very Happy Anniversary! 💐 May your special day be blessed with love, joy, and good health. Warm wishes from ${clinicName}! ✨`
+}

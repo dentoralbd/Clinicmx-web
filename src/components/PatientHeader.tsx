@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { AlertTriangle, Mail, Phone, User } from 'lucide-react'
+import { AlertTriangle, Mail, Phone, Send, User } from 'lucide-react'
+import { extractPatientAnniversary, getDaysUntilAnnualEvent, isCelebrationSentLocally, type CelebrationEvent } from '@/lib/celebrationReminders'
+import { CelebrationGreetingModal } from '@/components/CelebrationGreetingModal'
 
 interface PatientHeaderProps {
   patient: any
@@ -21,7 +23,30 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
     ? `Profile ${completeness.percent}% complete. Missing: ${completeness.missing.join(', ')}`
     : 'Profile complete'
 
+  const [greetingEvent, setGreetingEvent] = useState<CelebrationEvent | null>(null)
+  const currentYear = new Date().getFullYear()
+  const bdayInfo = getDaysUntilAnnualEvent(patient?.date_of_birth)
+  const annivDate = extractPatientAnniversary(patient)
+  const annivInfo = getDaysUntilAnnualEvent(annivDate)
+  const isBdayToday = !!bdayInfo?.isToday
+  const isAnnivToday = !!annivInfo?.isToday
+
+  function handleOpenCelebration(type: 'birthday' | 'anniversary', dateStr: string) {
+    setGreetingEvent({
+      id: `${type}-${patient?.id}`,
+      patientId: patient?.id,
+      patientName: `${patient?.first_name || ''} ${patient?.last_name || ''}`.trim() || 'Patient',
+      phone: patient?.phone || null,
+      type,
+      dateStr,
+      isToday: true,
+      daysUntil: 0,
+      isSent: isCelebrationSentLocally(patient?.id, type, currentYear),
+    })
+  }
+
   return (
+    <>
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/25 via-primary/12 to-white p-4 sm:p-6 text-text-primary shadow-glass border border-primary/20">
       {/* Ambient glass glows */}
       <div className="absolute -top-24 -right-24 w-80 h-80 bg-primary/15 rounded-full blur-3xl pointer-events-none" />
@@ -72,6 +97,26 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
                 <span className="inline-flex items-center rounded-full border border-primary/20 bg-white/70 px-2.5 py-0.5 text-xs font-bold font-mono text-primary backdrop-blur-sm shadow-sm">
                   {patient.patient_code}
                 </span>
+              )}
+              {isBdayToday && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenCelebration('birthday', patient.date_of_birth)}
+                  className="inline-flex items-center gap-1 rounded-full border border-pink-300 bg-pink-100 px-2.5 py-0.5 text-xs font-bold text-pink-800 shadow-sm hover:bg-pink-200 transition-colors"
+                >
+                  🎂 Birthday Today
+                  <Send className="w-3 h-3" />
+                </button>
+              )}
+              {isAnnivToday && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenCelebration('anniversary', annivDate!)}
+                  className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800 shadow-sm hover:bg-rose-200 transition-colors"
+                >
+                  💐 Anniversary Today
+                  <Send className="w-3 h-3" />
+                </button>
               )}
             </div>
 
@@ -132,5 +177,13 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
         </div>
       </div>
     </div>
+
+      {greetingEvent && (
+        <CelebrationGreetingModal
+          event={greetingEvent}
+          onClose={() => setGreetingEvent(null)}
+        />
+      )}
+    </>
   )
 }

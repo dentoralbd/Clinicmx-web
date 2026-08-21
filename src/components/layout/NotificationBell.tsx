@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { Bell, CalendarDays, CloudOff, Receipt, Wifi, X } from 'lucide-react'
+import { Bell, CalendarDays, CloudOff, Gift, Receipt, Wifi, X } from 'lucide-react'
 import {
   getNotifications,
   markAllRead,
@@ -23,6 +23,8 @@ import {
   countDistinctSitewideEdits,
 } from '@/lib/offlineSync'
 import { getPendingLeaveCount } from '@/lib/leaveAlerts'
+import { fetchCelebrationPatients } from '@/repositories/patientsRepo'
+import { extractCelebrations, fetchSentCelebrations } from '@/lib/celebrationReminders'
 
 /** Synthetic, never-persisted entry derived live from Supabase (network
  * access status, billing changes) — always identical across every device
@@ -30,7 +32,7 @@ import { getPendingLeaveCount } from '@/lib/leaveAlerts'
  * per-browser. */
 interface LiveEntry {
   id: string
-  kind: 'ip' | 'billing' | 'leave' | 'offlineSync'
+  kind: 'ip' | 'billing' | 'leave' | 'offlineSync' | 'celebration'
   title: string
   message: string
   linkTo?: string
@@ -47,6 +49,28 @@ function summarizeByActor(rows: Array<{ actor: string }>): string {
   const parts = Array.from(counts.entries()).map(([name, count]) => `${count} from ${name}`)
   if (parts.length <= 3) return parts.join(', ')
   return `${parts.slice(0, 3).join(', ')}, and ${parts.length - 3} more`
+}
+
+/** Best-effort "N celebrations today" bell entry for admin/operator — a
+ * failed fetch just means no entry, never a broken bell. */
+async function fetchCelebrationEntries(): Promise<LiveEntry[]> {
+  try {
+    const [patients, sentKeys] = await Promise.all([fetchCelebrationPatients(), fetchSentCelebrations()])
+    const todayEvts = extractCelebrations(patients, sentKeys).filter((e) => e.isToday)
+    if (todayEvts.length === 0) return []
+    return [
+      {
+        id: 'live-celebrations-today',
+        kind: 'celebration',
+        title: `${todayEvts.length} Celebration${todayEvts.length > 1 ? 's' : ''} Today! 🎂💐`,
+        message: `${todayEvts.map((e) => `${e.patientName} (${e.type === 'birthday' ? 'Birthday' : 'Anniversary'})`).join(', ')}. Click to send WhatsApp wishes.`,
+        linkTo: '/',
+        unread: true,
+      },
+    ]
+  } catch {
+    return []
+  }
 }
 
 const LIVE_POLL_MS = 20000
@@ -199,7 +223,9 @@ export function NotificationBell() {
                 ]
               : []
 
-          setLiveEntries([...outboxEntries, ...offlineSyncEntries, ...leaveEntries, ...ipEntries, ...billingEntries])
+          const celebrationEntries = await fetchCelebrationEntries()
+
+          setLiveEntries([...celebrationEntries, ...outboxEntries, ...offlineSyncEntries, ...leaveEntries, ...ipEntries, ...billingEntries])
         } else {
           const userId = getAppUser()?.id
           if (!userId) return
@@ -242,7 +268,10 @@ export function NotificationBell() {
             message: `Your login from IP ${row.ip} is waiting for admin approval.`,
             unread: true,
           }))
-          setLiveEntries([...outboxEntries, ...userIpEntries])
+          // Operator (not doctor) also gets the celebration bell entry —
+          // doctors don't send patient WhatsApp greetings.
+          const celebrationEntries = role === 'operator' ? await fetchCelebrationEntries() : []
+          setLiveEntries([...celebrationEntries, ...outboxEntries, ...userIpEntries])
         }
       } catch {
         // Best-effort — a failed poll must not break the bell.
@@ -336,7 +365,7 @@ export function NotificationBell() {
               {liveEntries.map((n) => (
                 <div
                   key={n.id}
-                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : n.kind === 'leave' ? 'bg-teal-50/60' : n.kind === 'offlineSync' ? 'bg-emerald-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
+                  className={`px-4 py-3 flex items-start gap-2 ${n.kind === 'billing' ? 'bg-blue-50/60' : n.kind === 'leave' ? 'bg-teal-50/60' : n.kind === 'offlineSync' ? 'bg-emerald-50/60' : n.kind === 'celebration' ? 'bg-pink-50/60' : 'bg-amber-50/60'} ${n.linkTo ? 'hover:bg-opacity-80 transition-colors cursor-pointer' : ''}`}
                   onClick={() => {
                     if (n.linkTo) {
                       setOpen(false)
@@ -350,6 +379,8 @@ export function NotificationBell() {
                     <CalendarDays className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                   ) : n.kind === 'offlineSync' ? (
                     <CloudOff className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : n.kind === 'celebration' ? (
+                    <Gift className="w-4 h-4 text-pink-600 shrink-0 mt-0.5" />
                   ) : (
                     <Wifi className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   )}
