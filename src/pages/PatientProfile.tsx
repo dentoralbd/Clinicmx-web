@@ -725,7 +725,6 @@ export function PatientProfile() {
     setLocalMeds(getLocalItems(LOCAL_MEDS_KEY))
     setLocalInvs(getLocalItems(LOCAL_INVS_KEY))
     loadDoctorProfile().then((dp) => {
-      setDoctorProfile(dp)
       fetchDoctorsList(dp)
     })
   }, [id])
@@ -930,12 +929,17 @@ export function PatientProfile() {
     }
   }
 
+  // Returns the profile as well as storing it — callers (the mount effect) need the
+  // value to seed fetchDoctorsList. Returning void here previously made that caller
+  // overwrite this state with undefined, blanking every printed letterhead on this page.
   async function loadDoctorProfile() {
     try {
       const data = await loadSavedDoctorProfile()
       if (data) setDoctorProfile(data)
+      return data
     } catch {
       // silently ignore
+      return null
     }
   }
 
