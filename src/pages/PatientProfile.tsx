@@ -598,7 +598,7 @@ export function PatientProfile() {
   })
 
   const [showMedicalHistoryForm, setShowMedicalHistoryForm] = useState(false)
-  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
+  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string; drugHistoryNote: string }>({ checked: [], other: '', drugHistoryNote: '' })
 
   const [visitForm, setVisitForm] = useState({
     chief_complaint: '',
@@ -1207,8 +1207,8 @@ export function PatientProfile() {
   }
 
   function seedMedicalHistoryForm() {
-    const { items, other } = getMedicalHistoryChecks(patient?.medical_history)
-    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
+    const { items, other, drugHistoryNote } = getMedicalHistoryChecks(patient?.medical_history)
+    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other, drugHistoryNote })
   }
 
   function openMedicalHistoryForm() {
@@ -1221,7 +1221,7 @@ export function PatientProfile() {
     if (!id) return
 
     try {
-      const medical_history = buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other)
+      const medical_history = buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote)
       await supabase.from('patients').update({ medical_history }).eq('id', id)
       setShowMedicalHistoryForm(false)
       loadPatientData()
@@ -2092,7 +2092,7 @@ export function PatientProfile() {
       phone: patient?.phone,
       email: patient?.email,
       patient_code: patient?.patient_code,
-      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote),
     }
   }
 
@@ -2134,7 +2134,7 @@ export function PatientProfile() {
     await enqueueMutation({
       table: 'patients',
       action: 'update',
-      payload: { id, medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) },
+      payload: { id, medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote) },
       meta: { patientId: id, patientName: patientLabel, label: 'Update medical history' },
       groupId,
       seq: seq++,
@@ -2318,7 +2318,7 @@ export function PatientProfile() {
 
       const { error: medHistoryError, status: medHistoryStatus } = await supabase
         .from('patients')
-        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
+        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote) })
         .eq('id', id)
       if (medHistoryError) {
         if (isOfflineFailure(medHistoryError, medHistoryStatus)) {
@@ -6726,6 +6726,7 @@ function PrescriptionFormModal({
             <MedicalHistoryFields
               checked={medicalHistoryForm.checked}
               other={medicalHistoryForm.other}
+              drugHistoryNote={medicalHistoryForm.drugHistoryNote}
               onChange={setMedicalHistoryForm}
             />
           </div>

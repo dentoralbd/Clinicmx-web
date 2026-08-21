@@ -179,6 +179,8 @@ export function Patients() {
     )
   })
 
+  const medicalHistoryChecks = getMedicalHistoryChecks(formData.medical_history)
+
   return (
     <div className="space-y-6 page-fade-in pb-8">
       {/* Page Header */}
@@ -382,7 +384,7 @@ export function Patients() {
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2 p-3.5 bg-blue-50/70 rounded-2xl border border-blue-100 text-xs font-medium text-blue-800">
+                <div className="p-3.5 bg-blue-50/70 rounded-2xl border border-blue-100 text-xs font-medium text-blue-800">
                   Patient Code (e.g. <span className="font-mono font-bold">PT-00042</span>) will be generated automatically upon saving.
                 </div>
               )}
@@ -494,10 +496,6 @@ export function Patients() {
                     className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
                 </div>
-
-                <div className="flex items-center">
-                  <p className="text-xs text-text-muted italic">Provide either Date of Birth or Age.</p>
-                </div>
               </div>
 
               <div>
@@ -514,10 +512,11 @@ export function Patients() {
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">Medical History</label>
                 <MedicalHistoryFields
-                  checked={getMedicalHistoryChecks(formData.medical_history).items.filter((i) => i.checked).map((i) => i.label)}
-                  other={getMedicalHistoryChecks(formData.medical_history).other}
-                  onChange={({ checked, other }) =>
-                    setFormData({ ...formData, medical_history: buildMedicalHistoryString(checked, other) })
+                  checked={medicalHistoryChecks.items.filter((i) => i.checked).map((i) => i.label)}
+                  other={medicalHistoryChecks.other}
+                  drugHistoryNote={medicalHistoryChecks.drugHistoryNote}
+                  onChange={({ checked, other, drugHistoryNote }) =>
+                    setFormData({ ...formData, medical_history: buildMedicalHistoryString(checked, other, drugHistoryNote) })
                   }
                 />
               </div>

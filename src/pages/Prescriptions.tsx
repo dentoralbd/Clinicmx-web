@@ -98,7 +98,7 @@ export function Prescriptions() {
     discount_percent: null as number | null,
   })
 
-  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string }>({ checked: [], other: '' })
+  const [medicalHistoryForm, setMedicalHistoryForm] = useState<{ checked: string[]; other: string; drugHistoryNote: string }>({ checked: [], other: '', drugHistoryNote: '' })
 
   const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
   const [newPatientData, setNewPatientData] = useState({
@@ -126,8 +126,8 @@ export function Prescriptions() {
 
   function selectPatientHistory(patientId: string) {
     const selected = patients.find((p) => p.id === patientId)
-    const { items, other } = getMedicalHistoryChecks(selected?.medical_history)
-    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other })
+    const { items, other, drugHistoryNote } = getMedicalHistoryChecks(selected?.medical_history)
+    setMedicalHistoryForm({ checked: items.filter((item) => item.checked).map((item) => item.label), other, drugHistoryNote })
   }
 
   // Arriving from the Consultation page's "Write prescription" action or
@@ -374,7 +374,7 @@ export function Prescriptions() {
         phone: selected?.phone,
         email: selected?.email,
         patient_code: selected?.patient_code,
-        medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+        medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote),
       }
     }
     const parsedAge = Number.parseInt(newPatientData.age, 10)
@@ -385,7 +385,7 @@ export function Prescriptions() {
       date_of_birth: newPatientData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : undefined),
       gender: newPatientData.gender,
       phone: newPatientData.phone,
-      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other),
+      medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote),
     }
   }
 
@@ -469,7 +469,7 @@ export function Prescriptions() {
 
       await supabase
         .from('patients')
-        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other) })
+        .update({ medical_history: buildMedicalHistoryString(medicalHistoryForm.checked, medicalHistoryForm.other, medicalHistoryForm.drugHistoryNote) })
         .eq('id', patientId)
 
       let prescriptionId = editingId
@@ -714,7 +714,7 @@ export function Prescriptions() {
       language: 'bn',
       discount_percent: null,
     })
-    setMedicalHistoryForm({ checked: [], other: '' })
+    setMedicalHistoryForm({ checked: [], other: '', drugHistoryNote: '' })
     setPatientMode('existing')
     setNewPatientData({ first_name: '', last_name: '', phone: '', date_of_birth: '', age: '', gender: 'Male', isConsultation: false, consultationFee: '' })
     setPrescriptionWeight('')
@@ -1367,6 +1367,7 @@ export function Prescriptions() {
                   <MedicalHistoryFields
                     checked={medicalHistoryForm.checked}
                     other={medicalHistoryForm.other}
+                    drugHistoryNote={medicalHistoryForm.drugHistoryNote}
                     onChange={setMedicalHistoryForm}
                   />
                 </div>
