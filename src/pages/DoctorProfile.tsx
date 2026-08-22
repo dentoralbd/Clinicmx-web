@@ -191,19 +191,6 @@ function getAvailableTabs(): ZoneTabDef[] {
   return tabs
 }
 
-const TAB_GRID_COLS: Record<number, string> = {
-  1: 'grid-cols-1',
-  2: 'grid-cols-2',
-  3: 'grid-cols-3',
-  4: 'grid-cols-2 sm:grid-cols-4',
-  5: 'grid-cols-2 sm:grid-cols-5',
-  6: 'grid-cols-2 sm:grid-cols-3',
-  7: 'grid-cols-2 sm:grid-cols-4',
-  8: 'grid-cols-2 sm:grid-cols-4',
-  9: 'grid-cols-2 sm:grid-cols-5',
-  10: 'grid-cols-2 sm:grid-cols-5',
-}
-
 export function DoctorProfile() {
   const [form, setForm] = useState<DoctorProfileData>(empty)
   const [loading, setLoading] = useState(true)
@@ -556,33 +543,24 @@ export function DoctorProfile() {
       </div>
 
       {/* Main action tabs — which tabs exist depends on the session's permissions */}
-      <div className={`grid ${TAB_GRID_COLS[availableTabs.length] ?? 'grid-cols-3'} gap-3`}>
+      <div className="flex items-center gap-2 border-b border-gray-200 flex-wrap">
         {availableTabs.map((tab) => {
           const Icon = tab.icon
           return (
-            <button
+            <TabButton
               key={tab.id}
-              type="button"
+              active={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 font-semibold transition-colors ${
-                activeTab === tab.id
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 bg-white text-text-secondary hover:border-gray-300 hover:text-gray-800'
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              {tab.label}
-              {tab.id === 'network' && pendingIpCount > 0 && (
-                <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
-                  {pendingIpCount}
-                </span>
-              )}
-              {tab.id === 'offline' && pendingOfflineCount > 0 && (
-                <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
-                  {pendingOfflineCount}
-                </span>
-              )}
-            </button>
+              icon={<Icon className="w-4 h-4" />}
+              label={tab.label}
+              badge={
+                tab.id === 'network'
+                  ? (pendingIpCount > 0 ? pendingIpCount : undefined)
+                  : tab.id === 'offline'
+                  ? (pendingOfflineCount > 0 ? pendingOfflineCount : undefined)
+                  : undefined
+              }
+            />
           )
         })}
       </div>
@@ -1027,6 +1005,37 @@ export function DoctorProfile() {
         </div>
       )}
     </div>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  badge,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+  badge?: number
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+        active ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {icon} {label}
+      {typeof badge === 'number' && (
+        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+          {badge}
+        </span>
+      )}
+    </button>
   )
 }
 
