@@ -408,7 +408,7 @@ export function QueueDisplay() {
                     offset), since the dots are a single set shared across
                     every slide, not duplicated per slide. */}
                 <div className="absolute left-7 right-7 bottom-6 flex justify-end pt-3 border-t border-white/20">
-                  <span className="text-[11px] font-semibold text-white/55">DentOral BD Health Care</span>
+                  <span className="text-[11px] font-semibold text-white/55">DentOral BD</span>
                 </div>
               </a>
               {slides.length > 1 && (
