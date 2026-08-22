@@ -46,6 +46,13 @@ export function Patients() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingPatientCode, setEditingPatientCode] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  // True when the current date_of_birth came from the Age field's
+  // auto-derivation (today's month/day, years subtracted) rather than a
+  // real birthdate typed directly — set true whenever Age's onChange
+  // derives a date, false whenever DOB's own onChange fires. Persisted so
+  // the Celebrations & Greetings feature (celebrationReminders.ts) can
+  // skip a birthday check it would otherwise get wrong every year.
+  const [dobIsEstimated, setDobIsEstimated] = useState(false)
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -66,8 +73,14 @@ export function Patients() {
     e.preventDefault()
     const parsedAge = Number.parseInt(formData.age, 10)
     const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+    // Falls back to deriving here (rather than only trusting the Age
+    // field's own onChange) if date_of_birth is somehow empty at submit
+    // time with a valid age present — that fallback derivation is just as
+    // estimated as the onChange path, so it forces the flag too.
+    const usedFallbackDerivation = !formData.date_of_birth && hasValidAge
     const dateOfBirth =
       formData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
+    const dobEstimated = dobIsEstimated || usedFallbackDerivation
 
     if (!dateOfBirth) {
       alert('Please provide Date of Birth or Age')
@@ -96,6 +109,7 @@ export function Patients() {
       date_of_birth: dateOfBirth,
       weight: parsedWeight,
       notes: notesValue,
+      dob_is_estimated: dobEstimated,
     }
 
     try {
@@ -166,6 +180,7 @@ export function Patients() {
     })
     setEditingId(patient.id)
     setEditingPatientCode(patient.patient_code || null)
+    setDobIsEstimated(!!patient.dob_is_estimated)
     setShowForm(true)
   }
 
@@ -185,6 +200,7 @@ export function Patients() {
       notes: '',
     })
     setEditingPatientCode(null)
+    setDobIsEstimated(false)
   }
 
   const filteredPatients = patients.filter((patient) => {
@@ -460,7 +476,10 @@ export function Patients() {
                   <input
                     type="date"
                     value={formData.date_of_birth}
-                    onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, date_of_birth: e.target.value })
+                      setDobIsEstimated(false)
+                    }}
                     required={!formData.age}
                     className="w-full px-4 py-2.5 border border-gray-200 bg-surface-subtle rounded-xl text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white transition-all"
                   />
@@ -476,11 +495,10 @@ export function Patients() {
                     onChange={(e) => {
                       const value = e.target.value
                       const parsed = Number.parseInt(value, 10)
-                      const derivedDob =
-                        value.trim() && !Number.isNaN(parsed) && parsed >= 0
-                          ? deriveDateOfBirthFromAge(parsed)
-                          : formData.date_of_birth
+                      const isDeriving = value.trim() && !Number.isNaN(parsed) && parsed >= 0
+                      const derivedDob = isDeriving ? deriveDateOfBirthFromAge(parsed) : formData.date_of_birth
                       setFormData({ ...formData, age: value, date_of_birth: derivedDob })
+                      if (isDeriving) setDobIsEstimated(true)
                     }}
                     required={!formData.date_of_birth}
                     placeholder="Age if DOB is unknown"

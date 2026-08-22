@@ -14,6 +14,7 @@ interface CreatePatientPayload {
   medical_history?: string | null
   notes?: string | null
   patient_type?: 'full' | 'consultation'
+  dob_is_estimated?: boolean
 }
 
 export async function createPatient(payload: CreatePatientPayload) {

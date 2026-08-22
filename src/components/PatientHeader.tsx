@@ -25,7 +25,7 @@ export function PatientHeader({ patient, avatarUrl, age, alerts, completeness, s
 
   const [greetingEvent, setGreetingEvent] = useState<CelebrationEvent | null>(null)
   const currentYear = new Date().getFullYear()
-  const bdayInfo = getDaysUntilAnnualEvent(patient?.date_of_birth)
+  const bdayInfo = patient?.dob_is_estimated ? null : getDaysUntilAnnualEvent(patient?.date_of_birth)
   const annivDate = extractPatientAnniversary(patient)
   const annivInfo = getDaysUntilAnnualEvent(annivDate)
   const isBdayToday = !!bdayInfo?.isToday

@@ -21,7 +21,7 @@ export async function fetchPatientsList() {
 export async function fetchCelebrationPatients() {
   const { data, error } = await supabase
     .from('patients')
-    .select('id, first_name, last_name, phone, date_of_birth, notes, medical_history')
+    .select('id, first_name, last_name, phone, date_of_birth, notes, medical_history, dob_is_estimated')
     .neq('patient_type', 'consultation')
 
   if (error) throw error

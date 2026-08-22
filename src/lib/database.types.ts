@@ -83,6 +83,7 @@ export interface Database {
           created_at: string
           updated_at: string
           followup_reminder_sent_at: string | null
+          dob_is_estimated: boolean
         }
         Insert: {
           id?: string
@@ -101,6 +102,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
           followup_reminder_sent_at?: string | null
+          dob_is_estimated?: boolean
         }
         Update: {
           id?: string
@@ -119,6 +121,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
           followup_reminder_sent_at?: string | null
+          dob_is_estimated?: boolean
         }
         Relationships: []
       }

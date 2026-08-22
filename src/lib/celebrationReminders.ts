@@ -146,7 +146,7 @@ export function extractCelebrations(patients: any[], sentKeys?: Set<string>): Ce
     const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient'
     const phone = p.phone || null
 
-    if (p.date_of_birth) {
+    if (p.date_of_birth && !p.dob_is_estimated) {
       const bdayInfo = getDaysUntilAnnualEvent(p.date_of_birth)
       if (bdayInfo && bdayInfo.daysUntil <= 30) {
         events.push({
