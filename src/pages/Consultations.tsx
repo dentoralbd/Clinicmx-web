@@ -33,6 +33,7 @@ interface ConsultationPatient {
   address: string | null
   notes: string | null
   created_at: string
+  dob_is_estimated?: boolean
 }
 
 interface ConsultationInvoiceSummary {
@@ -153,6 +154,7 @@ export function Consultations() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const previous = editingId ? patients.find((p) => p.id === editingId) : null
     const parsedAge = Number.parseInt(formData.age, 10)
     const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
     const dateOfBirth = formData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
@@ -166,6 +168,17 @@ export function Consultations() {
       return
     }
 
+    // Age-derived DOB uses today's month/day (years subtracted) — not a real
+    // birthdate, so it must not trigger the Celebrations feature's "Birthday
+    // Today" alert on this patient's registration date every year. A freshly
+    // derived date (DOB field left empty) is always estimated; an unchanged
+    // DOB on edit preserves whatever was already stored, rather than
+    // silently clearing a correct estimated flag just because Age was left
+    // blank this time. See Patients.tsx's dobIsEstimated for the same idea.
+    const dobFreshlyDerivedFromAge = !formData.date_of_birth && hasValidAge
+    const dobIsEstimated = dobFreshlyDerivedFromAge
+      || (dateOfBirth === previous?.date_of_birth ? !!previous?.dob_is_estimated : false)
+
     const payload = {
       first_name: formData.first_name,
       last_name: formData.last_name,
@@ -176,11 +189,11 @@ export function Consultations() {
       address: formData.address || null,
       notes: formData.notes || null,
       patient_type: 'consultation' as const,
+      dob_is_estimated: dobIsEstimated,
     }
 
     try {
       if (editingId) {
-        const previous = patients.find((p) => p.id === editingId)
         if (previous) {
           await logEdit({
             entityType: 'patient',

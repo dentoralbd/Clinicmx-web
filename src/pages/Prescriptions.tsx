@@ -406,6 +406,11 @@ export function Prescriptions() {
         }
         const parsedAge = Number.parseInt(newPatientData.age, 10)
         const hasValidAge = !Number.isNaN(parsedAge) && parsedAge >= 0
+        // Age-derived DOB uses today's month/day (years subtracted) — not a
+        // real birthdate, so it must not trigger the Celebrations feature's
+        // "Birthday Today" alert on this patient's registration date every
+        // year. See Patients.tsx's dobIsEstimated for the same tracking.
+        const dobIsEstimated = !newPatientData.date_of_birth && hasValidAge
         const dateOfBirth =
           newPatientData.date_of_birth || (hasValidAge ? deriveDateOfBirthFromAge(parsedAge) : '')
         if (!dateOfBirth) {
@@ -427,6 +432,7 @@ export function Prescriptions() {
           date_of_birth: dateOfBirth,
           gender: newPatientData.gender,
           patient_type: newPatientData.isConsultation ? 'consultation' : 'full',
+          dob_is_estimated: dobIsEstimated,
         })
         patientId = newPatient.id
         savedPatientRecord = newPatient
