@@ -24,6 +24,8 @@ interface QueueSlide {
   blurb: string
   category?: string
   theme?: 'teal' | 'purple' | 'orange' | 'blue'
+  icon?: string
+  subtitle?: string
 }
 
 // Card background per theme — matches AGY queue.html's SLIDE_THEMES and
@@ -35,6 +37,26 @@ const SLIDE_THEME_CLASSES: Record<string, string> = {
   blue: 'from-blue-600 to-sky-500',
 }
 
+// Per-slide emoji (2026-08-22, matches the redesign sandbox's per-category
+// icon). Resolution order: the slide's own `icon` (set in AGY's admin.html
+// → Queue Board Slides) → this category lookup → the generic tooth
+// fallback. Kept in sync with the same map in AGY's queue.html and
+// admin.js — three copies, no shared build step between them.
+const CATEGORY_EMOJI: Record<string, string> = {
+  'Dental Hygiene': '✨',
+  'Orthodontics': '🦷',
+  'General Dentistry': '🪥',
+  'Aesthetic Dentistry': '💎',
+  'Advanced Treatment': '🛡️',
+  "Children's Dentistry": '🧸',
+  'Patient Info': 'ℹ️',
+  'Preventive Care': '🛡️',
+}
+const FALLBACK_SLIDE_EMOJI = '🦷'
+function slideEmoji(s: QueueSlide): string {
+  return s.icon || (s.category && CATEGORY_EMOJI[s.category]) || FALLBACK_SLIDE_EMOJI
+}
+
 // Same fallback list as AGY's queue.html / admin.js (three copies now,
 // unavoidable — this one's React/Tailwind, those are vanilla HTML/CSS with
 // no shared build step to import from). Slides themselves are managed in
@@ -42,16 +64,16 @@ const SLIDE_THEME_CLASSES: Record<string, string> = {
 // already open on that endpoint — it's public content, no credential
 // involved). Falls back to this list before an admin has ever saved any.
 const DEFAULT_QUEUE_SLIDES: QueueSlide[] = [
-  { href: 'https://dentoralbd.com/brushing-flossing.html', title: 'Brushing & Flossing', blurb: 'The daily habits that keep your smile healthy between visits.', category: 'Dental Hygiene', theme: 'blue' },
-  { href: 'https://dentoralbd.com/orthodontics.html', title: 'Specialized Orthodontics', blurb: 'Straightening smiles at every age, from early intervention to adult treatment.', category: 'Orthodontics', theme: 'purple' },
-  { href: 'https://dentoralbd.com/orthodontic-retention.html', title: 'After Braces: Retention', blurb: 'Why wearing your retainer matters just as much as the braces did.', category: 'Orthodontics', theme: 'teal' },
-  { href: 'https://dentoralbd.com/retainer-instructions.html', title: 'Caring for Your Retainer', blurb: 'Simple steps to keep your retainer clean and lasting longer.', category: 'Orthodontics', theme: 'orange' },
-  { href: 'https://dentoralbd.com/general-dentistry.html', title: 'General Dentistry', blurb: 'Routine checkups and cleanings — the foundation of a healthy mouth.', category: 'General Dentistry', theme: 'blue' },
-  { href: 'https://dentoralbd.com/cosmetic-dentistry.html', title: 'Cosmetic Dentistry', blurb: 'Whitening, veneers, and smile makeovers designed to fit your face.', category: 'Aesthetic Dentistry', theme: 'purple' },
-  { href: 'https://dentoralbd.com/prosthodontics.html', title: 'Prosthodontics', blurb: 'Crowns, bridges, and dentures that restore both function and confidence.', category: 'Advanced Treatment', theme: 'orange' },
-  { href: 'https://dentoralbd.com/for-children.html', title: 'Dental Care for Children', blurb: 'Gentle, age-appropriate checkups that build healthy habits early.', category: "Children's Dentistry", theme: 'teal' },
-  { href: 'https://dentoralbd.com/types-of-braces.html', title: 'Types of Braces', blurb: 'Metal, ceramic, or clear aligners — find the right fit for your treatment.', category: 'Orthodontics', theme: 'blue' },
-  { href: 'https://dentoralbd.com/faqs.html', title: 'Frequently Asked Questions', blurb: 'Answers to the questions patients ask us most.', category: 'Patient Info', theme: 'purple' },
+  { href: 'https://dentoralbd.com/brushing-flossing.html', title: 'Brushing & Flossing', blurb: 'The daily habits that keep your smile healthy between visits.', category: 'Dental Hygiene', theme: 'blue', icon: '✨' },
+  { href: 'https://dentoralbd.com/orthodontics.html', title: 'Specialized Orthodontics', blurb: 'Straightening smiles at every age, from early intervention to adult treatment.', category: 'Orthodontics', theme: 'purple', icon: '🦷' },
+  { href: 'https://dentoralbd.com/orthodontic-retention.html', title: 'After Braces: Retention', blurb: 'Why wearing your retainer matters just as much as the braces did.', category: 'Orthodontics', theme: 'teal', icon: '🦷' },
+  { href: 'https://dentoralbd.com/retainer-instructions.html', title: 'Caring for Your Retainer', blurb: 'Simple steps to keep your retainer clean and lasting longer.', category: 'Orthodontics', theme: 'orange', icon: '🦷' },
+  { href: 'https://dentoralbd.com/general-dentistry.html', title: 'General Dentistry', blurb: 'Routine checkups and cleanings — the foundation of a healthy mouth.', category: 'General Dentistry', theme: 'blue', icon: '🪥' },
+  { href: 'https://dentoralbd.com/cosmetic-dentistry.html', title: 'Cosmetic Dentistry', blurb: 'Whitening, veneers, and smile makeovers designed to fit your face.', category: 'Aesthetic Dentistry', theme: 'purple', icon: '💎' },
+  { href: 'https://dentoralbd.com/prosthodontics.html', title: 'Prosthodontics', blurb: 'Crowns, bridges, and dentures that restore both function and confidence.', category: 'Advanced Treatment', theme: 'orange', icon: '🛡️' },
+  { href: 'https://dentoralbd.com/for-children.html', title: 'Dental Care for Children', blurb: 'Gentle, age-appropriate checkups that build healthy habits early.', category: "Children's Dentistry", theme: 'teal', icon: '🧸' },
+  { href: 'https://dentoralbd.com/types-of-braces.html', title: 'Types of Braces', blurb: 'Metal, ceramic, or clear aligners — find the right fit for your treatment.', category: 'Orthodontics', theme: 'blue', icon: '🦷' },
+  { href: 'https://dentoralbd.com/faqs.html', title: 'Frequently Asked Questions', blurb: 'Answers to the questions patients ask us most.', category: 'Patient Info', theme: 'purple', icon: 'ℹ️' },
 ]
 
 /**
@@ -347,7 +369,7 @@ export function QueueDisplay() {
         <div className="flex flex-col gap-8">
           {infotainmentEnabled && slides.length > 0 && slides[slideIndex] && (
             <div
-              className={`relative min-h-[9.5rem] rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br ${
+              className={`relative min-h-[13.75rem] rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br ${
                 SLIDE_THEME_CLASSES[slides[slideIndex].theme ?? 'teal']
               }`}
             >
@@ -366,17 +388,31 @@ export function QueueDisplay() {
                     {slides[slideIndex].category}
                   </span>
                 )}
+                {slides[slideIndex].subtitle && (
+                  <span className="block text-[11px] font-bold uppercase tracking-widest text-white/80 mb-1">
+                    {slides[slideIndex].subtitle}
+                  </span>
+                )}
                 <h3 className="text-xl font-bold text-white max-w-[75%]">{slides[slideIndex].title}</h3>
                 <p className="mt-1 text-sm text-white/85 leading-relaxed max-w-[75%]">{slides[slideIndex].blurb}</p>
-                <span className="absolute top-6 right-7 text-white/30">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-9 h-9">
-                    <path d="M12 5c-2.5 0-4.5 2-4.5 4.5 0 3 1.5 4 1.5 7.5 0 1 .5 2 1.5 2s1.5-1 1.5-2c0-1 .3-1.5 1-1.5s1 .5 1 1.5c0 1 .5 2 1.5 2s1.5-1 1.5-2c0-3.5 1.5-4.5 1.5-7.5C16.5 7 14.5 5 12 5z" />
-                  </svg>
+                <span className="absolute top-6 right-7 text-xl leading-none">{slideEmoji(slides[slideIndex])}</span>
+                <span className="absolute -bottom-8 -right-8 text-8xl opacity-15 pointer-events-none select-none leading-none">
+                  {slideEmoji(slides[slideIndex])}
                 </span>
-                <span className="absolute bottom-3.5 right-7 text-[11px] font-semibold text-white/55">DentOral BD</span>
+                {/* Footer band, pinned near the card's bottom edge like the
+                    watermark always was — the taller card (2026-08-22)
+                    leaves empty space between the blurb and this band
+                    rather than the two touching, matching the redesign
+                    sandbox. Positioned the same way .slide-dots below is
+                    (independent absolute element at a matching bottom
+                    offset), since the dots are a single set shared across
+                    every slide, not duplicated per slide. */}
+                <div className="absolute left-7 right-7 bottom-6 flex justify-end pt-3 border-t border-white/20">
+                  <span className="text-[11px] font-semibold text-white/55">DentOral BD Health Care</span>
+                </div>
               </a>
               {slides.length > 1 && (
-                <div className="absolute bottom-4 left-7 flex gap-1.5">
+                <div className="absolute bottom-6 left-7 flex gap-1.5">
                   {slides.map((_, i) => (
                     <span
                       key={i}
