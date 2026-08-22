@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { csvCell } from '@/lib/utils'
 import { logActivity } from '@/lib/activityLog'
+import { downloadBlob } from '@/lib/downloadBlob'
 
 export const CLINIC_EXPENSE_CATEGORIES = [
   'Instrument Purchase',
@@ -153,7 +154,7 @@ export interface ClinicExpensesSummary {
   profitLoss: number
 }
 
-export function exportClinicExpensesCSV(summary: ClinicExpensesSummary, otherExpenseRows: ClinicExpenseRecord[]) {
+export async function exportClinicExpensesCSV(summary: ClinicExpensesSummary, otherExpenseRows: ClinicExpenseRecord[]) {
   const lines: string[] = []
   lines.push(`"Period",${csvCell(summary.periodLabel)}`)
   lines.push(`"Doctor Payouts",${summary.doctorPayouts.toFixed(2)}`)
@@ -174,12 +175,5 @@ export function exportClinicExpensesCSV(summary: ClinicExpensesSummary, otherExp
 
   const csvContent = lines.join('\n')
   const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Clinic_Expenses_${summary.periodLabel}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  await downloadBlob(blob, `Clinic_Expenses_${summary.periodLabel}.csv`)
 }

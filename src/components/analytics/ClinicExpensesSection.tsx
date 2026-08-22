@@ -259,7 +259,7 @@ export function ClinicExpensesSection() {
   }
 
   function handleDownloadCSV() {
-    exportClinicExpensesCSV(summary, otherThisMonth)
+    void exportClinicExpensesCSV(summary, otherThisMonth)
   }
 
   if (loading) {
