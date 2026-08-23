@@ -39,13 +39,16 @@ import {
   subscribeToQueue,
   pollQueue,
   todayQueueDate,
+  findNextCallable,
   HOLD_REASONS,
+  QUEUE_ROOM_OPTIONS,
   type QueueEntry,
 } from '@/lib/queueApi'
 import { sortQueueEntries, sortKeyForAppointment, sortKeyForWalkIn, computePositions } from '@/lib/queueOrder'
 import { calculateQueueEtas, fetchProcedureDurations, getProcedureDuration } from '@/lib/queueEstimation'
 import { matchesPatientSearch, createPatient } from '@/lib/patients'
 import { canDelete } from '@/lib/appSession'
+import { listAppUsers } from '@/lib/appUsers'
 import { QueueQrScanner } from '@/components/QueueQrScanner'
 import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { format } from 'date-fns'
@@ -71,6 +74,11 @@ export function QueueManagement() {
   const [selectedProcedure, setSelectedProcedure] = useState('')
   const [selectedDurationMins, setSelectedDurationMins] = useState(15)
   const [selectedPriority, setSelectedPriority] = useState<'normal' | 'urgent'>('normal')
+  // Doctor/chamber assignment, same optional "pick now or leave for whoever
+  // calls next" model as the floating widget's own "Calling as"/"My Chamber"
+  // fields — neither is required to add a patient to the queue.
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null)
+  const [selectedRoom, setSelectedRoom] = useState('')
 
   const todayIso = format(new Date(), 'yyyy-MM-dd')
 
@@ -100,6 +108,18 @@ export function QueueManagement() {
     queryFn: fetchProcedureDurations,
   })
 
+  // Unlike the floating widget's roster (admin-only, to pick "who am I"),
+  // reception assigning a patient to a specific doctor at check-in is a
+  // regular part of every role's job here — no role gate.
+  const { data: doctorRoster = [] } = useQuery({
+    queryKey: ['appUsers', 'doctors-for-queue-add'],
+    queryFn: listAppUsers,
+  })
+  const activeDoctors = doctorRoster.filter((d) => d.role === 'doctor' && d.is_active)
+  // Full roster (not just active) for display, so a patient pre-assigned to
+  // a since-deactivated doctor still shows a name instead of going blank.
+  const doctorNameById = new Map(doctorRoster.map((d) => [d.id, d.full_name]))
+
   // Midnight rollover: re-derive queueDate on a slow tick so an
   // always-open tab doesn't keep querying yesterday's date forever.
   useEffect(() => {
@@ -126,6 +146,14 @@ export function QueueManagement() {
   const etaById = useMemo(() => new Map(etas.map((e) => [e.id, e])), [etas])
 
   const waiting = ordered.filter((e) => e.status === 'waiting')
+  // Reception's Call has no specific doctor identity (doctorId = null in
+  // findNextCallable/callNextPatient), so it only ever matches an
+  // unassigned patient — one pre-assigned to a specific doctor waits for
+  // that doctor's own widget rather than being pulled into this generic
+  // flow. This is also the target the "Call" button is shown/wired against
+  // below, not just idx === 0, so the button never visibly points at one
+  // patient while actually calling a different one.
+  const callableEntry = findNextCallable(entries, null)
   const serving = ordered.filter((e) => e.status === 'serving')
   const onHold = ordered.filter((e) => e.status === 'on_hold')
   const awaitingBilling = ordered.filter((e) => e.status === 'completed' && e.billing_status === 'pending_payment')
@@ -172,6 +200,8 @@ export function QueueManagement() {
     setSelectedProcedure(appointment.type || '')
     setSelectedDurationMins(getProcedureDuration(appointment.type, durations, appointment.duration || 15))
     setSelectedPriority('normal')
+    setSelectedDoctorId(null)
+    setSelectedRoom('')
     setSearch('')
   }
 
@@ -182,6 +212,8 @@ export function QueueManagement() {
     setSelectedProcedure(firstProcedure)
     setSelectedDurationMins(getProcedureDuration(firstProcedure, durations))
     setSelectedPriority('normal')
+    setSelectedDoctorId(null)
+    setSelectedRoom('')
     setSearch('')
   }
 
@@ -190,6 +222,8 @@ export function QueueManagement() {
     setSelectedAppointment(null)
     setSelectedProcedure('')
     setSelectedPriority('normal')
+    setSelectedDoctorId(null)
+    setSelectedRoom('')
   }
 
   const handleAddToQueue = () => {
@@ -205,6 +239,8 @@ export function QueueManagement() {
         procedure_name: selectedProcedure || null,
         estimated_duration_mins: selectedDurationMins,
         priority: selectedPriority,
+        assigned_doctor: selectedDoctorId,
+        room_number: selectedRoom || null,
       })
       clearSelection()
     })
@@ -261,12 +297,11 @@ export function QueueManagement() {
   // only rendered on that front entry so it's never misleading about who
   // it will call.
   const handleCallFront = () => {
-    if (waiting.length === 0) return
-    const front = waiting[0]
+    if (!callableEntry) return
     // No specific doctor session on the reception screen — assigned_doctor
-    // is left null here and gets set for real once a doctor's floating
-    // widget actually calls/resumes this patient.
-    void runAction(front.id, () => callNextPatient(entries, null, front.room_number))
+    // stays null (for a patient that didn't already have one) and gets set
+    // for real once a doctor's floating widget actually calls/resumes them.
+    void runAction(callableEntry.id, () => callNextPatient(entries, null, callableEntry.room_number))
   }
 
   const handleAbsent = (entry: QueueEntry) => {
@@ -477,6 +512,14 @@ export function QueueManagement() {
                                 <AlertTriangle className="w-3 h-3" /> arrived late
                               </span>
                             )}
+                            {/* A patient reserved for a specific doctor waits
+                                for that doctor's own widget — this makes it
+                                visible why the Call button isn't on this row. */}
+                            {e.assigned_doctor && (
+                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded" title="Only callable by this doctor">
+                                For {doctorNameById.get(e.assigned_doctor) ?? 'assigned doctor'}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-text-secondary mt-0.5 flex items-center gap-2 flex-wrap">
                             <span>{e.procedure_name || 'General Consultation'}</span>
@@ -501,11 +544,11 @@ export function QueueManagement() {
                         <button disabled={busyId === e.id} onClick={() => handleAbsent(e)} className="p-1.5 text-text-secondary hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Mark absent (push down)">
                           <AlertTriangle className="w-3.5 h-3.5" />
                         </button>
-                        {/* Call is only ever shown on the front of the queue — the
-                            action always calls the canonical next patient, so
-                            showing it on any other row would be misleading about
-                            who it actually calls. */}
-                        {idx === 0 && (
+                        {/* Shown only on the entry findNextCallable() would
+                            actually call — not necessarily idx 0 once a
+                            patient can be pre-assigned to a specific doctor,
+                            since reception's Call then skips over them. */}
+                        {callableEntry?.id === e.id && (
                           <button
                             disabled={busyId === e.id}
                             onClick={handleCallFront}
@@ -685,6 +728,39 @@ export function QueueManagement() {
                   secondary="duration"
                   className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
                 />
+              </div>
+
+              {/* Optional — same "pick now or leave for whoever calls next"
+                  model as the floating widget's own Calling as/My Chamber
+                  fields. A patient left unassigned here is still pickable by
+                  any doctor's Call Next, exactly like today. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">Doctor (optional)</h3>
+                  <select
+                    value={selectedDoctorId ?? ''}
+                    onChange={(e) => setSelectedDoctorId(e.target.value || null)}
+                    className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                  >
+                    <option value="">Unassigned</option>
+                    {activeDoctors.map((d) => (
+                      <option key={d.id} value={d.id}>{d.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">Chamber (optional)</h3>
+                  <select
+                    value={selectedRoom}
+                    onChange={(e) => setSelectedRoom(e.target.value)}
+                    className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                  >
+                    <option value="">Not set</option>
+                    {QUEUE_ROOM_OPTIONS.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

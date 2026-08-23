@@ -14,6 +14,18 @@ export const HOLD_REASONS = [
   'Custom',
 ] as const
 
+/** Shared room/chamber choices for anything that writes queue_entries.room_number
+ * (the doctor widget's "My Chamber" setting, the Add-to-Queue wizard) — one list
+ * so the two can't drift apart. */
+export const QUEUE_ROOM_OPTIONS = [
+  { value: 'Room 1', label: 'Room 1' },
+  { value: 'Room 2', label: 'Room 2' },
+  { value: 'Chamber A', label: 'Chamber A' },
+  { value: 'Chamber B', label: 'Chamber B' },
+  { value: 'Dental Chair 1', label: 'Chair 1' },
+  { value: 'Dental Chair 2', label: 'Chair 2' },
+] as const
+
 /** Local-clock "today" as YYYY-MM-DD. queue_date is stored explicitly (not
  * derived from created_at) precisely so this never has to reconcile with
  * the DB's UTC clock — see 061_patient_queue.sql. */
@@ -109,13 +121,19 @@ export async function moveQueueEntry(allEntries: QueueEntry[], entryId: string, 
 // can be 'serving' at once; that's accepted, not a bug to guard against.)
 
 /**
- * Calls the next waiting patient (canonical order — urgent first, then
- * schedule/arrival order). `doctorId` is `app_users.id` when a real doctor
- * identity is calling and is written to `assigned_doctor` — this is what
- * fixes the sandbox's defect where assigned_doctor existed in the schema
- * but no code path ever wrote it. Pass `null` when reception calls without
- * a specific doctor session (assigned_doctor is a FK to app_users, so it
- * must never be a placeholder string).
+ * Calls the next callable waiting patient (canonical order — urgent first,
+ * then schedule/arrival order), skipping any patient pre-assigned (at
+ * add-time, from QueueManagement's wizard) to a *different* doctor.
+ * `doctorId` is `app_users.id` when a real doctor identity is calling and is
+ * written to `assigned_doctor` — this is what fixes the sandbox's defect
+ * where assigned_doctor existed in the schema but no code path ever wrote
+ * it. Pass `null` when reception calls without a specific doctor session
+ * (assigned_doctor is a FK to app_users, so it must never be a placeholder
+ * string) — reception's null "identity" only ever matches unassigned
+ * patients, so a patient reserved for a specific doctor waits for that
+ * doctor rather than being pulled into the general reception flow.
+ * `findNextCallable()` is the same "unassigned OR mine" rule every caller's
+ * UI must use to preview/gate this — see its own doc comment.
  *
  * This deliberately does NOT complete the patient already in the chair
  * (user decision, 2026-08-16). It used to, for a doctor-identified call,
@@ -131,7 +149,7 @@ export async function callNextPatient(
   doctorId: string | null,
   roomNumber: string | null
 ): Promise<QueueEntry | null> {
-  const next = sortQueueEntries(entries.filter((e) => e.status === 'waiting'))[0]
+  const next = findNextCallable(entries, doctorId)
   if (!next) return null
 
   return updateQueueEntry(next.id, {
@@ -140,6 +158,23 @@ export async function callNextPatient(
     room_number: roomNumber,
     called_at: new Date().toISOString(),
   })
+}
+
+/**
+ * The single source of truth for "which waiting patient would Call Next
+ * actually call right now" — the front-of-line entry that is either
+ * unassigned or already assigned to `doctorId`, skipping over ones
+ * pre-assigned to someone else. `callNextPatient()` uses this internally;
+ * every UI that shows a "Call"/"Call Next" affordance (QueueManagement's
+ * front-row button, QueueFloatingWidget's "Up Next" preview) MUST call this
+ * too, for the same reason those two surfaces share callNextPatient itself —
+ * a button that visibly points at one patient but actually calls a
+ * different one is the exact silent-mismatch bug class this whole feature
+ * has been about fixing (see callNextPatient's own doc comment history).
+ */
+export function findNextCallable(entries: QueueEntry[], doctorId: string | null): QueueEntry | null {
+  const waiting = sortQueueEntries(entries.filter((e) => e.status === 'waiting'))
+  return waiting.find((e) => !e.assigned_doctor || e.assigned_doctor === doctorId) ?? null
 }
 
 /** Puts the currently-serving patient on hold (e.g. local anaesthesia settling, X-ray). */

@@ -11,7 +11,9 @@ import {
   completeAndBillEntry,
   subscribeToQueue,
   pollQueue,
+  findNextCallable,
   HOLD_REASONS,
+  QUEUE_ROOM_OPTIONS,
   type QueueEntry,
 } from '@/lib/queueApi'
 import { calculateDoctorBacklogMins } from '@/lib/queueEstimation'
@@ -250,6 +252,12 @@ export function QueueFloatingWidget() {
   const serving = entries.filter((e) => e.status === 'serving' && matchesMine(e))
   const onHold = entries.filter((e) => e.status === 'on_hold' && matchesMine(e))
   const backlogMins = doctorId ? calculateDoctorBacklogMins(entries, doctorId) : 0
+  // The entry Call Next would actually call — skips anyone pre-assigned (at
+  // add-time) to a different doctor, same rule callNextPatient() itself
+  // uses. The "Up Next" preview and the button's disabled state both read
+  // this instead of waiting[0], so the widget never shows one patient while
+  // silently calling another.
+  const callableEntry = findNextCallable(entries, doctorId)
 
   // None of these handlers had error handling before — a failed write
   // (RLS denial, dropped connection, anything) rejected silently with no
@@ -271,7 +279,7 @@ export function QueueFloatingWidget() {
   }
 
   const handleCallNext = () => {
-    if (!doctorId || waiting.length === 0) return
+    if (!doctorId || !callableEntry) return
     void runAction('call-next', async () => {
       await callNextPatient(entries, doctorId, roomNumber)
       setExpanded(true)
@@ -364,12 +372,9 @@ export function QueueFloatingWidget() {
           onChange={(e) => handleRoomChange(e.target.value)}
           className="px-2 py-0.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-text-primary outline-none focus:border-primary"
         >
-          <option value="Room 1">Room 1</option>
-          <option value="Room 2">Room 2</option>
-          <option value="Chamber A">Chamber A</option>
-          <option value="Chamber B">Chamber B</option>
-          <option value="Dental Chair 1">Chair 1</option>
-          <option value="Dental Chair 2">Chair 2</option>
+          {QUEUE_ROOM_OPTIONS.map((r) => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
         </select>
       </div>
 
@@ -486,20 +491,22 @@ export function QueueFloatingWidget() {
           <div className="truncate flex-1">
             <div className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Up Next in Queue</div>
             <div className="font-bold text-text-primary text-sm truncate">
-              {waiting.length > 0 ? (
+              {callableEntry ? (
                 <>
-                  #{waiting[0].serial_number} {waiting[0].patient_name}
-                  {waiting[0].priority === 'urgent' && (
+                  #{callableEntry.serial_number} {callableEntry.patient_name}
+                  {callableEntry.priority === 'urgent' && (
                     <span className="ml-1.5 text-[10px] font-black uppercase text-red-600">Urgent</span>
                   )}
                 </>
+              ) : waiting.length > 0 ? (
+                <span className="text-text-muted font-normal text-xs">Rest of the queue is assigned to other doctors</span>
               ) : (
                 <span className="text-text-muted font-normal text-xs">Queue is empty</span>
               )}
             </div>
-            {waiting.length > 0 && waiting[0].procedure_name && (
+            {callableEntry?.procedure_name && (
               <div className="text-[11px] text-teal-700 font-semibold truncate">
-                {waiting[0].procedure_name} ({waiting[0].estimated_duration_mins || 15}m)
+                {callableEntry.procedure_name} ({callableEntry.estimated_duration_mins || 15}m)
               </div>
             )}
             {waiting.length > 1 && <div className="text-[10px] text-text-secondary font-medium">+{waiting.length - 1} more waiting</div>}
@@ -510,7 +517,7 @@ export function QueueFloatingWidget() {
 
           <button
             onClick={handleCallNext}
-            disabled={!doctorId || waiting.length === 0 || busyId === 'call-next'}
+            disabled={!doctorId || !callableEntry || busyId === 'call-next'}
             title={doctorId ? undefined : "Choose who you're calling as first"}
             className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-xl disabled:opacity-40 flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
           >
