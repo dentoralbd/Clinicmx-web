@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { QrCode, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { MEMORY_KEYS } from '@/lib/prescriptionMemory'
 import { SuggestTextarea } from '@/components/SuggestField'
@@ -9,6 +9,9 @@ import { logActivity } from '@/lib/activityLog'
 import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
+import { BanglaQrPaymentModal, type BanglaQrPaymentSuccess } from '@/components/BanglaQrPaymentModal'
+import { PaymentReceiptPrint } from '@/components/PaymentReceiptPrint'
+import { parsePaymentSms } from '@/lib/smsParsers'
 
 interface PaymentEntryModalProps {
   invoiceId: string
@@ -33,12 +36,29 @@ export function PaymentEntryModal({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [thanksPrompt, setThanksPrompt] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
-  const [patientContact, setPatientContact] = useState<{ firstName: string; phone: string | null } | null>(null)
-  const [invoiceMeta, setInvoiceMeta] = useState<{ patientId: string | null; patientName: string | null; invoiceNumber: string | null } | null>(null)
+  const [patientContact, setPatientContact] = useState<{ firstName: string; lastName: string; phone: string | null; patientCode: string | null } | null>(null)
+  const [invoiceMeta, setInvoiceMeta] = useState<{ patientId: string | null; patientName: string | null; invoiceNumber: string | null; createdAt: string | null } | null>(null)
+
+  // ── Dynamic Bangla QR payment path ──
+  const [showBanglaQr, setShowBanglaQr] = useState(false)
+  const [smsPasteOpen, setSmsPasteOpen] = useState(false)
+  const [smsRaw, setSmsRaw] = useState('')
+  const [receipt, setReceipt] = useState<{
+    payment: { id: string; amount: number; payment_date: string; payment_method: string | null; notes: string | null }
+    invoice: { id: string; invoice_number: string | null; total_amount: number; paid_amount: number; created_at: string }
+    patient: { first_name: string; last_name: string; phone: string | null; patient_code: string | null }
+    remainingAfter: number
+  } | null>(null)
+  // Set (before onSaved fires) when the QR success screen's Print Receipt button was
+  // clicked, so this modal defers closing until the receipt overlay is dismissed
+  // instead of unmounting out from under it. A ref (not state) because
+  // onPrintReceipt and onSaved fire synchronously back-to-back from the same click.
+  const receiptRequestedRef = useRef(false)
 
   const remaining = useMemo(() => Math.max(invoiceTotal - invoicePaid, 0), [invoiceTotal, invoicePaid])
   const parsedAmount = parseFloat(amount) || 0
   const remainingAfterPayment = Math.max(remaining - parsedAmount, 0)
+  const parsedSms = useMemo(() => parsePaymentSms(smsRaw), [smsRaw])
 
   useEffect(() => {
     setAmount(remaining > 0 ? String(remaining) : '')
@@ -52,7 +72,7 @@ export function PaymentEntryModal({
     let cancelled = false
     supabase
       .from('invoices')
-      .select('invoice_number, patient_id, patients (first_name, last_name, phone)')
+      .select('invoice_number, created_at, patient_id, patients (first_name, last_name, phone, patient_code)')
       .eq('id', invoiceId)
       .maybeSingle()
       .then(
@@ -60,18 +80,67 @@ export function PaymentEntryModal({
           if (cancelled || error) return
           const patients = (data as any)?.patients
           if (patients?.first_name) {
-            setPatientContact({ firstName: patients.first_name, phone: patients.phone ?? null })
+            setPatientContact({
+              firstName: patients.first_name,
+              lastName: patients.last_name || '',
+              phone: patients.phone ?? null,
+              patientCode: patients.patient_code ?? null,
+            })
           }
           setInvoiceMeta({
             patientId: (data as any)?.patient_id ?? null,
             patientName: patients?.first_name ? `${patients.first_name} ${patients.last_name || ''}`.trim() : null,
             invoiceNumber: (data as any)?.invoice_number ?? null,
+            createdAt: (data as any)?.created_at ?? null,
           })
         },
         () => {}
       )
     return () => { cancelled = true }
   }, [invoiceId])
+
+  /** Fills the standard Amount/Method/Notes fields from a pasted SMS — a lighter-weight
+   * shortcut than the dedicated Bangla QR flow's gateway-tracked recording. */
+  function applyParsedSmsToForm() {
+    if (!parsedSms) return
+    setAmount(String(parsedSms.amount))
+    if (parsedSms.provider === 'bkash_sms' || parsedSms.provider === 'nagad_sms') {
+      setPaymentMethod('Transfer')
+    }
+    const trxNote = parsedSms.transactionId
+      ? `${parsedSms.providerLabel} TrxID: ${parsedSms.transactionId}`
+      : `${parsedSms.providerLabel} Payment`
+    setNotes((prev) => (prev.trim() ? `${prev}\n${trxNote}` : trxNote))
+    setSmsPasteOpen(false)
+    setSmsRaw('')
+  }
+
+  function handlePrintReceiptFromQr(payment: BanglaQrPaymentSuccess) {
+    receiptRequestedRef.current = true
+    setReceipt({
+      payment: {
+        id: payment.paymentId || crypto.randomUUID(),
+        amount: payment.amount,
+        payment_date: payment.dateIso,
+        payment_method: 'Transfer',
+        notes: payment.notes,
+      },
+      invoice: {
+        id: invoiceId,
+        invoice_number: invoiceMeta?.invoiceNumber ?? null,
+        total_amount: invoiceTotal,
+        paid_amount: invoicePaid + payment.amount,
+        created_at: invoiceMeta?.createdAt || new Date().toISOString(),
+      },
+      patient: {
+        first_name: patientContact?.firstName || invoiceMeta?.patientName?.split(' ')[0] || 'Patient',
+        last_name: patientContact?.lastName || '',
+        phone: patientContact?.phone ?? null,
+        patient_code: patientContact?.patientCode ?? null,
+      },
+      remainingAfter: Math.max(invoiceTotal - (invoicePaid + payment.amount), 0),
+    })
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -155,6 +224,57 @@ export function PaymentEntryModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-3 sm:p-4 space-y-3">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-emerald-800 min-w-0">
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span className="text-sm font-medium truncate">Dynamic Bangla QR</span>
+            </div>
+            <button
+              type="button"
+              disabled={remaining <= 0}
+              onClick={() => setShowBanglaQr(true)}
+              className="shrink-0 px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors"
+            >
+              Pay via Bangla QR
+            </button>
+          </div>
+
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setSmsPasteOpen(!smsPasteOpen)}
+              className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100"
+            >
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                Paste Merchant Payment SMS to Auto-Fill
+              </span>
+              <span className="text-gray-400">{smsPasteOpen ? '−' : '+'}</span>
+            </button>
+            {smsPasteOpen && (
+              <div className="p-3 space-y-2">
+                <textarea
+                  rows={2}
+                  placeholder="Paste SMS here (e.g. 'You have received Tk 500.00... TrxID 9K382J9X')"
+                  value={smsRaw}
+                  onChange={(e) => setSmsRaw(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                {parsedSms && (
+                  <div className="text-xs bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center justify-between gap-2">
+                    <span className="text-emerald-800">
+                      {parsedSms.providerLabel} detected: <strong>{formatBDT(parsedSms.amount)}</strong>
+                      {parsedSms.transactionId ? ` • ${parsedSms.transactionId}` : ''}
+                    </span>
+                    <button type="button" onClick={applyParsedSmsToForm} className="text-emerald-700 font-semibold underline shrink-0">
+                      Use this
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-1">Amount</label>
             <input
@@ -221,6 +341,38 @@ export function PaymentEntryModal({
           amount={thanksPrompt.amount}
           totalPaid={thanksPrompt.totalPaid}
           onClose={() => { setThanksPrompt(null); onSaved() }}
+        />
+      )}
+
+      {showBanglaQr && (
+        <BanglaQrPaymentModal
+          invoiceId={invoiceId}
+          invoiceNumber={invoiceMeta?.invoiceNumber}
+          invoiceTotal={invoiceTotal}
+          invoicePaid={invoicePaid}
+          initialAmount={parsedAmount > 0 ? parsedAmount : undefined}
+          patientId={invoiceMeta?.patientId}
+          patientName={invoiceMeta?.patientName}
+          patientPhone={patientContact?.phone}
+          onClose={() => setShowBanglaQr(false)}
+          onPrintReceipt={handlePrintReceiptFromQr}
+          onSaved={() => {
+            setShowBanglaQr(false)
+            // If Print Receipt was just requested, keep this modal mounted until
+            // the receipt overlay below is closed — otherwise close normally now.
+            if (!receiptRequestedRef.current) onSaved()
+            receiptRequestedRef.current = false
+          }}
+        />
+      )}
+
+      {receipt && (
+        <PaymentReceiptPrint
+          payment={receipt.payment}
+          invoice={receipt.invoice}
+          patient={receipt.patient}
+          remainingAfter={receipt.remainingAfter}
+          onClose={() => { setReceipt(null); onSaved() }}
         />
       )}
     </div>

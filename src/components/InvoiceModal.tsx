@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CheckSquare, ChevronDown, ChevronUp, Plus, Square, X } from 'lucide-react'
+import { CheckSquare, ChevronDown, ChevronUp, Plus, QrCode, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { BanglaQrPaymentModal } from '@/components/BanglaQrPaymentModal'
+import { isRecentlyObservedOffline } from '@/lib/connectivityStatus'
 import {
   buildLegacySafeInvoicePayload,
   buildTreatmentInvoiceItems,
@@ -164,6 +166,18 @@ export function InvoiceModal({
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<(typeof PAYMENT_METHODS)[number]>('Cash')
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  // 'bangla_qr' skips the standard method/date fields — the created invoice opens
+  // straight into the dynamic QR + SMS/manual verification modal instead.
+  const [collectPaymentMode, setCollectPaymentMode] = useState<'standard' | 'bangla_qr'>('standard')
+  const [qrModalContext, setQrModalContext] = useState<{
+    invoiceId: string
+    invoiceNumber: string | null
+    invoiceTotal: number
+    initialAmount: number
+    patientId: string | null
+    patientName: string | null
+    patientPhone: string | null
+  } | null>(null)
 
   useEffect(() => {
     setFormData((prev) => ({ ...prev, patient_id: defaultPatientId || prev.patient_id }))
@@ -608,12 +622,19 @@ export function InvoiceModal({
     })
 
     if (collectPayment && parsedPaymentAmount > 0) {
-      // Share this invoice's own group (rather than recordImmediatePayment's
-      // default of starting an independent one) — the invoice hasn't synced
-      // yet, so a payment queued in a separate group could be manually
-      // synced first and hit an FK violation against an invoice id the
-      // server doesn't have.
-      await recordImmediatePayment(clientInvoiceId, parsedPaymentAmount, { groupId, seq: 2 })
+      if (collectPaymentMode === 'bangla_qr') {
+        // The QR flow needs a live connection to show/verify a dynamic QR — an
+        // offline-queued invoice doesn't have a real server id yet to generate
+        // one against anyway. Skip QR collection; the invoice itself still saves.
+        alert('Invoice saved offline. Bangla QR payment collection requires an internet connection — record this payment from Billing once back online.')
+      } else {
+        // Share this invoice's own group (rather than recordImmediatePayment's
+        // default of starting an independent one) — the invoice hasn't synced
+        // yet, so a payment queued in a separate group could be manually
+        // synced first and hit an FK violation against an invoice id the
+        // server doesn't have.
+        await recordImmediatePayment(clientInvoiceId, parsedPaymentAmount, { groupId, seq: 2 })
+      }
     }
 
     onSave(clientInvoiceId)
@@ -843,9 +864,23 @@ export function InvoiceModal({
           }
         }
 
-        if (collectPayment && parsedPaymentAmount > 0) {
-          await recordImmediatePayment(data.id, parsedPaymentAmount)
+        if (collectPayment && parsedPaymentAmount > 0 && data?.id) {
           const paymentPatient = patients.find((p) => p.id === formData.patient_id)
+          if (collectPaymentMode === 'bangla_qr') {
+            setQrModalContext({
+              invoiceId: data.id,
+              invoiceNumber: usedInvoiceNumber,
+              invoiceTotal: totalAmount,
+              initialAmount: parsedPaymentAmount,
+              patientId: formData.patient_id || null,
+              patientName: paymentPatient ? `${paymentPatient.first_name} ${paymentPatient.last_name}` : null,
+              patientPhone: paymentPatient?.phone ?? null,
+            })
+            // The invoice is already created — QR modal's onSaved/onClose calls
+            // onSave(data.id) once the user is done with (or skips) the QR step.
+            return
+          }
+          await recordImmediatePayment(data.id, parsedPaymentAmount)
           if (paymentPatient?.phone) {
             setThanksPrompt({
               firstName: paymentPatient.first_name,
@@ -1302,39 +1337,80 @@ export function InvoiceModal({
                 <span className="text-sm font-medium text-green-800">Collect payment now</span>
               </label>
               {collectPayment && (
-                <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Amount</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Method</label>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                <div className="p-3 space-y-3">
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setCollectPaymentMode('standard')}
+                      className={`px-3 py-1.5 ${collectPaymentMode === 'standard' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                     >
-                      {PAYMENT_METHODS.map((method) => (
-                        <option key={method} value={method}>{method}</option>
-                      ))}
-                    </select>
+                      Standard
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!navigator.onLine || isRecentlyObservedOffline()}
+                      onClick={() => setCollectPaymentMode('bangla_qr')}
+                      title={!navigator.onLine || isRecentlyObservedOffline() ? 'Requires an internet connection' : undefined}
+                      className={`px-3 py-1.5 flex items-center gap-1 ${collectPaymentMode === 'bangla_qr' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      Bangla QR
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Date</label>
-                    <input
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
+
+                  {collectPaymentMode === 'bangla_qr' ? (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Amount to Request on QR</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        The invoice is created first, then the Bangla QR payment &amp; verification modal opens for this amount.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Amount</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Method</label>
+                        <select
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          {PAYMENT_METHODS.map((method) => (
+                            <option key={method} value={method}>{method}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={paymentDate}
+                          onChange={(e) => setPaymentDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1360,6 +1436,29 @@ export function InvoiceModal({
           onClose={() => {
             const invoiceId = thanksPrompt.invoiceId
             setThanksPrompt(null)
+            onSave(invoiceId)
+          }}
+        />
+      )}
+
+      {qrModalContext && (
+        <BanglaQrPaymentModal
+          invoiceId={qrModalContext.invoiceId}
+          invoiceNumber={qrModalContext.invoiceNumber}
+          invoiceTotal={qrModalContext.invoiceTotal}
+          invoicePaid={0}
+          initialAmount={qrModalContext.initialAmount}
+          patientId={qrModalContext.patientId}
+          patientName={qrModalContext.patientName}
+          patientPhone={qrModalContext.patientPhone}
+          onClose={() => {
+            const invoiceId = qrModalContext.invoiceId
+            setQrModalContext(null)
+            onSave(invoiceId)
+          }}
+          onSaved={() => {
+            const invoiceId = qrModalContext.invoiceId
+            setQrModalContext(null)
             onSave(invoiceId)
           }}
         />

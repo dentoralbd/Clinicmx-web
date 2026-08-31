@@ -4,6 +4,22 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-08-31 — Dynamic Bangla QR payment collection & SMS/manual verification
+
+Added "Pay via Bangla QR" (migration 066) to every payment-recording entry point (Record Payment
+modal — Billing, Patient Profile, pay-invoice picker — and invoice creation via `InvoiceModal`).
+Generates a per-transaction dynamic EMVCo Bangla QR (amount + invoice number injected, CRC-16
+recomputed and round-trip validated) from the clinic's real Pubali Bank PLC merchant QR, editable
+in Billing → Invoice Settings. Verified either by pasting the bank/MFS confirmation SMS
+(`src/lib/smsParsers.ts` — bKash/Nagad/Pubali Bank/generic parsers) or manual TrxID entry; recorded
+payments carry gateway columns (`payments.gateway_provider`/`gateway_reference`/
+`gateway_transaction_id`/`gateway_status`) with a partial unique index on `gateway_reference` as a
+duplicate-recording guard. Success screen offers a WhatsApp thank-you and (from the Record Payment
+modal) the existing payment receipt print view. Ported and adapted from a UI-approved prototype
+built in the `Clinicmx-web-redesign` sandbox — see FEATURES.md §8 for the full behavior and
+DATABASE.md for the schema. QR collection requires a live connection; offline invoice creation with
+QR selected queues the invoice without collecting payment.
+
 ## 2026-08-21 — Appointment type sourced from Catalog sitewide; Reschedule can edit type/duration
 
 `TreatmentTypeSelect` (previously Treatments-only) gained `extraOptions`, `blankOption`, and

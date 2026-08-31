@@ -971,6 +971,10 @@ export interface Database {
           payment_date: string
           notes: string | null
           created_at: string
+          gateway_provider: string | null
+          gateway_reference: string | null
+          gateway_transaction_id: string | null
+          gateway_status: string | null
         }
         Insert: {
           id?: string
@@ -981,6 +985,10 @@ export interface Database {
           payment_date?: string
           notes?: string | null
           created_at?: string
+          gateway_provider?: string | null
+          gateway_reference?: string | null
+          gateway_transaction_id?: string | null
+          gateway_status?: string | null
         }
         Update: {
           id?: string
@@ -991,6 +999,10 @@ export interface Database {
           payment_date?: string
           notes?: string | null
           created_at?: string
+          gateway_provider?: string | null
+          gateway_reference?: string | null
+          gateway_transaction_id?: string | null
+          gateway_status?: string | null
         }
         Relationships: [
           {
@@ -1091,6 +1103,7 @@ export interface Database {
           late_interest_rate: number
           payment_terms: string | null
           updated_at: string
+          bangla_qr_merchant_payload: string | null
         }
         Insert: {
           id: number
@@ -1100,6 +1113,7 @@ export interface Database {
           late_interest_rate?: number
           payment_terms?: string | null
           updated_at?: string
+          bangla_qr_merchant_payload?: string | null
         }
         Update: {
           id?: number
@@ -1109,6 +1123,7 @@ export interface Database {
           late_interest_rate?: number
           payment_terms?: string | null
           updated_at?: string
+          bangla_qr_merchant_payload?: string | null
         }
         Relationships: []
       }

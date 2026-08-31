@@ -18,6 +18,11 @@ export interface RecordInvoicePaymentArgs {
   /** Lets an offline-queued payment patch the right patient's cached bundle and label its outbox card. Omit only when the caller genuinely has no patient context (payment recording still works — just without that optimistic UI). */
   patientId?: string | null
   patientName?: string | null
+  /** Bangla QR / SMS-verified payment gateway metadata (migration 066). All optional — omit for a normal manually-recorded payment. */
+  gatewayProvider?: string | null
+  gatewayReference?: string | null
+  gatewayTransactionId?: string | null
+  gatewayStatus?: string | null
   /**
    * Lets a caller that's already building a larger offline group (e.g.
    * InvoiceModal.createInvoiceOffline queuing an invoice + treatment-link
@@ -34,6 +39,8 @@ export interface RecordInvoicePaymentResult {
   paymentStored: boolean
   newPaidAmount: number
   newStatus: 'Paid' | 'Partial' | 'Pending'
+  /** id of the inserted payments row (or the offline-queued row's pre-generated id). Null only when paymentStored is false. */
+  paymentId: string | null
 }
 
 async function enqueueOfflinePayment(args: {
@@ -46,6 +53,10 @@ async function enqueueOfflinePayment(args: {
   newStatus: RecordInvoicePaymentResult['newStatus']
   patientId?: string | null
   patientName?: string | null
+  gatewayProvider?: string | null
+  gatewayReference?: string | null
+  gatewayTransactionId?: string | null
+  gatewayStatus?: string | null
   /**
    * Lets a caller that's already building a larger offline group (e.g.
    * InvoiceModal.createInvoiceOffline, which queues the invoice insert and
@@ -56,21 +67,26 @@ async function enqueueOfflinePayment(args: {
    * doesn't have yet.
    */
   group?: { groupId: string; seq: number }
-}) {
+}): Promise<string> {
   const groupId = args.group?.groupId ?? newGroupId()
   const seq = args.group?.seq ?? 0
   const label = 'Payment'
   const detail = `${formatBDT(args.amount)} via ${args.method}`
+  const paymentId = crypto.randomUUID()
   await enqueueMutation({
     table: 'payments',
     action: 'insert',
     payload: {
-      id: crypto.randomUUID(),
+      id: paymentId,
       invoice_id: args.invoiceId,
       amount: args.amount,
       payment_method: args.method,
       payment_date: args.dateIso,
       notes: args.notes,
+      gateway_provider: args.gatewayProvider ?? null,
+      gateway_reference: args.gatewayReference ?? null,
+      gateway_transaction_id: args.gatewayTransactionId ?? null,
+      gateway_status: args.gatewayStatus ?? null,
     },
     meta: { patientId: args.patientId, patientName: args.patientName, label, detail },
     groupId,
@@ -93,6 +109,7 @@ async function enqueueOfflinePayment(args: {
       ),
     }
   })
+  return paymentId
 }
 
 /**
@@ -115,6 +132,10 @@ export async function recordInvoicePayment({
   notes = null,
   patientId,
   patientName,
+  gatewayProvider,
+  gatewayReference,
+  gatewayTransactionId,
+  gatewayStatus,
   group,
 }: RecordInvoicePaymentArgs): Promise<RecordInvoicePaymentResult> {
   const dateIso = paymentDateIso || new Date().toISOString()
@@ -123,19 +144,35 @@ export async function recordInvoicePayment({
     newPaidAmount >= invoiceTotal && invoiceTotal > 0 ? 'Paid' : newPaidAmount > 0 ? 'Partial' : 'Pending'
 
   if (!navigator.onLine) {
-    await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, group })
-    return { paymentStored: true, newPaidAmount, newStatus }
+    const paymentId = await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, gatewayProvider, gatewayReference, gatewayTransactionId, gatewayStatus, group })
+    return { paymentStored: true, newPaidAmount, newStatus, paymentId }
   }
 
   let paymentStored = false
   let paymentSchemaError: unknown = null
+  let insertedPaymentId: string | null = null
   const paymentPayloads: Array<{
     invoice_id: string
     amount: number
     payment_method?: string
     payment_date?: string
     notes?: string | null
+    gateway_provider?: string | null
+    gateway_reference?: string | null
+    gateway_transaction_id?: string | null
+    gateway_status?: string | null
   }> = [
+    {
+      invoice_id: invoiceId,
+      amount,
+      payment_method: method,
+      payment_date: dateIso,
+      notes,
+      gateway_provider: gatewayProvider ?? null,
+      gateway_reference: gatewayReference ?? null,
+      gateway_transaction_id: gatewayTransactionId ?? null,
+      gateway_status: gatewayStatus ?? null,
+    },
     { invoice_id: invoiceId, amount, payment_method: method, payment_date: dateIso, notes },
     { invoice_id: invoiceId, amount, payment_date: dateIso },
     { invoice_id: invoiceId, amount },
@@ -143,10 +180,11 @@ export async function recordInvoicePayment({
 
   try {
     for (const payload of paymentPayloads) {
-      const { error: paymentError } = await supabase.from('payments').insert(payload)
+      const { data: insertedRow, error: paymentError } = await supabase.from('payments').insert(payload).select('id').single()
       if (!paymentError) {
         paymentStored = true
         paymentSchemaError = null
+        insertedPaymentId = (insertedRow as { id?: string } | null)?.id ?? null
         break
       }
       if (!isSchemaCompatibilityError(paymentError)) throw paymentError
@@ -167,8 +205,8 @@ export async function recordInvoicePayment({
     // !navigator.onLine. isSchemaCompatibilityError above doesn't match
     // network wording, so this ordering is unaffected.
     if (isOfflineFailure(err)) {
-      await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, group })
-      return { paymentStored: true, newPaidAmount, newStatus }
+      const paymentId = await enqueueOfflinePayment({ invoiceId, amount, method, dateIso, notes, newPaidAmount, newStatus, patientId, patientName, gatewayProvider, gatewayReference, gatewayTransactionId, gatewayStatus, group })
+      return { paymentStored: true, newPaidAmount, newStatus, paymentId }
     }
     throw err
   }
@@ -196,5 +234,5 @@ export async function recordInvoicePayment({
     logBillingError('Payment recorded without payment ledger row', paymentSchemaError, { invoiceId, amount })
   }
 
-  return { paymentStored, newPaidAmount, newStatus }
+  return { paymentStored, newPaidAmount, newStatus, paymentId: insertedPaymentId }
 }
