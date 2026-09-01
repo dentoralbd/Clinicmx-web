@@ -1328,7 +1328,12 @@ export function PatientProfile() {
       towardPreviousDue: qrEligible ? 0 : towardPreviousDue,
     })
     if (qrEligible && paymentAmount > 0) {
-      summaryLines.push(`${PAYMENT_LINE_PREFIX} Bangla QR payment of ${formatCurrency(paymentAmount)} requested (not yet confirmed at visit save)`)
+      // Deliberately doesn't assert a confirmation status ("not yet confirmed", "paid") —
+      // this text is written once, now, and never revisited, so any status claim here
+      // goes stale the moment the QR is later confirmed (or not) through Billing. The
+      // invoice's own status/the "Hold on Bangla QR" indicator are the live source of
+      // truth; this note is just a permanent record that a QR was requested at this visit.
+      summaryLines.push(`${PAYMENT_LINE_PREFIX} Bangla QR payment of ${formatCurrency(paymentAmount)} requested at this visit — see Billing for current status`)
     }
     const notesWithSummary = [visitForm.notes?.trim(), ...summaryLines]
       .filter(Boolean)
