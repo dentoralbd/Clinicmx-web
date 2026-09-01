@@ -822,6 +822,7 @@ export interface Database {
           due_date: string | null
           created_at: string
           merged_into_invoice_id: string | null
+          bangla_qr_hold_amount: number | null
         }
         Insert: {
           id?: string
@@ -848,6 +849,7 @@ export interface Database {
           due_date?: string | null
           created_at?: string
           merged_into_invoice_id?: string | null
+          bangla_qr_hold_amount?: number | null
         }
         Update: {
           id?: string
@@ -874,6 +876,7 @@ export interface Database {
           due_date?: string | null
           created_at?: string
           merged_into_invoice_id?: string | null
+          bangla_qr_hold_amount?: number | null
         }
         Relationships: [
           {

@@ -9,7 +9,7 @@ import { queryClient } from '@/lib/queryClient'
 import { isOfflineFailure } from '@/lib/supabaseErrors'
 import { recordInvoicePayment } from '@/lib/payments'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock, QrCode } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -18,6 +18,7 @@ import { RescheduleModal } from '@/components/RescheduleModal'
 import { InvoiceModal } from '@/components/InvoiceModal'
 import { InvoicePrint } from '@/components/InvoicePrint'
 import { PaymentEntryModal } from '@/components/PaymentEntryModal'
+import { BanglaQrPaymentModal } from '@/components/BanglaQrPaymentModal'
 import { PaymentThanksPrompt } from '@/components/PaymentThanksPrompt'
 import { PayInvoicePickerModal } from '@/components/PayInvoicePickerModal'
 import { PaymentHistoryPanel } from '@/components/PaymentHistoryPanel'
@@ -613,7 +614,20 @@ export function PatientProfile() {
   const [visitTreatmentsDone, setVisitTreatmentsDone] = useState<VisitTreatmentEntry[]>([])
   const [visitPlannedSelections, setVisitPlannedSelections] = useState<Record<string, VisitPlannedSelection>>({})
   const [visitPayment, setVisitPayment] = useState({ amount: '', method: 'Cash' })
+  // 'bangla_qr' only makes sense when this payment targets exactly one invoice (either
+  // the new invoice from this visit's unbilled treatments, or a single already-billed
+  // plan item's existing invoice) — QR can't represent a split across several invoices,
+  // so VisitFormModal only offers it in those two cases (mirrors handleVisitSubmit's own
+  // eligibility check at submit time).
+  const [visitPaymentMode, setVisitPaymentMode] = useState<'standard' | 'bangla_qr'>('standard')
   const [visitPaymentThanks, setVisitPaymentThanks] = useState<{ firstName: string; phone: string | null; amount: number; totalPaid: number } | null>(null)
+  const [visitQrModalContext, setVisitQrModalContext] = useState<{
+    invoiceId: string
+    invoiceNumber: string | null
+    invoiceTotal: number
+    invoicePaid: number
+    initialAmount: number
+  } | null>(null)
   const [nextApptPrompt, setNextApptPrompt] = useState(false)
   const [editingVisit, setEditingVisit] = useState<any | null>(null)
   // Double-submit guards: without these, a slow save (or a network stall) leaves
@@ -1286,16 +1300,36 @@ export function PatientProfile() {
     // Capture what was done/billed/paid this visit as text inside notes, mirroring
     // the payment routing below (new invoice first, remainder to previous due).
     const hasNewBillable = doneEntries.length > 0 || billableFromPlan.length > 0
+    // A dynamic Bangla QR encodes exactly one invoice number — it can't represent a
+    // payment split across several invoices, so only offer/honor it in the two cases
+    // that resolve to a single target: all-new-treatments (one new invoice), or paying
+    // down exactly one already-billed plan item's existing invoice. VisitFormModal
+    // disables the QR toggle outside these cases too; this is the submit-time guard.
+    const qrEligible =
+      visitPaymentMode === 'bangla_qr' &&
+      ((hasNewBillable && existingInvoicesWithDue.length === 0) ||
+        (!hasNewBillable && existingInvoicesWithDue.length === 1))
     const newInvoicePortion = hasNewBillable ? Math.min(paymentAmount, treatmentsTotal) : 0
     const towardPreviousDue = Math.min(paymentAmount - newInvoicePortion, existingDueTotal)
+    // Bangla QR collection happens AFTER this note text is written (the invoice/visit
+    // save below, then a separate verify step in the QR modal — which the user can also
+    // just close without confirming). Writing "Paid ... (Cash)" here would be wrong on
+    // two counts: the amount isn't actually confirmed received yet, and the method would
+    // always say "Cash" regardless of the real payment method, since visitPayment.method
+    // is never touched while the QR toggle is active. Note text is documentation, not the
+    // billing record — the invoice/payments table (updated only once the QR modal's own
+    // verify step succeeds) stays the source of truth for what was actually collected.
     const summaryLines = buildVisitSummaryLines({
       doneFromPlan,
       doneEntries,
       newBilledTotal: treatmentsTotal,
-      paymentAmount,
+      paymentAmount: qrEligible ? 0 : paymentAmount,
       paymentMethod: visitPayment.method,
-      towardPreviousDue,
+      towardPreviousDue: qrEligible ? 0 : towardPreviousDue,
     })
+    if (qrEligible && paymentAmount > 0) {
+      summaryLines.push(`${PAYMENT_LINE_PREFIX} Bangla QR payment of ${formatCurrency(paymentAmount)} requested (not yet confirmed at visit save)`)
+    }
     const notesWithSummary = [visitForm.notes?.trim(), ...summaryLines]
       .filter(Boolean)
       .join('\n')
@@ -1512,8 +1546,44 @@ export function PatientProfile() {
       // normal online path (each has its own connectivity-failure fallback
       // now — see their definitions).
       let paymentSkippedDueToPromotion = false
+      // Set when the Bangla QR modal is about to open — the "next appointment?" prompt
+      // is deferred until that flow finishes (its onSaved/onClose sets it), so it doesn't
+      // pop up behind/before the still-pending payment collection.
+      let qrModalPending = false
       if (paymentAmount > 0 && isOffline) {
         paymentSkippedDueToPromotion = true
+      } else if (paymentAmount > 0 && qrEligible) {
+        if (hasNewBillable) {
+          // Invoice created up front with a zero payment — the QR modal collects and
+          // verifies the actual amount, then records it against this invoice itself.
+          const newInvoiceId = await createVisitInvoiceWithPayment(billableTreatments, 0, visitGroupId, () => visitSeq++)
+          if (newInvoiceId) {
+            if (insertedVisitId) {
+              await supabase.from('patient_visits').update({ invoice_id: newInvoiceId }).eq('id', insertedVisitId)
+            }
+            qrModalPending = true
+            setVisitQrModalContext({
+              invoiceId: newInvoiceId,
+              invoiceNumber: null,
+              invoiceTotal: treatmentsTotal,
+              invoicePaid: 0,
+              initialAmount: paymentAmount,
+            })
+          }
+        } else {
+          const invoice = existingInvoicesWithDue[0]
+          if (insertedVisitId) {
+            await supabase.from('patient_visits').update({ invoice_id: invoice.id }).eq('id', insertedVisitId)
+          }
+          qrModalPending = true
+          setVisitQrModalContext({
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoice_number ?? null,
+            invoiceTotal: invoice.total_amount || 0,
+            invoicePaid: invoice.paid_amount || 0,
+            initialAmount: paymentAmount,
+          })
+        }
       } else if (paymentAmount > 0) {
         // New unbilled treatments get a new invoice first; any remainder pays
         // down existing invoices of selected already-billed plan items. Either
@@ -1557,8 +1627,11 @@ export function PatientProfile() {
       setVisitTreatmentsDone([])
       setVisitPlannedSelections({})
       setVisitPayment({ amount: '', method: 'Cash' })
+      setVisitPaymentMode('standard')
       loadPatientData()
-      setNextApptPrompt(true)
+      if (!qrModalPending) {
+        setNextApptPrompt(true)
+      }
       if (paymentSkippedDueToPromotion) {
         alert("The connection dropped partway through saving — the visit was saved offline, but the payment couldn't be recorded. Please add it separately once you're back online.")
       }
@@ -1721,6 +1794,12 @@ export function PatientProfile() {
       })
     }
     advanceTreatmentStatusOnBilling(billedTreatmentIds)
+
+    // A zero payment (Bangla QR path: invoice created up front, payment collected and
+    // verified afterward via the QR modal) needs nothing further — the invoice was
+    // already inserted above with paid_amount 0 / status 'Pending'. Skipping this whole
+    // block also avoids inserting a meaningless BDT 0 payments row.
+    if (paymentAmount <= 0) return invoice.id as string
 
     // Same fallback chain as InvoiceModal.recordImmediatePayment for older payments schemas
     const paymentDateIso = new Date().toISOString()
@@ -5162,6 +5241,8 @@ export function PatientProfile() {
           allTreatments={treatments}
           payment={visitPayment}
           setPayment={setVisitPayment}
+          paymentMode={visitPaymentMode}
+          setPaymentMode={setVisitPaymentMode}
           dentitionType={patientDentition}
           visits={visits}
           prescriptions={prescriptions}
@@ -5169,6 +5250,30 @@ export function PatientProfile() {
           onSubmit={handleVisitSubmit}
           onClose={() => setShowVisitForm(false)}
           saving={savingVisit}
+        />
+      )}
+
+      {/* Collect & verify the deferred payment before anything else — the visit/invoice
+          are already saved at this point, only the payment itself is still pending. */}
+      {visitQrModalContext && (
+        <BanglaQrPaymentModal
+          invoiceId={visitQrModalContext.invoiceId}
+          invoiceNumber={visitQrModalContext.invoiceNumber}
+          invoiceTotal={visitQrModalContext.invoiceTotal}
+          invoicePaid={visitQrModalContext.invoicePaid}
+          initialAmount={visitQrModalContext.initialAmount}
+          patientId={id}
+          patientName={patient ? `${patient.first_name} ${patient.last_name}`.trim() : null}
+          patientPhone={patient?.phone ?? null}
+          onClose={() => {
+            setVisitQrModalContext(null)
+            setNextApptPrompt(true)
+          }}
+          onSaved={() => {
+            setVisitQrModalContext(null)
+            setNextApptPrompt(true)
+            loadPatientData()
+          }}
         />
       )}
 
@@ -6132,6 +6237,8 @@ function VisitFormModal({
   allTreatments,
   payment,
   setPayment,
+  paymentMode,
+  setPaymentMode,
   dentitionType,
   visits,
   prescriptions,
@@ -6173,6 +6280,26 @@ function VisitFormModal({
     return invoice ? sum + getInvoiceDue(invoice) : sum
   }, 0)
   const hasAnyDone = validTreatments.length > 0 || selectedPlanned.length > 0
+  // Bangla QR encodes exactly one invoice number, so only offer it when this payment
+  // resolves to a single target invoice — mirrors handleVisitSubmit's own eligibility
+  // check (existingInvoicesWithDue), which re-derives the same thing at submit time
+  // from the same underlying state.
+  const hasNewBillableForQr = validTreatments.length > 0 || selectedUnbilled.length > 0
+  const selectedBilledInvoicesWithDue = selectedBilledInvoiceIds
+    .map((invoiceId) => (invoices as any[]).find((inv) => inv.id === invoiceId))
+    .filter((inv) => inv && getInvoiceDue(inv) > 0)
+  const qrEligible =
+    (hasNewBillableForQr && selectedBilledInvoicesWithDue.length === 0) ||
+    (!hasNewBillableForQr && selectedBilledInvoicesWithDue.length === 1)
+
+  // Selections can change after Bangla QR is picked (e.g. ticking a second billed plan
+  // item) and make it no longer eligible — fall back to Standard automatically rather
+  // than leaving a disabled-but-still-selected mode around.
+  useEffect(() => {
+    if (paymentMode === 'bangla_qr' && !qrEligible) {
+      setPaymentMode('standard')
+    }
+  }, [paymentMode, qrEligible, setPaymentMode])
 
   function updateTreatmentEntry(index: number, patch: Partial<VisitTreatmentEntry>) {
     setTreatmentsDone(treatmentsDone.map((entry: VisitTreatmentEntry, i: number) => (i === index ? { ...entry, ...patch } : entry)))
@@ -6434,6 +6561,25 @@ function VisitFormModal({
             <label className="block text-sm font-medium mb-1">Payment Received</label>
             {hasAnyDone ? (
               <div className="space-y-1.5">
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode('standard')}
+                    className={`px-3 py-1.5 ${paymentMode === 'standard' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!qrEligible}
+                    onClick={() => setPaymentMode('bangla_qr')}
+                    title={!qrEligible ? 'Bangla QR needs this payment to target a single invoice — untick extra billed plan items, or bill new treatments separately from paying down an existing due' : undefined}
+                    className={`px-3 py-1.5 flex items-center gap-1 ${paymentMode === 'bangla_qr' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    Bangla QR
+                  </button>
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="number"
@@ -6444,16 +6590,18 @@ function VisitFormModal({
                     onChange={(e) => setPayment({ ...payment, amount: e.target.value })}
                     className="w-36 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
-                  <select
-                    value={payment.method}
-                    onChange={(e) => setPayment({ ...payment, method: e.target.value })}
-                    className="px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Card">Card</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Transfer">Transfer</option>
-                  </select>
+                  {paymentMode === 'standard' && (
+                    <select
+                      value={payment.method}
+                      onChange={(e) => setPayment({ ...payment, method: e.target.value })}
+                      className="px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Transfer">Transfer</option>
+                    </select>
+                  )}
                   {treatmentsTotal > 0 && (
                     <span className="text-xs text-text-secondary">Treatments total: {formatBDT(treatmentsTotal)}</span>
                   )}
@@ -6464,7 +6612,11 @@ function VisitFormModal({
                     <span className="text-xs text-text-secondary">Treatments total: {formatBDT(0)}</span>
                   )}
                 </div>
-                {(parseFloat(payment.amount) || 0) > 0 && (
+                {paymentMode === 'bangla_qr' ? (
+                  <p className="text-xs text-text-secondary">
+                    Saving will create/link the invoice first, then open the Bangla QR payment &amp; verification modal for this amount.
+                  </p>
+                ) : (parseFloat(payment.amount) || 0) > 0 && (
                   <p className="text-xs text-text-secondary">
                     {selectedUnbilled.length > 0 || validTreatments.length > 0
                       ? 'A new invoice will be generated for the unbilled treatments above.'
@@ -8026,7 +8178,11 @@ function PatientInvoiceRow({
             </div>
             <div className="mt-1 flex flex-wrap gap-3 text-sm">
               <span className="font-bold text-primary">{formatCurrency(invoice.total_amount || 0)}</span>
-              {due > 0 && <span className="text-red-600">Due: {formatCurrency(due)}</span>}
+              {due > 0 && (
+                invoice.bangla_qr_hold_amount
+                  ? <span className="text-emerald-600">Hold: {formatCurrency(due)} on Bangla QR</span>
+                  : <span className="text-red-600">Due: {formatCurrency(due)}</span>
+              )}
             </div>
             {itemPreview && <p className="mt-1 text-sm text-text-secondary truncate">{itemPreview}</p>}
             {isMerged && invoice.merged_into_invoice_id && (

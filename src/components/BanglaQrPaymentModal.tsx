@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { supabase } from '@/lib/supabase'
 import { formatBDT } from '@/lib/utils'
 import {
   generateDynamicBanglaQr,
@@ -115,6 +116,21 @@ export function BanglaQrPaymentModal({
     if (numQrAmount <= 0) return null
     return generateDynamicBanglaQr(merchantTemplate, numQrAmount, invoiceNumber || undefined)
   }, [merchantTemplate, numQrAmount, invoiceNumber])
+
+  // Marks the invoice as having a Bangla QR payment outstanding — so Billing can show
+  // "Hold BDT X on Bangla QR" instead of a plain "Due BDT X" for the amount this QR was
+  // requesting, even if the user closes this modal before confirming. Best-effort and
+  // fire-and-forget: this is an informational hint, not the billing ledger itself
+  // (recordInvoicePayment clears it on any actual payment), so a failure here shouldn't
+  // block showing the QR.
+  useEffect(() => {
+    const holdAmount = initialAmount && initialAmount > 0 ? initialAmount : invoiceDue
+    if (holdAmount > 0) {
+      supabase.from('invoices').update({ bangla_qr_hold_amount: holdAmount }).eq('id', invoiceId).then(() => {}, () => {})
+    }
+    // Runs once per modal mount for this invoice — not re-run if the typed amount changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceId])
 
   // Auto parse pasted SMS
   useEffect(() => {

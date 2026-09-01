@@ -95,7 +95,9 @@ async function enqueueOfflinePayment(args: {
   await enqueueMutation({
     table: 'invoices',
     action: 'update',
-    payload: { id: args.invoiceId, paid_amount: args.newPaidAmount, status: args.newStatus },
+    // bangla_qr_hold_amount: null clears the "Hold BDT X on Bangla QR" Billing hint —
+    // any recorded payment (QR-confirmed or otherwise) resolves whatever was pending.
+    payload: { id: args.invoiceId, paid_amount: args.newPaidAmount, status: args.newStatus, bangla_qr_hold_amount: null },
     meta: { patientId: args.patientId, patientName: args.patientName, label: 'Update invoice balance', detail },
     groupId,
     seq: seq + 1,
@@ -191,10 +193,20 @@ export async function recordInvoicePayment({
       paymentSchemaError = paymentError
     }
 
-    const { error: invoiceError } = await supabase
+    // bangla_qr_hold_amount: null clears the "Hold BDT X on Bangla QR" Billing hint — any
+    // recorded payment (QR-confirmed or otherwise) resolves whatever was pending. Tried
+    // first, then retried without it on a pre-migration-067 schema (no fallback here would
+    // otherwise take down payment recording entirely on a DB that hasn't run 067 yet).
+    let { error: invoiceError } = await supabase
       .from('invoices')
-      .update({ paid_amount: newPaidAmount, status: newStatus })
+      .update({ paid_amount: newPaidAmount, status: newStatus, bangla_qr_hold_amount: null })
       .eq('id', invoiceId)
+    if (invoiceError && isSchemaCompatibilityError(invoiceError)) {
+      ;({ error: invoiceError } = await supabase
+        .from('invoices')
+        .update({ paid_amount: newPaidAmount, status: newStatus })
+        .eq('id', invoiceId))
+    }
     if (invoiceError) throw invoiceError
   } catch (err: any) {
     // postgrest-js RESOLVES (never rejects) on a dead network, so the

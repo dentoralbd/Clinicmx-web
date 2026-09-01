@@ -71,6 +71,7 @@ interface Invoice {
   status: string
   due_date: string | null
   created_at: string
+  bangla_qr_hold_amount?: number | null
   patients: {
     first_name: string
     last_name: string
@@ -1426,8 +1427,12 @@ function InvoiceRow({
                   <span>{formatBDT(invoice.paid_amount || 0)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-text-secondary">Remaining</span>
-                  <span className="font-medium">{formatBDT(remainingBalance)}</span>
+                  <span className="text-text-secondary">
+                    {invoice.bangla_qr_hold_amount && remainingBalance > 0 ? 'Hold on Bangla QR' : 'Remaining'}
+                  </span>
+                  <span className={`font-medium ${invoice.bangla_qr_hold_amount && remainingBalance > 0 ? 'text-emerald-600' : ''}`}>
+                    {formatBDT(remainingBalance)}
+                  </span>
                 </div>
                 {!!invoice.notes && <p className="text-xs text-text-secondary pt-2">Notes: {invoice.notes}</p>}
                 {!!invoice.payment_terms && <p className="text-xs text-text-secondary">Terms: {invoice.payment_terms}</p>}
