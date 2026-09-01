@@ -238,6 +238,14 @@ export function BanglaQrPaymentModal({
   }
 
   async function handleConfirmPayment(mode: 'sms' | 'manual') {
+    // The button that calls this is already disabled without a real parsed match, but
+    // never trust that alone for a path that writes a real payment — a null parsedSms
+    // here means the pasted text wasn't actually recognized as a payment confirmation.
+    if (mode === 'sms' && !parsedSms) {
+      alert('No payment details could be read from that text. Paste the actual bank/MFS confirmation SMS, or use Manual Verification instead.')
+      return
+    }
+
     const amountToRecord = mode === 'sms'
       ? (smsPaidAmount !== null && smsPaidAmount > 0 ? smsPaidAmount : numQrAmount)
       : numManualAmount
@@ -605,15 +613,23 @@ export function BanglaQrPaymentModal({
                       />
                     </div>
 
-                    {/* Detected SMS Details & Mismatch Alerts */}
-                    {smsText.trim() && (
+                    {/* Unrecognized text: never fabricate a "Detected" state or an amount to match against */}
+                    {smsText.trim() && !parsedSms && (
+                      <div className="flex items-start gap-1.5 p-2.5 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 text-xs animate-in fade-in">
+                        <AlertTriangle className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                        <span>Couldn't recognize a payment confirmation in that text. Paste the full bank/MFS SMS, or use Manual Verification instead.</span>
+                      </div>
+                    )}
+
+                    {/* Detected SMS Details & Mismatch Alerts — only for an actual parsed match */}
+                    {parsedSms && (
                       <div className="space-y-1.5 animate-in fade-in">
                         {/* Status Card */}
                         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs space-y-0.5">
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-emerald-900 flex items-center gap-1">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              {parsedSms?.providerLabel || 'SMS Payment'} Detected
+                              {parsedSms.providerLabel} Detected
                               {isNativeVerified && (
                                 <span className="bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
                                   <ShieldCheck className="w-3 h-3" />
@@ -622,57 +638,53 @@ export function BanglaQrPaymentModal({
                               )}
                             </span>
                             <span className="font-bold text-emerald-800 text-xs">
-                              {formatBDT(parsedSms?.amount ?? numQrAmount)}
+                              {formatBDT(parsedSms.amount)}
                             </span>
                           </div>
                           <div className="text-gray-600 font-mono text-[10px]">
-                            Ref: <span className="font-semibold text-gray-900">{parsedSms?.transactionId || 'SMS Verified'}</span>
-                            {parsedSms?.counterpartyRef && ` • From: ${parsedSms.counterpartyRef}`}
-                            {parsedSms?.billNumber && ` • Bill: ${parsedSms.billNumber}`}
+                            Ref: <span className="font-semibold text-gray-900">{parsedSms.transactionId}</span>
+                            {parsedSms.counterpartyRef && ` • From: ${parsedSms.counterpartyRef}`}
+                            {parsedSms.billNumber && ` • Bill: ${parsedSms.billNumber}`}
                           </div>
                         </div>
 
                         {/* Mismatch Alerts vs Requested QR Amount */}
-                        {parsedSms && parsedSms.amount > 0 && (
-                          <>
-                            {parsedSms.amount === numQrAmount && (
-                              <div className="flex items-center gap-1.5 p-2 bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span><strong>Exact Match:</strong> SMS amount matches requested QR payment ({formatBDT(numQrAmount)}).</span>
-                              </div>
-                            )}
+                        {parsedSms.amount === numQrAmount && (
+                          <div className="flex items-center gap-1.5 p-2 bg-emerald-100/70 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span><strong>Exact Match:</strong> SMS amount matches requested QR payment ({formatBDT(numQrAmount)}).</span>
+                          </div>
+                        )}
 
-                            {parsedSms.amount < numQrAmount && (
-                              <div className="flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs">
-                                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="font-bold text-amber-800">Amount Mismatch:</span>
-                                  <p className="text-[11px] text-amber-700 mt-0.5">
-                                    SMS received is <strong>{formatBDT(parsedSms.amount)}</strong>, but requested QR amount was <strong>{formatBDT(numQrAmount)}</strong>.
-                                  </p>
-                                </div>
-                              </div>
-                            )}
+                        {parsedSms.amount < numQrAmount && (
+                          <div className="flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold text-amber-800">Amount Mismatch:</span>
+                              <p className="text-[11px] text-amber-700 mt-0.5">
+                                SMS received is <strong>{formatBDT(parsedSms.amount)}</strong>, but requested QR amount was <strong>{formatBDT(numQrAmount)}</strong>.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
-                            {parsedSms.amount > numQrAmount && (
-                              <div className="flex items-start gap-1.5 p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 text-xs">
-                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="font-bold text-rose-800">Amount Mismatch:</span>
-                                  <p className="text-[11px] text-rose-700 mt-0.5">
-                                    SMS received is <strong>{formatBDT(parsedSms.amount)}</strong>, which exceeds requested QR amount <strong>{formatBDT(numQrAmount)}</strong>.
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                          </>
+                        {parsedSms.amount > numQrAmount && (
+                          <div className="flex items-start gap-1.5 p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 text-xs">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold text-rose-800">Amount Mismatch:</span>
+                              <p className="text-[11px] text-rose-700 mt-0.5">
+                                SMS received is <strong>{formatBDT(parsedSms.amount)}</strong>, which exceeds requested QR amount <strong>{formatBDT(numQrAmount)}</strong>.
+                              </p>
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
 
                     <Button
                       type="button"
-                      disabled={saving || !smsText.trim()}
+                      disabled={saving || !parsedSms}
                       onClick={() => handleConfirmPayment('sms')}
                       className={`w-full text-white font-medium py-2 rounded-lg text-xs ${
                         isSmsMismatch
@@ -682,9 +694,11 @@ export function BanglaQrPaymentModal({
                     >
                       {saving
                         ? 'Verifying & Saving...'
-                        : isSmsMismatch
-                          ? `Record Payment (${formatBDT(activePaidAmount)}) with Mismatch`
-                          : `Verify & Record Payment (${formatBDT(activePaidAmount)})`}
+                        : !parsedSms
+                          ? 'Paste a Valid Confirmation SMS to Verify'
+                          : isSmsMismatch
+                            ? `Record Payment (${formatBDT(activePaidAmount)}) with Mismatch`
+                            : `Verify & Record Payment (${formatBDT(activePaidAmount)})`}
                     </Button>
                   </>
                 ) : (
