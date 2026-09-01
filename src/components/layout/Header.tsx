@@ -99,7 +99,10 @@ export function Header({ onMenuClick }: HeaderProps) {
               />
             </button>
             {profileOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-primary/10 rounded-2xl shadow-elevation-high z-50 py-2">
+              // z-[60], not z-50 — see NotificationBell.tsx: QueueFloatingWidget is also
+              // z-50 and mounts after Header, so at equal z-index it paints on top and
+              // buries this menu behind it.
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-primary/10 rounded-2xl shadow-elevation-high z-[60] py-2">
                 <div className="px-4 py-2 border-b border-gray-100">
                   <p className="text-xs text-text-secondary">Logged in as</p>
                   <p className="text-xs font-bold text-text-primary mt-0.5">

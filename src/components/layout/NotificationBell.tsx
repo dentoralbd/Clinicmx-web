@@ -354,7 +354,11 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div style={panelStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+        // z-[60], not z-50: QueueFloatingWidget (DashboardLayout.tsx) is also `fixed z-50`
+        // and mounts after Header in the DOM, so at equal z-index it paints on top and
+        // buries this panel behind it — a real, pre-existing bug (unrelated to Bangla QR
+        // work), not just a DOM-order coincidence to leave fragile.
+        <div style={panelStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg z-[60]">
           <div className="px-4 py-2 border-b border-gray-100 text-sm font-semibold text-gray-900">
             Notifications
           </div>

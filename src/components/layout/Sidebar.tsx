@@ -170,7 +170,7 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
 
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
+          fixed lg:static inset-y-0 left-0 z-[60]
           w-64 bg-white border-r border-gray-200 shadow-elevation-md
           transform transition-transform duration-200 ease-in-out
           lg:translate-x-0
