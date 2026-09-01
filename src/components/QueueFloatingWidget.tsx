@@ -316,7 +316,7 @@ export function QueueFloatingWidget() {
     return (
       <div
         ref={containerRef}
-        className={`fixed z-50 ${dragPos ? '' : `${bottomOffsetClass} right-6`}`}
+        className={`fixed z-40 ${dragPos ? '' : `${bottomOffsetClass} right-6`}`}
         style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
       >
         <button
@@ -340,7 +340,7 @@ export function QueueFloatingWidget() {
   return (
     <div
       ref={containerRef}
-      className={`fixed z-50 ${dragPos ? '' : `${bottomOffsetClass} right-6`} w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}
+      className={`fixed z-40 ${dragPos ? '' : `${bottomOffsetClass} right-6`} w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}
       style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
     >
       <div

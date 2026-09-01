@@ -45,8 +45,15 @@ export function Header({ onMenuClick }: HeaderProps) {
     navigate('/login')
   }
 
+  // z-[45]: `sticky` + a z-index here makes <header> its own stacking context, so any
+  // z-index inside it (Notifications/profile dropdowns) is scoped to compete with
+  // <header>'s OWN value against siblings elsewhere in the tree, not evaluated
+  // independently at the root. Was z-30, which let QueueFloatingWidget (z-40, see that
+  // file) and even a page's own sticky content bar (z-30, e.g. Billing.tsx) paint over
+  // the whole header including those dropdowns. z-45 clears both while staying below
+  // z-50 modals, which must still cover the header when open.
   return (
-    <header className="bg-white/95 border-b border-gray-100 shadow-elevation-low sticky top-0 z-30">
+    <header className="bg-white/95 border-b border-gray-100 shadow-elevation-low sticky top-0 z-[45]">
       {!isOnline && (
         <div className="bg-amber-500 text-white text-[11px] font-semibold px-4 py-1 flex items-center justify-center gap-1.5">
           <WifiOff className="w-3.5 h-3.5" />

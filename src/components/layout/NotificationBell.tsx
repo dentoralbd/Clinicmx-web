@@ -314,18 +314,19 @@ export function NotificationBell() {
           setOfflineSyncAlertsSeen(latestOfflineSyncIsoRef.current)
           setLiveEntries((prev) => prev.map((entry) => (entry.kind === 'offlineSync' ? { ...entry, unread: false } : entry)))
         }
-        // Fixed-position, computed from the button's actual on-screen rect
-        // rather than a CSS anchor — the bell isn't the header's rightmost
-        // icon (profile/logout follow it), so a plain `right-0` dropdown can
-        // extend past the left edge of the viewport on narrow screens.
+        // Fixed-position: top tracks the bell's own on-screen rect, but right/width
+        // anchor to the viewport edge (not the bell) — the bell isn't the header's
+        // rightmost icon (profile/logout follow it), so sizing off the bell's own
+        // position left a lot of unused width on the table (issue found live on a
+        // real phone: the panel came out barely 230px wide on a 375px screen).
+        // Anchoring from the viewport edge instead lets it use the full available
+        // width up to the cap, while the width formula still guarantees it can never
+        // overflow past the left edge on a narrow screen.
         const rect = buttonRef.current?.getBoundingClientRect()
         if (rect) {
           const margin = 8
-          // Clamp width to what's actually left after the right offset, or a
-          // right-aligned panel can still overflow past the left edge on a
-          // narrow screen even though its right offset alone looks fine.
-          const right = Math.max(margin, window.innerWidth - rect.right)
-          const width = Math.min(320, window.innerWidth - right - margin)
+          const right = margin
+          const width = Math.min(400, window.innerWidth - margin * 2)
           setPanelStyle({
             position: 'fixed',
             top: rect.bottom + margin,
