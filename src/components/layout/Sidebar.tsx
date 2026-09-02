@@ -58,6 +58,7 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
     label: 'Practice',
     items: [
       { icon: DollarSign, label: 'Billing', path: '/billing', page: 'billing' },
+      { icon: Receipt, label: 'Payments Log', path: '/payments-log', page: 'billing' },
       { icon: Package, label: 'Inventory', path: '/inventory', page: 'inventory' },
       { icon: QrCode, label: 'QR Search', path: '/qr-search', page: 'qr-search' },
     ],
@@ -359,20 +360,6 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                         <Wallet className="w-5 h-5 text-teal-600" />
                       </span>
                       <span>HR &amp; Payroll</span>
-                    </>
-                  )}
-                </NavLink>
-                <NavLink
-                  to="/payments-log"
-                  onClick={onNavClick}
-                  className={navLinkClass}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span className={iconChipClass(isActive)}>
-                        <Receipt className="w-5 h-5 text-teal-600" />
-                      </span>
-                      <span>Payments Log</span>
                     </>
                   )}
                 </NavLink>

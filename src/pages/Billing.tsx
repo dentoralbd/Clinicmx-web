@@ -47,7 +47,7 @@ import { supabase } from '@/lib/supabase'
 import { loadDoctorProfile, type DoctorProfileData } from '@/lib/doctorProfile'
 import { resolveLogoSrc } from '@/lib/logoImage'
 import { sharePdf, toWhatsAppNumber } from '@/lib/sharePdf'
-import { canDelete, getAppRole } from '@/lib/appSession'
+import { canDelete } from '@/lib/appSession'
 import { logDeletion } from '@/lib/deleteHistory'
 import { logEdit } from '@/lib/editHistory'
 import { matchesPatientSearch } from '@/lib/patients'
@@ -118,7 +118,6 @@ function getPatientInitials(name: string) {
 
 export function Billing() {
   const navigate = useNavigate()
-  const isAdmin = getAppRole() === 'admin'
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [showBasicModal, setShowBasicModal] = useState(false)
@@ -739,18 +738,16 @@ export function Billing() {
                   <Settings className="w-4 h-4 mr-2.5 text-primary" />
                   Invoice Settings
                 </button>
-                {isAdmin && (
-                  <button
-                    className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
-                    onClick={() => {
-                      navigate('/payments-log')
-                      setShowMoreMenu(false)
-                    }}
-                  >
-                    <Receipt className="w-4 h-4 mr-2.5 text-primary" />
-                    Payments Log
-                  </button>
-                )}
+                <button
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
+                  onClick={() => {
+                    navigate('/payments-log')
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <Receipt className="w-4 h-4 mr-2.5 text-primary" />
+                  Payments Log
+                </button>
                 <div className="border-t border-gray-100 my-1" />
                 <button
                   className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"

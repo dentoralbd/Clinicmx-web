@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
 import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatBDT, safeFormat } from '@/lib/utils'
-import { getAppRole, formatAuditActor } from '@/lib/appSession'
+import { formatAuditActor } from '@/lib/appSession'
 import { type AnalyticsRange, filterByRange, monthKey, monthLabel } from '@/lib/analytics'
 import { PAYMENT_METHOD_CATEGORIES, getPaymentMethodCategory, type PaymentMethodCategory } from '@/lib/paymentMethodLabel'
 import { BanglaQrPaymentModal } from '@/components/BanglaQrPaymentModal'
@@ -41,13 +40,12 @@ interface HoldRow {
   holdAmount: number
 }
 
+// Access is gated the same way as Billing itself (RequirePage page="billing" in App.tsx),
+// not admin-only — front-desk staff need to be able to confirm a Bangla QR hold into Paid
+// from here too, not just from Billing's own Record Payment flow. Accountability instead
+// comes from the "Confirmed by" line on each row (see confirmedBy below), not from
+// restricting who can open the page.
 export function PaymentsLog() {
-  const isAdmin = getAppRole() === 'admin'
-  if (!isAdmin) return <Navigate to="/dashboard" replace />
-  return <PaymentsLogContent />
-}
-
-function PaymentsLogContent() {
   const [loading, setLoading] = useState(true)
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [holds, setHolds] = useState<HoldRow[]>([])

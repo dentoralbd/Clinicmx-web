@@ -90,6 +90,7 @@ function App() {
               <Route path="lab" element={<RequirePage page="lab"><Lab /></RequirePage>} />
               <Route path="prescriptions" element={<RequirePage page="prescriptions"><Prescriptions /></RequirePage>} />
               <Route path="billing" element={<RequirePage page="billing"><Billing /></RequirePage>} />
+              <Route path="payments-log" element={<RequirePage page="billing"><PaymentsLog /></RequirePage>} />
               <Route path="inventory" element={<RequirePage page="inventory"><Inventory /></RequirePage>} />
               <Route path="qr-search" element={<RequirePage page="qr-search"><QrSearch /></RequirePage>} />
               <Route path="catalog" element={<RequirePage page="catalog"><Catalog /></RequirePage>} />
@@ -101,7 +102,6 @@ function App() {
               <Route path="doctor-analytics" element={<DoctorAnalytics />} />
               <Route path="financial-analysis" element={<FinancialAnalysis />} />
               <Route path="hr-payroll" element={<HRPayroll />} />
-              <Route path="payments-log" element={<PaymentsLog />} />
               <Route path="offline-outbox" element={<RequirePage page="patients"><OfflineOutbox /></RequirePage>} />
             </Route>
           </Routes>
