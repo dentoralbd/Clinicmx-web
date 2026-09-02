@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck, History, Send, XCircle, CheckCircle2 } from 'lucide-react'
+import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck, History, Send, XCircle, CheckCircle2, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import { formatAuditActor } from '@/lib/appSession'
 import { logActivity } from '@/lib/activityLog'
 import { type AnalyticsRange, filterByRange, monthKey, monthLabel } from '@/lib/analytics'
-import { PAYMENT_METHOD_CATEGORIES, getPaymentMethodCategory, type PaymentMethodCategory } from '@/lib/paymentMethodLabel'
+import { PAYMENT_METHOD_CATEGORIES, getPaymentMethodCategory, getPaymentMethodLabel, type PaymentMethodCategory } from '@/lib/paymentMethodLabel'
 import { BanglaQrPaymentModal } from '@/components/BanglaQrPaymentModal'
 
 const RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
@@ -41,17 +41,32 @@ interface HoldRow {
   holdAmount: number
 }
 
-// A durable, in-page record of the Bangla QR hold lifecycle — who requested it, who
-// dismissed it, who confirmed it — independent of the Notifications bell's 7-day/10-row
-// feed, which is too narrow to answer "who did this" after the fact.
+// A durable, in-page record of every payment input/change across every method — recorded,
+// deleted, plus the Bangla QR-specific requested/dismissed hold events — independent of
+// the Notifications bell's 7-day/10-row feed, which is too narrow to answer "who did this"
+// after the fact.
 interface HistoryEvent {
   id: string
-  type: 'requested' | 'dismissed' | 'confirmed'
+  type: 'requested' | 'dismissed' | 'recorded' | 'deleted'
+  category: PaymentMethodCategory
   timestamp: string
   actor: string | null
   patientName: string
   invoiceNumber: string | null
   details: string
+}
+
+// PaymentHistoryPanel.tsx's delete flow only ever logs the raw payment_method (Cash/Card/
+// Cheque/Transfer) in its details text, never a gateway-aware label — a deleted Bangla QR/
+// bKash/Nagad payment's details will say "(Transfer)" since gateway_provider isn't captured
+// at delete time. Best-effort match against the plain method labels; anything else (or a
+// gateway-aware label, should that ever get added) falls back to 'other' rather than a
+// wrong guess.
+function categoryFromDeleteDetails(details: string | null): PaymentMethodCategory {
+  const match = details?.match(/\(([^)]+)\)/)?.[1]?.trim().toLowerCase()
+  if (!match) return 'other'
+  const found = PAYMENT_METHOD_CATEGORIES.find((c) => c.label.toLowerCase() === match)
+  return found?.key ?? 'other'
 }
 
 // Access is gated the same way as Billing itself (RequirePage page="billing" in App.tsx),
@@ -79,11 +94,16 @@ export function PaymentsLog() {
   async function loadData() {
     setLoading(true)
     try {
-      const [{ data: paymentsData }, { data: invoicesData }, { data: patientsData }, { data: activityData }, { data: holdActivityData }] = await Promise.all([
+      const [{ data: paymentsData }, { data: invoicesData }, { data: patientsData }, { data: paymentActivityData }, { data: holdActivityData }] = await Promise.all([
         supabase.from('payments').select('id, invoice_id, amount, payment_date, payment_method, gateway_provider, gateway_status'),
         supabase.from('invoices').select('id, patient_id, invoice_number, status, total_amount, paid_amount, bangla_qr_hold_amount'),
         supabase.from('patients').select('id, first_name, last_name, phone'),
-        supabase.from('activity_log').select('entity_id, actor').eq('entity_type', 'payment').eq('action', 'create'),
+        supabase
+          .from('activity_log')
+          .select('id, occurred_at, action, entity_id, entity_label, patient_name, details, actor')
+          .eq('entity_type', 'payment')
+          .order('occurred_at', { ascending: false })
+          .limit(1000),
         supabase
           .from('activity_log')
           .select('id, occurred_at, action, entity_label, patient_name, details, actor')
@@ -97,7 +117,9 @@ export function PaymentsLog() {
       const phoneById = new Map((patientsData || []).map((p: any) => [p.id, p.phone ?? null]))
       // entity_id only populated going forward (see BanglaQrPaymentModal.tsx / PaymentEntryModal.tsx) —
       // payments recorded before this change simply won't resolve an actor here.
-      const actorByPaymentId = new Map((activityData || []).filter((a: any) => a.entity_id).map((a: any) => [a.entity_id, a.actor]))
+      const actorByPaymentId = new Map(
+        (paymentActivityData || []).filter((a: any) => a.action === 'create' && a.entity_id).map((a: any) => [a.entity_id, a.actor])
+      )
 
       const resolvedPayments: PaymentRow[] = []
       for (const p of paymentsData || []) {
@@ -135,27 +157,40 @@ export function PaymentsLog() {
       const requestedDismissed: HistoryEvent[] = (holdActivityData || []).map((a: any) => ({
         id: a.id,
         type: a.action === 'delete' ? 'dismissed' : 'requested',
+        category: 'bangla_qr' as const,
         timestamp: a.occurred_at,
         actor: a.actor ?? null,
         patientName: a.patient_name || 'Patient',
         invoiceNumber: a.entity_label ?? null,
         details: a.details || (a.action === 'delete' ? 'Bangla QR hold dismissed' : 'Bangla QR payment requested'),
       }))
-      // Confirmed events reuse the payments already resolved above (gateway_provider set
-      // means it went through Bangla QR/bKash/Nagad verification) rather than a separate
-      // query — same data, no extra round trip.
-      const confirmed: HistoryEvent[] = resolvedPayments
-        .filter((p) => p.gateway_provider)
-        .map((p) => ({
-          id: p.id,
-          type: 'confirmed' as const,
-          timestamp: p.payment_date,
-          actor: p.confirmedBy,
-          patientName: p.patientName,
-          invoiceNumber: p.invoiceNumber,
-          details: `Confirmed paid — ${formatBDT(p.amount)}`,
+      // Recorded events reuse the payments already resolved above (every method, not just
+      // gateway-tracked ones) rather than a separate query — same data, no extra round trip.
+      const recorded: HistoryEvent[] = resolvedPayments.map((p) => ({
+        id: p.id,
+        type: 'recorded' as const,
+        category: getPaymentMethodCategory(p),
+        timestamp: p.payment_date,
+        actor: p.confirmedBy,
+        patientName: p.patientName,
+        invoiceNumber: p.invoiceNumber,
+        details: `${getPaymentMethodLabel(p)} payment recorded — ${formatBDT(p.amount)}`,
+      }))
+      // Deleted payments no longer exist in `payments`, so these come straight from the
+      // activity_log rows PaymentHistoryPanel.tsx already writes on delete.
+      const deleted: HistoryEvent[] = (paymentActivityData || [])
+        .filter((a: any) => a.action === 'delete')
+        .map((a: any) => ({
+          id: a.id,
+          type: 'deleted' as const,
+          category: categoryFromDeleteDetails(a.details),
+          timestamp: a.occurred_at,
+          actor: a.actor ?? null,
+          patientName: a.patient_name || 'Patient',
+          invoiceNumber: a.entity_label ?? null,
+          details: a.details || 'Payment removed',
         }))
-      setHistory([...requestedDismissed, ...confirmed].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)))
+      setHistory([...requestedDismissed, ...recorded, ...deleted].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)))
 
       setPayments(resolvedPayments)
       setHolds(resolvedHolds)
@@ -205,16 +240,17 @@ export function PaymentsLog() {
 
   const showHoldSection = category === 'all' || category === 'bangla_qr'
 
-  const historyFiltered = useMemo(
-    () => filterByRange(history, (h) => h.timestamp, range, customStart, customEnd),
-    [history, range, customStart, customEnd]
-  )
+  const historyFiltered = useMemo(() => {
+    const byCategory = category === 'all' ? history : history.filter((h) => h.category === category)
+    return filterByRange(byCategory, (h) => h.timestamp, range, customStart, customEnd)
+  }, [history, category, range, customStart, customEnd])
 
-  const historyIcon = { requested: Send, dismissed: XCircle, confirmed: CheckCircle2 } as const
+  const historyIcon = { requested: Send, dismissed: XCircle, recorded: CheckCircle2, deleted: Trash2 } as const
   const historyColor = {
     requested: 'text-blue-600 bg-blue-50',
     dismissed: 'text-gray-500 bg-gray-100',
-    confirmed: 'text-emerald-600 bg-emerald-50',
+    recorded: 'text-emerald-600 bg-emerald-50',
+    deleted: 'text-red-600 bg-red-50',
   } as const
 
   function toggleMonth(month: string) {
@@ -391,58 +427,57 @@ export function PaymentsLog() {
             </div>
           )}
 
-          {/* Bangla QR Activity History — who requested/dismissed/confirmed, full record
-              (not the Notifications bell's 7-day/10-row window), scoped to this page's
-              date range. */}
-          {showHoldSection && (
-            <div className="bg-card rounded-lg shadow-sm border border-gray-200">
-              <button
-                type="button"
-                onClick={() => setHistoryExpanded((prev) => !prev)}
-                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-surface-subtle"
-              >
-                <span className="flex items-center gap-1.5">
-                  {historyExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-text-secondary shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-text-secondary shrink-0" />
-                  )}
-                  <History className="w-4 h-4 text-teal-600" />
-                  Bangla QR Activity History
-                </span>
-                <span className="text-xs font-normal text-text-secondary">{historyFiltered.length} event{historyFiltered.length !== 1 ? 's' : ''}</span>
-              </button>
-              {historyExpanded && (
-                historyFiltered.length === 0 ? (
-                  <p className="text-xs text-text-secondary px-4 pb-3">No Bangla QR activity in this range.</p>
+          {/* Payment Activity History — every input/change across every method (recorded,
+              deleted) plus the Bangla QR-specific requested/dismissed hold events — full
+              record (not the Notifications bell's 7-day/10-row window), scoped to the
+              selected method tab and date range. */}
+          <div className="bg-card rounded-lg shadow-sm border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setHistoryExpanded((prev) => !prev)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-surface-subtle"
+            >
+              <span className="flex items-center gap-1.5">
+                {historyExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-text-secondary shrink-0" />
                 ) : (
-                  <div className="divide-y divide-gray-50 px-4 pb-2">
-                    {historyFiltered.map((event) => {
-                      const Icon = historyIcon[event.type]
-                      return (
-                        <div key={event.id} className="flex items-center gap-3 py-2 text-sm">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${historyColor[event.type]}`}>
-                            <Icon className="w-3.5 h-3.5" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate">
-                              <span className="font-medium">{event.patientName}</span>
-                              {event.invoiceNumber && ` • Invoice ${event.invoiceNumber}`}
-                            </p>
-                            <p className="text-xs text-text-secondary truncate">{event.details}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs text-text-secondary">{safeFormat(event.timestamp, 'MMM d, h:mm a')}</p>
-                            {event.actor && <p className="text-xs font-medium text-slate-600">{formatAuditActor(event.actor)}</p>}
-                          </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                )}
+                <History className="w-4 h-4 text-teal-600" />
+                Payment Activity History
+              </span>
+              <span className="text-xs font-normal text-text-secondary">{historyFiltered.length} event{historyFiltered.length !== 1 ? 's' : ''}</span>
+            </button>
+            {historyExpanded && (
+              historyFiltered.length === 0 ? (
+                <p className="text-xs text-text-secondary px-4 pb-3">No payment activity in this range.</p>
+              ) : (
+                <div className="divide-y divide-gray-50 px-4 pb-2">
+                  {historyFiltered.map((event) => {
+                    const Icon = historyIcon[event.type]
+                    return (
+                      <div key={event.id} className="flex items-center gap-3 py-2 text-sm">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${historyColor[event.type]}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">
+                            <span className="font-medium">{event.patientName}</span>
+                            {event.invoiceNumber && ` • Invoice ${event.invoiceNumber}`}
+                          </p>
+                          <p className="text-xs text-text-secondary truncate">{event.details}</p>
                         </div>
-                      )
-                    })}
-                  </div>
-                )
-              )}
-            </div>
-          )}
+                        <div className="text-right shrink-0">
+                          <p className="text-xs text-text-secondary">{safeFormat(event.timestamp, 'MMM d, h:mm a')}</p>
+                          {event.actor && <p className="text-xs font-medium text-slate-600">{formatAuditActor(event.actor)}</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            )}
+          </div>
 
           {/* Monthly grouped list */}
           <div className="bg-card rounded-lg shadow-sm border border-gray-200">
