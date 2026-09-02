@@ -3,6 +3,7 @@ import { CheckCircle2, QrCode, Sparkles, X } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
+import { canManageBanglaQrMerchant } from '@/lib/appSession'
 import {
   DEFAULT_BANGLA_QR_PAYLOAD,
   extractMerchantInfo,
@@ -25,6 +26,7 @@ export function InvoiceSettingsModal({ onClose }: InvoiceSettingsModalProps) {
   const [showQrEditor, setShowQrEditor] = useState(false)
   const [showTestQr, setShowTestQr] = useState(false)
   const [saving, setSaving] = useState(false)
+  const isAdmin = canManageBanglaQrMerchant()
 
   const merchantInfo = extractMerchantInfo(banglaQrPayload)
   const testDynamicQr = generateDynamicBanglaQr(banglaQrPayload, 10.0, 'TEST-101')
@@ -66,7 +68,10 @@ export function InvoiceSettingsModal({ onClose }: InvoiceSettingsModalProps) {
       // An invalid/edited-but-broken QR payload must never block saving the rest of
       // Invoice Settings — persist only what's valid, leave the previous value alone
       // otherwise, and tell the user via the inline "Invalid payload" indicator below.
-      const payloadIsValid = extractMerchantInfo(banglaQrPayload).isValid
+      // Non-admins never see this section's controls, so banglaQrPayload in their state
+      // is only ever the as-loaded value — isAdmin still gates the write explicitly so a
+      // non-admin's save can never touch this field, not even a same-value no-op.
+      const payloadIsValid = isAdmin && extractMerchantInfo(banglaQrPayload).isValid
       if (payloadIsValid) {
         saveMerchantQrTemplate(banglaQrPayload)
       }
@@ -158,7 +163,9 @@ export function InvoiceSettingsModal({ onClose }: InvoiceSettingsModalProps) {
             />
           </div>
 
-          {/* ── Bangla QR Merchant Setup Section ── */}
+          {/* ── Bangla QR Merchant Setup Section — admin only, controls where Bangla QR
+              payments actually route (see canManageBanglaQrMerchant) ── */}
+          {isAdmin && (
           <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/40 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -275,6 +282,7 @@ export function InvoiceSettingsModal({ onClose }: InvoiceSettingsModalProps) {
               )}
             </div>
           </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <Button type="submit" disabled={saving} className="flex-1">{saving ? 'Saving...' : 'Save Settings'}</Button>

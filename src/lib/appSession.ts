@@ -178,6 +178,15 @@ export function canAccessDoctorAnalytics() {
   return getAppUser()?.permissions?.can_access_doctor_analytics === true
 }
 
+/**
+ * Strictly admin — unlike the other can*() gates above, there's no operator
+ * permission-flag override. This controls who can repoint where Bangla QR
+ * payments actually route (the merchant payload), not a per-feature UI toggle.
+ */
+export function canManageBanglaQrMerchant() {
+  return getAppRole() === 'admin'
+}
+
 export function hasPageAccess(page: AppPageKey) {
   const role = getAppRole()
   if (role === 'admin') return true
