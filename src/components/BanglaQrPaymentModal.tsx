@@ -314,6 +314,7 @@ export function BanglaQrPaymentModal({
         logActivity({
           action: 'create',
           entityType: 'payment',
+          entityId: result.paymentId,
           entityLabel: invoiceNumber ?? null,
           patientId: patientId ?? null,
           patientName: patientName ?? null,

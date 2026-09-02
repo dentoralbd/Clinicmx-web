@@ -43,6 +43,12 @@ export function PaymentEntryModal({
   const [showBanglaQr, setShowBanglaQr] = useState(false)
   const [smsPasteOpen, setSmsPasteOpen] = useState(false)
   const [smsRaw, setSmsRaw] = useState('')
+  // Set when "Use this" applies a parsed SMS to the plain form below — lets a standard
+  // (non-Bangla-QR-modal) submit still tag the resulting payment's gateway_provider/
+  // gateway_status, so it shows up correctly (e.g. as "bKash"/"Nagad", not generic
+  // "Transfer") in the Payments Log. Cleared on any manual edit to amount/method after
+  // applying, since editing invalidates the claim that this exact SMS verified it.
+  const [appliedSmsGateway, setAppliedSmsGateway] = useState<{ provider: string; reference: string | null; transactionId: string | null } | null>(null)
   const [receipt, setReceipt] = useState<{
     payment: { id: string; amount: number; payment_date: string; payment_method: string | null; notes: string | null }
     invoice: { id: string; invoice_number: string | null; total_amount: number; paid_amount: number; created_at: string }
@@ -111,6 +117,11 @@ export function PaymentEntryModal({
       ? `${parsedSms.providerLabel} TrxID: ${parsedSms.transactionId}`
       : `${parsedSms.providerLabel} Payment`
     setNotes((prev) => (prev.trim() ? `${prev}\n${trxNote}` : trxNote))
+    setAppliedSmsGateway({
+      provider: parsedSms.provider,
+      reference: parsedSms.transactionId ? `${parsedSms.provider}:${parsedSms.transactionId}` : null,
+      transactionId: parsedSms.transactionId ?? null,
+    })
     setSmsPasteOpen(false)
     setSmsRaw('')
   }
@@ -178,6 +189,10 @@ export function PaymentEntryModal({
         notes: notes || null,
         patientId: invoiceMeta?.patientId,
         patientName: invoiceMeta?.patientName,
+        gatewayProvider: appliedSmsGateway?.provider ?? undefined,
+        gatewayReference: appliedSmsGateway?.reference ?? undefined,
+        gatewayTransactionId: appliedSmsGateway?.transactionId ?? undefined,
+        gatewayStatus: appliedSmsGateway ? 'sms_verified' : undefined,
       })
 
       if (result.paymentStored) {
@@ -185,6 +200,7 @@ export function PaymentEntryModal({
         logActivity({
           action: 'create',
           entityType: 'payment',
+          entityId: result.paymentId,
           entityLabel: invoiceMeta?.invoiceNumber ?? null,
           patientId: invoiceMeta?.patientId ?? null,
           patientName: invoiceMeta?.patientName ?? null,
@@ -283,7 +299,7 @@ export function PaymentEntryModal({
               min="0"
               step="0.01"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => { setAmount(e.target.value); setAppliedSmsGateway(null) }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <p className="text-xs text-text-secondary mt-1">Balance after payment: {remainingAfterPayment.toFixed(2)}</p>
@@ -293,7 +309,7 @@ export function PaymentEntryModal({
             <label className="block text-sm font-medium mb-1">Payment Method</label>
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}
+              onChange={(e) => { setPaymentMethod(e.target.value as (typeof PAYMENT_METHODS)[number]); setAppliedSmsGateway(null) }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               {PAYMENT_METHODS.map((method) => (

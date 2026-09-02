@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet, BookOpen, ListOrdered } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, FileText, DollarSign, Package, QrCode, X, UserCircle, ShieldCheck, Sparkles, Activity, FlaskConical, ChevronDown, DatabaseBackup, BarChart3, Stethoscope, UserCheck, PieChart, FileCheck2, Wallet, BookOpen, ListOrdered, Receipt } from 'lucide-react'
 import { canDelete, canEditClinicProfile, canRevert, getAppRole, hasPageAccess, canAccessDoctorAnalytics, type AppPageKey } from '@/lib/appSession'
 import { getVisiblePendingMutations, countDistinctPendingEdits } from '@/lib/offlineSync'
 import { getQueueEntries, todayQueueDate, subscribeToQueue, pollQueue } from '@/lib/queueApi'
@@ -359,6 +359,20 @@ export function Sidebar({ isOpen, onClose, onNavClick, designPreview, onToggleDe
                         <Wallet className="w-5 h-5 text-teal-600" />
                       </span>
                       <span>HR &amp; Payroll</span>
+                    </>
+                  )}
+                </NavLink>
+                <NavLink
+                  to="/payments-log"
+                  onClick={onNavClick}
+                  className={navLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={iconChipClass(isActive)}>
+                        <Receipt className="w-5 h-5 text-teal-600" />
+                      </span>
+                      <span>Payments Log</span>
                     </>
                   )}
                 </NavLink>

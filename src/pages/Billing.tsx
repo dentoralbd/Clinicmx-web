@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   buildInvoiceItemPreview,
   extractTreatmentIdsFromInvoiceItems,
@@ -28,6 +28,7 @@ import {
   Search,
   X,
   History,
+  Receipt,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -116,6 +117,7 @@ function getPatientInitials(name: string) {
 }
 
 export function Billing() {
+  const navigate = useNavigate()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [showBasicModal, setShowBasicModal] = useState(false)
@@ -735,6 +737,16 @@ export function Billing() {
                 >
                   <Settings className="w-4 h-4 mr-2.5 text-primary" />
                   Invoice Settings
+                </button>
+                <button
+                  className="w-full flex items-center text-left px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-primary-surface transition-colors"
+                  onClick={() => {
+                    navigate('/payments-log')
+                    setShowMoreMenu(false)
+                  }}
+                >
+                  <Receipt className="w-4 h-4 mr-2.5 text-primary" />
+                  Payments Log
                 </button>
                 <div className="border-t border-gray-100 my-1" />
                 <button

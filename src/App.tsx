@@ -24,6 +24,7 @@ const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m
 const DoctorAnalytics = lazy(() => import('./pages/DoctorAnalytics').then(m => ({ default: m.DoctorAnalytics })))
 const FinancialAnalysis = lazy(() => import('./pages/FinancialAnalysis').then(m => ({ default: m.FinancialAnalysis })))
 const HRPayroll = lazy(() => import('./pages/HRPayroll').then(m => ({ default: m.HRPayroll })))
+const PaymentsLog = lazy(() => import('./pages/PaymentsLog').then(m => ({ default: m.PaymentsLog })))
 const OfflineOutbox = lazy(() => import('./pages/OfflineOutbox').then(m => ({ default: m.OfflineOutbox })))
 const Catalog = lazy(() => import('./pages/Catalog').then(m => ({ default: m.Catalog })))
 const QueueManagement = lazy(() => import('./pages/QueueManagement').then(m => ({ default: m.QueueManagement })))
@@ -100,6 +101,7 @@ function App() {
               <Route path="doctor-analytics" element={<DoctorAnalytics />} />
               <Route path="financial-analysis" element={<FinancialAnalysis />} />
               <Route path="hr-payroll" element={<HRPayroll />} />
+              <Route path="payments-log" element={<PaymentsLog />} />
               <Route path="offline-outbox" element={<RequirePage page="patients"><OfflineOutbox /></RequirePage>} />
             </Route>
           </Routes>
