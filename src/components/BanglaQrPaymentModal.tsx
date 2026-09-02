@@ -127,6 +127,18 @@ export function BanglaQrPaymentModal({
     const holdAmount = initialAmount && initialAmount > 0 ? initialAmount : invoiceDue
     if (holdAmount > 0) {
       supabase.from('invoices').update({ bangla_qr_hold_amount: holdAmount }).eq('id', invoiceId).then(() => {}, () => {})
+      // "Who tries to pay" — a durable, browsable record of the request itself (the
+      // Payments Log's Bangla QR Activity section reads this), separate from the
+      // ephemeral "Hold BDT X on Bangla QR" hint above, which only reflects current state.
+      logActivity({
+        action: 'create',
+        entityType: 'bangla_qr_hold',
+        entityId: invoiceId,
+        entityLabel: invoiceNumber ?? null,
+        patientId: patientId ?? null,
+        patientName: patientName ?? null,
+        details: `Bangla QR payment of ${formatBDT(holdAmount)} requested`,
+      })
     }
     // Runs once per modal mount for this invoice — not re-run if the typed amount changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

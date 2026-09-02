@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck } from 'lucide-react'
+import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck, History, Send, XCircle, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import { formatAuditActor } from '@/lib/appSession'
@@ -41,6 +41,19 @@ interface HoldRow {
   holdAmount: number
 }
 
+// A durable, in-page record of the Bangla QR hold lifecycle — who requested it, who
+// dismissed it, who confirmed it — independent of the Notifications bell's 7-day/10-row
+// feed, which is too narrow to answer "who did this" after the fact.
+interface HistoryEvent {
+  id: string
+  type: 'requested' | 'dismissed' | 'confirmed'
+  timestamp: string
+  actor: string | null
+  patientName: string
+  invoiceNumber: string | null
+  details: string
+}
+
 // Access is gated the same way as Billing itself (RequirePage page="billing" in App.tsx),
 // not admin-only — front-desk staff need to be able to confirm a Bangla QR hold into Paid
 // from here too, not just from Billing's own Record Payment flow. Accountability instead
@@ -50,6 +63,8 @@ export function PaymentsLog() {
   const [loading, setLoading] = useState(true)
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [holds, setHolds] = useState<HoldRow[]>([])
+  const [history, setHistory] = useState<HistoryEvent[]>([])
+  const [historyExpanded, setHistoryExpanded] = useState(false)
   const [category, setCategory] = useState<PaymentMethodCategory | 'all'>('all')
   const [range, setRange] = useState<AnalyticsRange>('1m')
   const [customStart, setCustomStart] = useState('')
@@ -64,11 +79,17 @@ export function PaymentsLog() {
   async function loadData() {
     setLoading(true)
     try {
-      const [{ data: paymentsData }, { data: invoicesData }, { data: patientsData }, { data: activityData }] = await Promise.all([
+      const [{ data: paymentsData }, { data: invoicesData }, { data: patientsData }, { data: activityData }, { data: holdActivityData }] = await Promise.all([
         supabase.from('payments').select('id, invoice_id, amount, payment_date, payment_method, gateway_provider, gateway_status'),
         supabase.from('invoices').select('id, patient_id, invoice_number, status, total_amount, paid_amount, bangla_qr_hold_amount'),
         supabase.from('patients').select('id, first_name, last_name, phone'),
         supabase.from('activity_log').select('entity_id, actor').eq('entity_type', 'payment').eq('action', 'create'),
+        supabase
+          .from('activity_log')
+          .select('id, occurred_at, action, entity_label, patient_name, details, actor')
+          .eq('entity_type', 'bangla_qr_hold')
+          .order('occurred_at', { ascending: false })
+          .limit(500),
       ])
 
       const invoiceById = new Map((invoicesData || []).map((inv: any) => [inv.id, inv]))
@@ -110,6 +131,31 @@ export function PaymentsLog() {
           holdAmount: inv.bangla_qr_hold_amount,
         })
       }
+
+      const requestedDismissed: HistoryEvent[] = (holdActivityData || []).map((a: any) => ({
+        id: a.id,
+        type: a.action === 'delete' ? 'dismissed' : 'requested',
+        timestamp: a.occurred_at,
+        actor: a.actor ?? null,
+        patientName: a.patient_name || 'Patient',
+        invoiceNumber: a.entity_label ?? null,
+        details: a.details || (a.action === 'delete' ? 'Bangla QR hold dismissed' : 'Bangla QR payment requested'),
+      }))
+      // Confirmed events reuse the payments already resolved above (gateway_provider set
+      // means it went through Bangla QR/bKash/Nagad verification) rather than a separate
+      // query — same data, no extra round trip.
+      const confirmed: HistoryEvent[] = resolvedPayments
+        .filter((p) => p.gateway_provider)
+        .map((p) => ({
+          id: p.id,
+          type: 'confirmed' as const,
+          timestamp: p.payment_date,
+          actor: p.confirmedBy,
+          patientName: p.patientName,
+          invoiceNumber: p.invoiceNumber,
+          details: `Confirmed paid — ${formatBDT(p.amount)}`,
+        }))
+      setHistory([...requestedDismissed, ...confirmed].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)))
 
       setPayments(resolvedPayments)
       setHolds(resolvedHolds)
@@ -159,6 +205,18 @@ export function PaymentsLog() {
 
   const showHoldSection = category === 'all' || category === 'bangla_qr'
 
+  const historyFiltered = useMemo(
+    () => filterByRange(history, (h) => h.timestamp, range, customStart, customEnd),
+    [history, range, customStart, customEnd]
+  )
+
+  const historyIcon = { requested: Send, dismissed: XCircle, confirmed: CheckCircle2 } as const
+  const historyColor = {
+    requested: 'text-blue-600 bg-blue-50',
+    dismissed: 'text-gray-500 bg-gray-100',
+    confirmed: 'text-emerald-600 bg-emerald-50',
+  } as const
+
   function toggleMonth(month: string) {
     setExpandedMonths((prev) => {
       const next = new Set(prev)
@@ -182,8 +240,8 @@ export function PaymentsLog() {
       return
     }
     logActivity({
-      action: 'edit',
-      entityType: 'invoice',
+      action: 'delete',
+      entityType: 'bangla_qr_hold',
       entityId: hold.invoiceId,
       entityLabel: hold.invoiceNumber,
       patientId: hold.patientId,
@@ -329,6 +387,59 @@ export function PaymentsLog() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Bangla QR Activity History — who requested/dismissed/confirmed, full record
+              (not the Notifications bell's 7-day/10-row window), scoped to this page's
+              date range. */}
+          {showHoldSection && (
+            <div className="bg-card rounded-lg shadow-sm border border-gray-200">
+              <button
+                type="button"
+                onClick={() => setHistoryExpanded((prev) => !prev)}
+                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-surface-subtle"
+              >
+                <span className="flex items-center gap-1.5">
+                  {historyExpanded ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-text-secondary shrink-0" />
+                  )}
+                  <History className="w-4 h-4 text-teal-600" />
+                  Bangla QR Activity History
+                </span>
+                <span className="text-xs font-normal text-text-secondary">{historyFiltered.length} event{historyFiltered.length !== 1 ? 's' : ''}</span>
+              </button>
+              {historyExpanded && (
+                historyFiltered.length === 0 ? (
+                  <p className="text-xs text-text-secondary px-4 pb-3">No Bangla QR activity in this range.</p>
+                ) : (
+                  <div className="divide-y divide-gray-50 px-4 pb-2">
+                    {historyFiltered.map((event) => {
+                      const Icon = historyIcon[event.type]
+                      return (
+                        <div key={event.id} className="flex items-center gap-3 py-2 text-sm">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${historyColor[event.type]}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate">
+                              <span className="font-medium">{event.patientName}</span>
+                              {event.invoiceNumber && ` • Invoice ${event.invoiceNumber}`}
+                            </p>
+                            <p className="text-xs text-text-secondary truncate">{event.details}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs text-text-secondary">{safeFormat(event.timestamp, 'MMM d, h:mm a')}</p>
+                            {event.actor && <p className="text-xs font-medium text-slate-600">{formatAuditActor(event.actor)}</p>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
               )}
             </div>
           )}
