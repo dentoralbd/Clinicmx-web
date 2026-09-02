@@ -456,18 +456,20 @@ export function PaymentsLog() {
                   {historyFiltered.map((event) => {
                     const Icon = historyIcon[event.type]
                     return (
-                      <div key={event.id} className="flex items-center gap-3 py-2 text-sm">
-                        <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${historyColor[event.type]}`}>
-                          <Icon className="w-3.5 h-3.5" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate">
-                            <span className="font-medium">{event.patientName}</span>
-                            {event.invoiceNumber && ` • Invoice ${event.invoiceNumber}`}
-                          </p>
-                          <p className="text-xs text-text-secondary truncate">{event.details}</p>
+                      <div key={event.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-2 text-sm">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${historyColor[event.type]}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate">
+                              <span className="font-medium">{event.patientName}</span>
+                              {event.invoiceNumber && ` • Invoice ${event.invoiceNumber}`}
+                            </p>
+                            <p className="text-xs text-text-secondary">{event.details}</p>
+                          </div>
                         </div>
-                        <div className="text-right shrink-0">
+                        <div className="flex items-center justify-between sm:block sm:text-right shrink-0 pl-9 sm:pl-0">
                           <p className="text-xs text-text-secondary">{safeFormat(event.timestamp, 'MMM d, h:mm a')}</p>
                           {event.actor && <p className="text-xs font-medium text-slate-600">{formatAuditActor(event.actor)}</p>}
                         </div>
