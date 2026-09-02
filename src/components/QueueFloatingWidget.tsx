@@ -316,7 +316,10 @@ export function QueueFloatingWidget() {
     return (
       <div
         ref={containerRef}
-        className={`fixed z-40 ${dragPos ? '' : `${bottomOffsetClass} right-6`}`}
+        // z-[46]: above <header>'s own z-[45] stacking context (see Header.tsx) so
+        // dragging the widget up doesn't tuck it behind the header/logout button —
+        // still below z-50 modals and the header's own z-[60] dropdowns.
+        className={`fixed z-[46] ${dragPos ? '' : `${bottomOffsetClass} right-6`}`}
         style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
       >
         <button
@@ -340,7 +343,8 @@ export function QueueFloatingWidget() {
   return (
     <div
       ref={containerRef}
-      className={`fixed z-40 ${dragPos ? '' : `${bottomOffsetClass} right-6`} w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}
+      // z-[46]: see the collapsed-FAB div above for why this sits above <header>'s z-[45].
+      className={`fixed z-[46] ${dragPos ? '' : `${bottomOffsetClass} right-6`} w-88 max-w-[90vw] bg-white rounded-3xl shadow-elevation-high border border-gray-200/90 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-200`}
       style={dragPos ? { top: dragPos.top, left: dragPos.left } : undefined}
     >
       <div
