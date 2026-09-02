@@ -3,6 +3,7 @@ import { Receipt, ChevronDown, ChevronRight, Zap, UserCheck } from 'lucide-react
 import { supabase } from '@/lib/supabase'
 import { formatBDT, safeFormat } from '@/lib/utils'
 import { formatAuditActor } from '@/lib/appSession'
+import { logActivity } from '@/lib/activityLog'
 import { type AnalyticsRange, filterByRange, monthKey, monthLabel } from '@/lib/analytics'
 import { PAYMENT_METHOD_CATEGORIES, getPaymentMethodCategory, type PaymentMethodCategory } from '@/lib/paymentMethodLabel'
 import { BanglaQrPaymentModal } from '@/components/BanglaQrPaymentModal'
@@ -167,6 +168,31 @@ export function PaymentsLog() {
     })
   }
 
+  // Clears a Hold with no payment recorded — for a test/abandoned QR open, not a real
+  // pending collection. Logged the same way as a confirmed payment (accountability was
+  // the whole point of adding "Confirmed by" earlier), so dismissing a real patient's
+  // still-pending request in error is traceable too.
+  async function handleDismissHold(hold: HoldRow) {
+    if (!confirm(`Dismiss this ${formatBDT(hold.holdAmount)} Bangla QR hold for ${hold.patientName}? No payment will be recorded — only do this for a test or mistaken request.`)) {
+      return
+    }
+    const { error } = await supabase.from('invoices').update({ bangla_qr_hold_amount: null }).eq('id', hold.invoiceId)
+    if (error) {
+      alert('Failed to dismiss hold: ' + error.message)
+      return
+    }
+    logActivity({
+      action: 'edit',
+      entityType: 'invoice',
+      entityId: hold.invoiceId,
+      entityLabel: hold.invoiceNumber,
+      patientId: hold.patientId,
+      patientName: hold.patientName,
+      details: `Bangla QR hold of ${formatBDT(hold.holdAmount)} dismissed without payment`,
+    })
+    loadData()
+  }
+
   function confirmationBadge(row: PaymentRow) {
     if (row.gateway_status === 'sms_auto_verified') {
       return (
@@ -285,6 +311,13 @@ export function PaymentsLog() {
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="pill-warning">Hold</span>
                         <span className="font-semibold tabular-nums">{formatBDT(hold.holdAmount)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDismissHold(hold)}
+                          className="px-2.5 py-1 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                        >
+                          Dismiss
+                        </button>
                         <button
                           type="button"
                           onClick={() => setConfirmingHold(hold)}
