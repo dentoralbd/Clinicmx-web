@@ -4,6 +4,27 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — Anatomic Odontogram + dental-chart timeline (ported from "v2 by AGY")
+
+Replaced the Patient Profile → Clinical dental chart's flat box teeth with a professional
+**Anatomical Odontogram** ported from the "v2 by AGY" sandbox (`D:\Claude folder\v2 by AGY`):
+biologically-accurate crown/root SVG morphology for all 32 teeth (`src/components/dental/AnatomicalToothData.ts`,
+copied verbatim so shapes match the reference), a **Panoramic (Anatomic) / Arch (Occlusal)** view
+toggle, and AGY's full **10-condition** set with its exact color-coding (adds Bridge, Extracted,
+Impacted; legacy "Cavity" reads as "Decayed" via `src/lib/toothConditions.ts`, no row rewrites).
+New **Timeline & History Scrubber** + read-only "Historical Chart Snapshot" banner + Return to Live
+reconstruct the mouth condition as of any past procedure date, backed by a new append-only
+`dental_record_history` table (**migration 068**, with a one-snapshot-per-tooth backfill);
+`saveToothCondition()` now also appends a dated history row (with the clinician-picked procedure
+date + doctor name). The age→dentition logic is unchanged (reuses `getPatientAge`/`getDentitionType`;
+<5 deciduous / 5–14 mixed / >14 permanent). Surfaces (M/O/D/B/L) were intentionally descoped —
+each tooth shows a single condition status dot instead of AGY's 5-sector circle. The shared
+`AnatomicArch` renderer also powers `ToothSelector` (treatment plans, prescriptions, lab, visit/plan
+modals) in **Arch-only** anatomic mode (selection-only). New components under `src/components/dental/`
+(`AnatomicDentalChart`, `AnatomicArch`, `DentalChartTimeline`, `ToothHistoryList`); the old
+`ArchDentalChart` and inline `ToothModal`/`Legend`/`getToothColor` are retired from Patient Profile.
+**Requires migration 068 to be run against the live DB (after a backup) before the timeline populates.**
+
 ## 2026-08-31 — Dynamic Bangla QR payment collection & SMS/manual verification
 
 Added "Pay via Bangla QR" (migration 066) to every payment-recording entry point (Record Payment

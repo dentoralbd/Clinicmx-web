@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DentitionType } from '@/lib/ageTier'
-import { ArchDentalChart } from '@/components/ArchDentalChart'
+import { AnatomicArch } from '@/components/dental/AnatomicArch'
+import { getFDIToothName } from '@/lib/fdiChart'
 
 interface ToothSelectorProps {
   selectedTeeth: number[]
@@ -57,15 +58,28 @@ export function ToothSelector({ selectedTeeth, onChange, dentitionType = 'perman
               Close
             </button>
           </div>
-          <ArchDentalChart
+          <AnatomicArch
             compact
             dentitionType={dentitionType}
-            getToothClass={(num) =>
-              selectedTeeth.includes(num)
-                ? 'fill-primary/20 stroke-primary'
-                : 'fill-gray-50 stroke-gray-300 hover:stroke-primary/50'
-            }
             onToothClick={toggleTooth}
+            isSelected={(num) => selectedTeeth.includes(num)}
+            getToothTitle={(num) => `#${num} — ${getFDIToothName(num)}`}
+            renderToothBody={(def, num) => (
+              <g
+                className={
+                  selectedTeeth.includes(num)
+                    ? 'fill-primary/25 stroke-primary'
+                    : 'fill-white stroke-gray-300 group-hover:stroke-primary/60'
+                }
+                strokeWidth={1.2}
+                strokeLinejoin="round"
+              >
+                {def.secondaryRootPath && <path d={def.secondaryRootPath} className="fill-gray-100" />}
+                <path d={def.rootPath} />
+                <path d={def.cervicalCurve} className="fill-none stroke-gray-300" strokeWidth={0.8} />
+                <path d={def.crownPath} />
+              </g>
+            )}
           />
         </div>
       )}

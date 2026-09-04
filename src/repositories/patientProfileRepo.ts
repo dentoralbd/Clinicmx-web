@@ -4,6 +4,7 @@ export interface PatientBundle {
   patient: any
   visits: any[]
   dental: any[]
+  dentalHistory: any[]
   treatments: any[]
   prescriptions: any[]
   appointments: any[]
@@ -17,6 +18,7 @@ export async function fetchPatientBundle(id: string): Promise<PatientBundle> {
     { data: patient, error: pErr },
     { data: visits },
     { data: dental },
+    { data: dentalHistory },
     { data: treatments },
     { data: prescriptions },
     { data: appointments },
@@ -26,6 +28,7 @@ export async function fetchPatientBundle(id: string): Promise<PatientBundle> {
     supabase.from('patients').select('*').eq('id', id).single(),
     supabase.from('patient_visits').select('*').eq('patient_id', id).order('visit_date', { ascending: false }),
     supabase.from('dental_records').select('*').eq('patient_id', id),
+    supabase.from('dental_record_history').select('*').eq('patient_id', id).order('procedure_date', { ascending: true }),
     supabase.from('treatments').select('*').eq('patient_id', id).order('created_at', { ascending: false }),
     supabase.from('prescriptions').select('*').eq('patient_id', id).order('prescribed_date', { ascending: false }),
     supabase.from('appointments').select('*').eq('patient_id', id).order('date_time', { ascending: false }),
@@ -45,6 +48,7 @@ export async function fetchPatientBundle(id: string): Promise<PatientBundle> {
     patient: patient || null,
     visits: visits || [],
     dental: dental || [],
+    dentalHistory: dentalHistory || [],
     treatments: treatments || [],
     prescriptions: prescriptions || [],
     appointments: appointments || [],

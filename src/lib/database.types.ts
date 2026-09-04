@@ -1327,6 +1327,47 @@ export interface Database {
           }
         ]
       }
+      dental_record_history: {
+        Row: {
+          id: string
+          patient_id: string
+          tooth_number: number
+          condition: string
+          notes: string | null
+          procedure_date: string
+          doctor_name: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          patient_id: string
+          tooth_number: number
+          condition?: string
+          notes?: string | null
+          procedure_date?: string
+          doctor_name?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          tooth_number?: number
+          condition?: string
+          notes?: string | null
+          procedure_date?: string
+          doctor_name?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'dental_record_history_patient_id_fkey'
+            columns: ['patient_id']
+            isOneToOne: false
+            referencedRelation: 'patients'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       patient_visits: {
         Row: {
           id: string

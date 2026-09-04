@@ -34,7 +34,8 @@ import { buildInvoiceItemPreview, buildLegacySafeInvoicePayload, buildMergedInvo
 import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '@/lib/invoiceSync'
 import { ToothSelector } from '@/components/ToothSelector'
 import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
-import { ArchDentalChart } from '@/components/ArchDentalChart'
+import { AnatomicDentalChart } from '@/components/dental/AnatomicDentalChart'
+import { labelToCondition, conditionToLabel } from '@/lib/toothConditions'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -534,6 +535,7 @@ export function PatientProfile() {
   const [patient, setPatient] = useState<any>(null)
   const [visits, setVisits] = useState<any[]>([])
   const [dentalRecords, setDentalRecords] = useState<any[]>([])
+  const [dentalHistory, setDentalHistory] = useState<any[]>([])
   const [treatments, setTreatments] = useState<any[]>([])
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [appointments, setAppointments] = useState<any[]>([])
@@ -555,7 +557,6 @@ export function PatientProfile() {
   const [mergeMode, setMergeMode] = useState(false)
   const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set())
   const [invoicePrintJob, setInvoicePrintJob] = useState<{ invoices: any[]; initialDueOnly?: boolean } | null>(null)
-  const [selectedTooth, setSelectedTooth] = useState<number | null>(null)
   const [showVisitForm, setShowVisitForm] = useState(false)
   const [showVisitHistoryPrint, setShowVisitHistoryPrint] = useState(false)
   const [showPrescriptionForm, setShowPrescriptionForm] = useState(false)
@@ -719,6 +720,7 @@ export function PatientProfile() {
       setPatient(bundleData.patient)
       setVisits(bundleData.visits)
       setDentalRecords(bundleData.dental)
+      setDentalHistory(bundleData.dentalHistory)
       setTreatments(bundleData.treatments)
       setPrescriptions(bundleData.prescriptions)
       setAppointments(bundleData.appointments)
@@ -960,12 +962,12 @@ export function PatientProfile() {
     }
   }
 
-  async function saveToothCondition(toothNumber: number, condition: string, notes: string) {
+  async function saveToothCondition(toothNumber: number, condition: string, notes: string, procedureDate?: string) {
     if (!id) return
 
     try {
       const existing = dentalRecords.find(r => r.tooth_number === toothNumber)
-      
+
       if (existing) {
         await supabase
           .from('dental_records')
@@ -981,9 +983,21 @@ export function PatientProfile() {
             notes,
           }])
       }
-      
+
+      // Append an immutable, dated history row so the Anatomic Odontogram's timeline can
+      // reconstruct the mouth condition as of any past procedure date (migration 068).
+      await supabase
+        .from('dental_record_history')
+        .insert([{
+          patient_id: id,
+          tooth_number: toothNumber,
+          condition,
+          notes: notes || null,
+          procedure_date: procedureDate || new Date().toISOString().split('T')[0],
+          doctor_name: getAppUser()?.name || null,
+        }])
+
       loadPatientData()
-      setSelectedTooth(null)
     } catch (error) {
       console.error('Error saving tooth:', error)
       alert('Failed to save')
@@ -3014,24 +3028,6 @@ export function PatientProfile() {
     return data.publicUrl
   }
 
-  const getToothCondition = (toothNumber: number) => {
-    const record = dentalRecords.find(r => r.tooth_number === toothNumber)
-    return record?.condition || 'Healthy'
-  }
-
-  const getToothColor = (condition: string) => {
-    const colors: Record<string, string> = {
-      Healthy: 'fill-white stroke-gray-400',
-      Cavity: 'fill-red-200 stroke-red-500',
-      Filled: 'fill-blue-200 stroke-blue-500',
-      'Root Canal': 'fill-purple-200 stroke-purple-500',
-      Crown: 'fill-yellow-200 stroke-yellow-600',
-      Missing: 'fill-gray-300 stroke-gray-500',
-      Implant: 'fill-green-200 stroke-green-500',
-    }
-    return colors[condition] || colors.Healthy
-  }
-
   // ── FDI dentition helpers ──────────────────────────────
   function getPatientAge(dob: string | null | undefined): number | null {
     if (!dob) return null
@@ -3505,19 +3501,17 @@ export function PatientProfile() {
     const patientAge = getPatientAge(patient.date_of_birth)
     const dentitionType = getDentitionType(patientAge)
 
-    const dentitionLabel: Record<typeof dentitionType, string> = {
-      deciduous: 'Deciduous dentition (primary teeth)',
-      mixed: 'Mixed dentition',
-      permanent: 'Permanent dentition',
-    }
-
     const conditionDotColors: Record<string, string> = {
       Cavity: 'bg-red-500',
-      Filled: 'bg-blue-500',
-      'Root Canal': 'bg-purple-500',
+      Decayed: 'bg-orange-500',
+      Filled: 'bg-indigo-500',
+      'Root Canal': 'bg-rose-500',
       Crown: 'bg-yellow-500',
+      Bridge: 'bg-emerald-500',
       Missing: 'bg-gray-500',
-      Implant: 'bg-green-500',
+      Implant: 'bg-teal-500',
+      Extracted: 'bg-slate-600',
+      Impacted: 'bg-amber-500',
     }
 
     const treatmentStatusBadgeClass = (status: string) =>
@@ -3532,6 +3526,37 @@ export function PatientProfile() {
       total: treatmentPlanTotal,
     } = computeTreatmentPlanTotals(treatments, invoices)
     const treatmentPlanRows = buildTreatmentPlanRows(treatments, groupSimilarPlanTreatments)
+
+    // Adapt ClinicMx's dental_records (live latest state) + dental_record_history (dated log)
+    // into the Anatomic Odontogram's DentalChartEntry / DentalChartHistoryEntry shapes.
+    const chartEntries = dentalRecords.map((r) => ({
+      toothNumber: r.tooth_number,
+      condition: labelToCondition(r.condition),
+      surfaces: [] as ('M' | 'O' | 'D' | 'B' | 'L')[],
+      notes: r.notes || undefined,
+      updatedAt: r.updated_at || new Date().toISOString(),
+      procedureDate: r.recorded_date || undefined,
+    }))
+    const chartHistory = dentalHistory.map((h) => ({
+      id: h.id,
+      patientId: h.patient_id,
+      toothNumber: h.tooth_number,
+      condition: labelToCondition(h.condition),
+      surfaces: [] as ('M' | 'O' | 'D' | 'B' | 'L')[],
+      notes: h.notes || undefined,
+      procedureDate: h.procedure_date,
+      createdAt: h.created_at || new Date().toISOString(),
+      doctorName: h.doctor_name || undefined,
+    }))
+    const chartOngoingTreatments = treatments
+      .filter((t) => t.tooth_number != null)
+      .map((t) => ({
+        treatmentType: t.treatment_type || 'Treatment',
+        teeth: [t.tooth_number as number],
+        status: String(t.status || '').toLowerCase().replace(/\s+/g, '_'),
+        totalSittings: t.total_sittings ?? undefined,
+        completedSittings: t.completed_sittings ?? undefined,
+      }))
 
     return (
       <div className="space-y-6">
@@ -3555,27 +3580,16 @@ export function PatientProfile() {
         </div>
 
         <div className="bg-card rounded-3xl shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="font-semibold mb-1 text-center">Dental Chart</h3>
-          <p className="text-xs text-text-secondary text-center mb-5">
-            {patientAge !== null ? `Age ${patientAge} · ` : ''}{dentitionLabel[dentitionType]}
-          </p>
-
-          <ArchDentalChart
+          <AnatomicDentalChart
+            patientAge={patientAge}
             dentitionType={dentitionType}
-            getToothClass={(num) => getToothColor(getToothCondition(num))}
-            getToothTitle={(num) => getToothCondition(num)}
-            onToothClick={(num) => setSelectedTooth(num)}
+            entries={chartEntries}
+            historyEntries={chartHistory}
+            ongoingTreatments={chartOngoingTreatments}
+            onUpdateTooth={(entry, procedureDate) =>
+              saveToothCondition(entry.toothNumber, conditionToLabel(entry.condition), entry.notes || '', procedureDate)
+            }
           />
-
-          <div className="flex flex-wrap gap-3 justify-center pt-5 border-t border-gray-200 mt-6">
-            <Legend color="fill-white stroke-gray-400" label="Healthy" />
-            <Legend color="fill-red-200 stroke-red-500" label="Cavity" />
-            <Legend color="fill-blue-200 stroke-blue-500" label="Filled" />
-            <Legend color="fill-purple-200 stroke-purple-500" label="Root Canal" />
-            <Legend color="fill-yellow-200 stroke-yellow-600" label="Crown" />
-            <Legend color="fill-gray-300 stroke-gray-500" label="Missing" />
-            <Legend color="fill-green-200 stroke-green-500" label="Implant" />
-          </div>
         </div>
 
         <InfoCard title="Treatment Summary">
@@ -5211,16 +5225,6 @@ export function PatientProfile() {
         </div>
       )}
 
-      {selectedTooth && (
-        <ToothModal
-          toothNumber={selectedTooth}
-          currentCondition={getToothCondition(selectedTooth)}
-          currentNotes={dentalRecords.find(r => r.tooth_number === selectedTooth)?.notes || ''}
-          onClose={() => setSelectedTooth(null)}
-          onSave={saveToothCondition}
-        />
-      )}
-
       {rxCostDialogEntries && (
         <TreatmentPlanCostDialog
           entries={rxCostDialogEntries}
@@ -5777,77 +5781,6 @@ function BottomNavButton({ active, icon: Icon, label, onClick }: any) {
       <Icon className="h-5 w-5" />
       <span className="w-full truncate text-center">{label}</span>
     </button>
-  )
-}
-
-function Legend({ color, label }: any) {
-  return (
-    <div className="flex items-center gap-2">
-      <svg width="20" height="20" viewBox="0 0 20 20" className={color}>
-        <circle cx="10" cy="10" r="8" strokeWidth="2" />
-      </svg>
-      <span className="text-sm">{label}</span>
-    </div>
-  )
-}
-
-function ToothModal({ toothNumber, currentCondition, currentNotes, onClose, onSave }: any) {
-  const [condition, setCondition] = useState(currentCondition)
-  const [notes, setNotes] = useState(currentNotes)
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    onSave(toothNumber, condition, notes)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="font-display text-xl font-bold">Tooth #{toothNumber}</h2>
-          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Condition</label>
-            <select
-              value={condition}
-              onChange={(e) => setCondition(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option>Healthy</option>
-              <option>Cavity</option>
-              <option>Filled</option>
-              <option>Root Canal</option>
-              <option>Crown</option>
-              <option>Missing</option>
-              <option>Implant</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Notes</label>
-            <SuggestTextarea
-              memoryKey={MEMORY_KEYS.TREATMENT_NOTES}
-              sectionLabel="Tooth Notes"
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any notes about this tooth..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1">Save</Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
-          </div>
-        </form>
-      </div>
-    </div>
   )
 }
 
