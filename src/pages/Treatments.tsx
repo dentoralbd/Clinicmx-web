@@ -11,6 +11,7 @@ import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { getDentitionTypeFromDOB } from '@/lib/ageTier'
 import { formatBDT } from '@/lib/utils'
 import { autoCreateLabWorkForTreatments } from '@/lib/labWork'
+import { syncToothChartFromTreatment, syncToothChartFromTreatments } from '@/lib/toothChartSync'
 import { getFriendlySupabaseErrorMessage, logBillingError } from '@/lib/billing'
 import { syncInvoiceForTreatmentChange } from '@/lib/invoiceSync'
 import { InvoiceModal } from '@/components/InvoiceModal'
@@ -152,6 +153,16 @@ export function Treatments() {
         prev.map(t => t.id === id ? { ...t, status: newStatus } : t)
       )
 
+      // Auto-reflect a tooth-linked procedure onto that patient's dental chart + timeline.
+      if (previous) {
+        void syncToothChartFromTreatment({
+          patientId: previous.patient_id,
+          toothNumber: previous.tooth_number,
+          treatmentType: previous.treatment_type,
+          status: newStatus,
+        })
+      }
+
       const unbilled = previous && !previous.invoice_id
       if (newStatus === 'Completed' && previous?.status !== 'Completed' && unbilled && (previous.cost || 0) > 0) {
         if (confirm('Treatment completed but not billed yet. Create the invoice now?')) {
@@ -182,6 +193,15 @@ export function Treatments() {
       const { error } = await supabase.from('treatments').update({ status: newStatus }).in('id', ids)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, status: newStatus } : t)))
+
+      void syncToothChartFromTreatments(
+        members.map((m) => ({
+          patientId: m.patient_id,
+          toothNumber: m.tooth_number,
+          treatmentType: m.treatment_type,
+          status: newStatus,
+        }))
+      )
 
       if (newStatus === 'Completed') {
         const unbilledCostly = members.filter((m) => m.status !== 'Completed' && !m.invoice_id && (Number(m.cost) || 0) > 0)
@@ -228,6 +248,14 @@ export function Treatments() {
       if (previous && billingFieldsChanged) {
         await handleInvoiceSyncForTreatment({ ...previous, ...patch, id }, 'edited')
       }
+      // If the edit set/kept an In Progress/Completed status on a tooth-linked treatment,
+      // reflect the procedure onto that patient's dental chart + timeline.
+      void syncToothChartFromTreatment({
+        patientId: (previous?.patient_id as string) || '',
+        toothNumber: patch.tooth_number,
+        treatmentType: patch.treatment_type,
+        status: patch.status,
+      })
       setEditingTreatment(null)
     } catch (error) {
       console.error('Error updating treatment:', error)

@@ -4,6 +4,19 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — Treatment plan → tooth chart auto-sync
+
+When a **tooth-linked** treatment reaches **In Progress** or **Completed**, the Anatomic
+Odontogram now auto-updates that tooth's condition to reflect the procedure and appends a dated
+row to the timeline — e.g. completing a Root Canal marks the tooth `root_canal`, an Extraction
+marks it `extracted`, Crown/Bridge/Implant/Filling map accordingly (keyword map
+`treatmentTypeToConditionLabel`, `src/lib/toothConditions.ts`). Implemented as a shared, idempotent,
+failure-isolated writer (`src/lib/toothChartSync.ts`) hooked into every treatment status-change /
+group-status / edit path in `PatientProfile.tsx` and `Treatments.tsx`. Rows are untagged (no
+treatment_id link → no schema change) and carry an `"Auto-synced from treatment: <type>"` note;
+doctors can still manually override any tooth. `Planned`/`Cancelled` never change the chart, and the
+In Progress → Completed transition doesn't double-write (idempotency compares current condition).
+
 ## 2026-09-04 — Anatomic Odontogram + dental-chart timeline (ported from "v2 by AGY")
 
 Replaced the Patient Profile → Clinical dental chart's flat box teeth with a professional

@@ -40,3 +40,25 @@ export function labelToCondition(label: string | null | undefined): ToothConditi
 export function conditionToLabel(condition: ToothCondition): string {
   return CONDITION_TO_LABEL[condition] ?? 'Healthy'
 }
+
+// Keyword → resulting chart condition label, used to auto-sync the tooth chart when a
+// tooth-linked treatment goes In Progress / Completed. Order matters (most specific first).
+// treatment_type is free-text / catalog-driven, so we match on substrings. A type with no
+// clear tooth-state outcome (scaling, cleaning, whitening, consultation, checkup, x-ray…)
+// returns null and leaves the tooth unchanged.
+const TREATMENT_KEYWORD_CONDITIONS: [RegExp, string][] = [
+  [/root\s*canal|\brct\b|endodont/i, 'Root Canal'],
+  [/extract|exodont/i, 'Extracted'],
+  [/implant/i, 'Implant'],
+  [/bridge|\bfpd\b|abutment/i, 'Bridge'],
+  [/crown|\bcap\b|onlay|inlay/i, 'Crown'],
+  [/fill|restor|composite|amalgam|\bgic\b|glass\s*ionomer|sealant/i, 'Filled'],
+]
+
+export function treatmentTypeToConditionLabel(treatmentType: string | null | undefined): string | null {
+  if (!treatmentType) return null
+  for (const [re, label] of TREATMENT_KEYWORD_CONDITIONS) {
+    if (re.test(treatmentType)) return label
+  }
+  return null
+}

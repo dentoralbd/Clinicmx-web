@@ -36,6 +36,7 @@ import { ToothSelector } from '@/components/ToothSelector'
 import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { AnatomicDentalChart } from '@/components/dental/AnatomicDentalChart'
 import { labelToCondition, conditionToLabel } from '@/lib/toothConditions'
+import { syncToothChartFromTreatment, syncToothChartFromTreatments } from '@/lib/toothChartSync'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
 import { loadDoctorProfile as loadSavedDoctorProfile } from '@/lib/doctorProfile'
@@ -1104,6 +1105,17 @@ export function PatientProfile() {
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (t.id === treatmentId ? { ...t, status: newStatus } : t)))
 
+      // Auto-reflect a tooth-linked procedure onto the dental chart + timeline.
+      if (previous) {
+        const changed = await syncToothChartFromTreatment({
+          patientId: previous.patient_id,
+          toothNumber: previous.tooth_number,
+          treatmentType: previous.treatment_type,
+          status: newStatus,
+        })
+        if (changed) loadPatientData()
+      }
+
       const unbilled = previous && !previous.invoice_id
       if (newStatus === 'Completed' && previous?.status !== 'Completed' && unbilled && (previous.cost || 0) > 0) {
         if (confirm('Treatment completed but not billed yet. Create the invoice now?')) {
@@ -1132,6 +1144,16 @@ export function PatientProfile() {
       const { error } = await supabase.from('treatments').update({ status: newStatus }).in('id', ids)
       if (error) throw error
       setTreatments((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, status: newStatus } : t)))
+
+      const chartChanged = await syncToothChartFromTreatments(
+        members.map((m) => ({
+          patientId: m.patient_id,
+          toothNumber: m.tooth_number,
+          treatmentType: m.treatment_type,
+          status: newStatus,
+        }))
+      )
+      if (chartChanged) loadPatientData()
 
       if (newStatus === 'Completed') {
         const unbilledCostly = members.filter((m) => m.status !== 'Completed' && !m.invoice_id && (m.cost || 0) > 0)
