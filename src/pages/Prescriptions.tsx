@@ -32,6 +32,7 @@ import { MedicalHistoryFields } from '@/components/MedicalHistoryFields'
 import { getMedicalHistoryChecks, buildMedicalHistoryString } from '@/lib/medicalHistory'
 import { mapEntryToOperation, findCatalogMatch } from '@/lib/treatmentPlan'
 import { type ClinicalEntry, collectSuggestedTeeth, createEmptyEntry, entriesToText, textToEntries } from '@/lib/clinicalEntries'
+import { buildExaminationEntriesFromDentalRecords } from '@/lib/toothConditions'
 import { listTreatmentCatalogItems } from '@/lib/catalog'
 import { TREATMENT_PLAN_PRESETS } from '@/lib/clinicalTextPresets'
 import { MultiEntryClinicalField } from '@/components/MultiEntryClinicalField'
@@ -83,6 +84,14 @@ export function Prescriptions() {
 
   const [localMeds, setLocalMeds] = useState<any[]>([])
   const [localInvs, setLocalInvs] = useState<any[]>([])
+
+  // "Add from odontogram" toggle for the On Examination field: pulls the patient's charted
+  // findings (dental_records) in as editable entries. `odoSnapshots` remembers exactly what was
+  // auto-added so an untick removes only the untouched ones (edited entries detach and stay).
+  const [addFromOdontogram, setAddFromOdontogram] = useState(false)
+  const [odoSnapshots, setOdoSnapshots] = useState<{ id: string; text: string; teeth: number[] }[]>([])
+  const [odoLoading, setOdoLoading] = useState(false)
+  const [odoEmptyNote, setOdoEmptyNote] = useState(false)
 
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -167,6 +176,77 @@ export function Prescriptions() {
     setPatientSearchResults(null)
     setPatientSearch('')
   }
+
+  // ── "Add from odontogram" (On Examination) ──
+  function odoEntriesEqual(a: { text: string; teeth: number[] }, b: { text: string; teeth: number[] }) {
+    const t = (arr: number[]) => arr.slice().sort((x, y) => x - y).join(',')
+    return a.text.trim() === b.text.trim() && t(a.teeth) === t(b.teeth)
+  }
+
+  async function toggleOdontogram(next: boolean) {
+    setOdoEmptyNote(false)
+    if (!next) {
+      // Untick: drop only the still-unedited auto-added entries; keep any the doctor edited.
+      const snapById = new Map(odoSnapshots.map((s) => [s.id, s]))
+      setFormData((prev: any) => {
+        const kept = prev.on_examination_entries.filter((e: ClinicalEntry) => {
+          const snap = snapById.get(e.id)
+          return !snap || !odoEntriesEqual(e, snap)
+        })
+        return { ...prev, on_examination_entries: kept.length > 0 ? kept : [createEmptyEntry()] }
+      })
+      setOdoSnapshots([])
+      setAddFromOdontogram(false)
+      return
+    }
+    if (!formData.patient_id) return
+    setOdoLoading(true)
+    try {
+      const { data } = await supabase.from('dental_records').select('tooth_number, condition').eq('patient_id', formData.patient_id)
+      const findings = buildExaminationEntriesFromDentalRecords(data || [])
+      setAddFromOdontogram(true)
+      if (findings.length === 0) {
+        setOdoEmptyNote(true)
+        setOdoSnapshots([])
+        return
+      }
+      const existing: ClinicalEntry[] = formData.on_examination_entries
+      const key = (t: string, teeth: number[]) => `${t.trim()}|${teeth.slice().sort((a, b) => a - b).join(',')}`
+      const existingKeys = new Set(existing.filter((e) => e.text.trim()).map((e) => key(e.text, e.teeth)))
+      const added: ClinicalEntry[] = findings
+        .filter((f) => !existingKeys.has(key(f.text, f.teeth)))
+        .map((f) => ({ ...createEmptyEntry(), text: f.text, teeth: f.teeth }))
+      // Drop a lone empty default row so findings don't sit under a blank entry.
+      const base = existing.length === 1 && !existing[0].text.trim() && existing[0].teeth.length === 0 ? [] : existing
+      const nextEntries = [...base, ...added]
+      setFormData((prev: any) => ({ ...prev, on_examination_entries: nextEntries.length > 0 ? nextEntries : [createEmptyEntry()] }))
+      setOdoSnapshots(added.map((e) => ({ id: e.id, text: e.text, teeth: e.teeth })))
+    } finally {
+      setOdoLoading(false)
+    }
+  }
+
+  // Reset the odontogram toggle whenever the patient changes / the form is reset, stripping any
+  // still-unedited auto-added findings so they don't linger onto another patient's prescription.
+  const prevOdoPatientRef = useRef(formData.patient_id)
+  useEffect(() => {
+    if (prevOdoPatientRef.current === formData.patient_id) return
+    prevOdoPatientRef.current = formData.patient_id
+    if (odoSnapshots.length > 0) {
+      const snapById = new Map(odoSnapshots.map((s) => [s.id, s]))
+      setFormData((prev: any) => {
+        const kept = prev.on_examination_entries.filter((e: ClinicalEntry) => {
+          const snap = snapById.get(e.id)
+          return !snap || !odoEntriesEqual(e, snap)
+        })
+        return { ...prev, on_examination_entries: kept.length > 0 ? kept : [createEmptyEntry()] }
+      })
+    }
+    setAddFromOdontogram(false)
+    setOdoSnapshots([])
+    setOdoEmptyNote(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.patient_id])
 
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null)
   const [doctorProfile, setDoctorProfile] = useState<any | null>(null)
@@ -1398,6 +1478,20 @@ export function Prescriptions() {
               />
 
               {/* ── On Examination ── */}
+              {formData.patient_id && (
+                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer select-none w-fit">
+                  <input
+                    type="checkbox"
+                    checked={addFromOdontogram}
+                    disabled={odoLoading}
+                    onChange={(e) => toggleOdontogram(e.target.checked)}
+                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span>🦷 Add from odontogram</span>
+                  {odoLoading && <span className="text-gray-400">loading…</span>}
+                  {addFromOdontogram && odoEmptyNote && <span className="text-gray-400">— no chart findings for this patient</span>}
+                </label>
+              )}
               <MultiEntryClinicalField
                 label="On Examination"
                 entries={formData.on_examination_entries}

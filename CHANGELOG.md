@@ -4,6 +4,17 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — "Add from odontogram" for prescription On Examination
+
+A checkbox above the On Examination field on the Prescriptions page pulls the selected patient's
+charted findings (`dental_records`) straight in — one entry per condition, phrased clinically with
+the teeth tagged (Caries → 11,12,13; Filling → 46; Root canal treated / Crown / Bridge / Implant /
+Missing tooth / Extracted / Impacted; healthy skipped). It's a toggle: ticking appends the findings,
+unticking removes only the still-unedited auto-added ones (an entry you edit detaches and stays);
+changing patient resets it. `buildExaminationEntriesFromDentalRecords` in `src/lib/toothConditions.ts`
+does the grouping; the toggle/merge lives in `Prescriptions.tsx`. No schema change, and the frozen
+patient-selection flow is untouched (reset runs off a `patient_id` effect).
+
 ## 2026-09-04 — Odontogram rapid-input tools: brush, undo, multi-select, revert
 
 Ported from "v2 by AGY". The dental chart gains fast charting + mistake-recovery: (1) **Quick-Apply
