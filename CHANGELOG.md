@@ -4,6 +4,21 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — Odontogram rapid-input tools: brush, undo, multi-select, revert
+
+Ported from "v2 by AGY". The dental chart gains fast charting + mistake-recovery: (1) **Quick-Apply
+brush** — tap a condition pill in the legend to make it the active brush, then one-tap teeth to
+apply it (no modal); tapping the same tooth again undoes it; Esc exits. (2) **Global Undo**
+(toolbar button + Ctrl/Cmd+Z) pops the last change this session. Undo/2nd-tap **delete the newest
+history row** for the affected teeth and restore the prior recorded state (or clear back to
+healthy), so the timeline stays clean — no trailing "reverted" entries (`undoTeeth` in
+`PatientProfile.tsx`). (3) **Multi-Select batch mode** — toggle Multi-Select, pick teeth (or the
+Upper Arch / Lower Arch / All Molars / Clear presets), then Apply one condition to all, or Revert
+to Healthy, in one batch (`batchUpdateTeeth`). (4) **Revert to Healthy** button in the single-tooth
+modal. Also renamed the chart heading "Anatomical Odontogram" → "Odontogram". Surfaces stay
+descoped (no batch surface toggles). UI-only + two new PatientProfile write helpers; no schema
+change.
+
 ## 2026-09-04 — Distinguish Missing vs Extracted on the odontogram
 
 Missing and Extracted teeth previously rendered as the same solid dark silhouette. Missing now

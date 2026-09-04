@@ -1005,6 +1005,69 @@ export function PatientProfile() {
     }
   }
 
+  // Batch multi-tooth apply from the Anatomic Odontogram (one condition → several teeth).
+  // `entries` carry canonical ToothCondition codes; stored as labels like the single-tooth path.
+  async function batchUpdateTeeth(entries: { toothNumber: number; condition: string; notes?: string }[], procedureDate?: string) {
+    if (!id || entries.length === 0) return
+    try {
+      const pdate = procedureDate || new Date().toISOString().split('T')[0]
+      const doctorName = getAppUser()?.name || null
+      for (const entry of entries) {
+        const label = conditionToLabel(entry.condition as any)
+        const notes = entry.notes || null
+        const existing = dentalRecords.find(r => r.tooth_number === entry.toothNumber)
+        if (existing) {
+          await supabase.from('dental_records').update({ condition: label, notes, updated_at: new Date().toISOString() }).eq('id', existing.id)
+        } else {
+          await supabase.from('dental_records').insert([{ patient_id: id, tooth_number: entry.toothNumber, condition: label, notes }])
+        }
+        await supabase.from('dental_record_history').insert([{
+          patient_id: id,
+          tooth_number: entry.toothNumber,
+          condition: label,
+          notes,
+          procedure_date: pdate,
+          doctor_name: doctorName,
+        }])
+      }
+      loadPatientData()
+    } catch (error) {
+      console.error('Error applying batch tooth conditions:', error)
+      alert('Failed to apply')
+    }
+  }
+
+  // Undo for the chart: pop each tooth's newest history row and restore the tooth to its prior
+  // recorded state (or clear it back to healthy if nothing else remains). This keeps the timeline
+  // clean — an undone accidental click leaves no trailing "reverted" entry.
+  async function undoTeeth(toothNumbers: number[]) {
+    if (!id || toothNumbers.length === 0) return
+    try {
+      for (const tooth of toothNumbers) {
+        const { data: rows } = await supabase
+          .from('dental_record_history')
+          .select('*')
+          .eq('patient_id', id)
+          .eq('tooth_number', tooth)
+          .order('procedure_date', { ascending: false })
+          .order('created_at', { ascending: false })
+        if (!rows || rows.length === 0) continue
+        await supabase.from('dental_record_history').delete().eq('id', rows[0].id)
+        const prev = rows[1]
+        const rec = dentalRecords.find(r => r.tooth_number === tooth)
+        if (prev) {
+          if (rec) await supabase.from('dental_records').update({ condition: prev.condition, notes: prev.notes, updated_at: new Date().toISOString() }).eq('id', rec.id)
+          else await supabase.from('dental_records').insert([{ patient_id: id, tooth_number: tooth, condition: prev.condition, notes: prev.notes }])
+        } else if (rec) {
+          await supabase.from('dental_records').delete().eq('id', rec.id)
+        }
+      }
+      loadPatientData()
+    } catch (error) {
+      console.error('Error undoing tooth change:', error)
+    }
+  }
+
   async function handleTreatmentPlanSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!id) return
@@ -3611,6 +3674,10 @@ export function PatientProfile() {
             onUpdateTooth={(entry, procedureDate) =>
               saveToothCondition(entry.toothNumber, conditionToLabel(entry.condition), entry.notes || '', procedureDate)
             }
+            onBatchUpdateTeeth={(entries, procedureDate) =>
+              batchUpdateTeeth(entries.map((e) => ({ toothNumber: e.toothNumber, condition: e.condition, notes: e.notes })), procedureDate)
+            }
+            onUndoTeeth={undoTeeth}
           />
         </div>
 

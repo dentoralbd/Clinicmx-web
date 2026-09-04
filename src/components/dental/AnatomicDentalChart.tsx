@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { DentitionType } from '@/lib/ageTier'
 import { DentalChartEntry, DentalChartHistoryEntry, ToothCondition } from '@/types/dentalChart'
 import { getFDIToothName, getDentitionLabel } from '@/lib/fdiChart'
@@ -8,7 +8,7 @@ import { ANATOMICAL_TEETH_32, AnatomicalToothDef } from './AnatomicalToothData'
 import { AnatomicArch, getToothDef } from './AnatomicArch'
 import { DentalChartTimeline } from './DentalChartTimeline'
 import { ToothHistoryList } from './ToothHistoryList'
-import { Sparkles, Layers, History, RotateCcw, Clock, X } from 'lucide-react'
+import { Sparkles, Layers, History, RotateCcw, Clock, X, CheckSquare, Paintbrush, Undo2 } from 'lucide-react'
 
 export interface OngoingTreatment {
   treatmentType: string
@@ -26,6 +26,10 @@ export interface AnatomicDentalChartProps {
   historyEntries?: DentalChartHistoryEntry[]
   ongoingTreatments?: OngoingTreatment[]
   onUpdateTooth: (entry: DentalChartEntry, procedureDate?: string) => void
+  /** Apply one condition to several teeth in one shot (batch mode); falls back to onUpdateTooth per tooth. */
+  onBatchUpdateTeeth?: (entries: DentalChartEntry[], procedureDate?: string) => void
+  /** Undo: pop the latest chart change for each listed tooth (delete its newest history row + restore prior). */
+  onUndoTeeth?: (toothNumbers: number[]) => void
   readOnly?: boolean
 }
 
@@ -55,6 +59,8 @@ const CONDITION_STYLES: Record<
   impacted: { label: 'Impacted Tooth', code: 'IMP', rootFill: '#FED7AA', crownFill: '#FFF7ED', stroke: '#F97316', circleFill: '#FFEDD5', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700' },
 }
 
+const PERMANENT_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]
+const PERMANENT_LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
 const PRIMARY_UPPER = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65]
 const PRIMARY_LOWER = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
 
@@ -102,6 +108,8 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
   historyEntries = [],
   ongoingTreatments = [],
   onUpdateTooth,
+  onBatchUpdateTeeth,
+  onUndoTeeth,
   readOnly = false,
 }) => {
   const [viewPerspective, setViewPerspective] = useState<'panoramic' | 'arch'>('panoramic')
@@ -112,6 +120,15 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedToothFilter, setSelectedToothFilter] = useState<number | null>(null)
 
+  // Quick-Apply "paint brush" mode: a condition picked from the legend becomes the active brush.
+  const [quickCondition, setQuickCondition] = useState<ToothCondition | null>(null)
+  // Multi-tooth batch selection mode.
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+  const [selectedTeeth, setSelectedTeeth] = useState<number[]>([])
+  const [batchCondition, setBatchCondition] = useState<ToothCondition>('decayed')
+  // LIFO stack of the tooth-sets changed this session, for Ctrl+Z / Undo (each undo pops one set).
+  const [undoStack, setUndoStack] = useState<number[][]>([])
+
   const isViewingHistorical = selectedDate !== null
   const activeEntries = computeChartSnapshot(historyEntries, entries, selectedDate)
 
@@ -120,6 +137,8 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
   const ageForLabel = patientAge ?? undefined
   const isMixed = dentitionType === 'mixed'
   const isDeciduousOnly = dentitionType === 'deciduous'
+  const isHighlighted = (num: number) => selectedTooth === num || selectedTeeth.includes(num)
+  const editingLocked = readOnly || isViewingHistorical
 
   const handleOpenTooth = (toothNum: number) => {
     setSelectedToothFilter(toothNum)
@@ -131,8 +150,83 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
     setProcedureDate(current?.procedureDate || new Date().toISOString().split('T')[0])
   }
 
+  const pushUndo = (teeth: number[]) => setUndoStack((prev) => [...prev, teeth])
+
+  const applyQuick = (toothNum: number, cond: ToothCondition) => {
+    const dateStr = new Date().toISOString().split('T')[0]
+    pushUndo([toothNum])
+    onUpdateTooth(
+      {
+        toothNumber: toothNum,
+        condition: cond,
+        surfaces: [],
+        notes: cond === 'healthy' ? 'Reset to healthy natural' : `Quick-apply: ${CONDITION_STYLES[cond].label}`,
+        updatedAt: new Date().toISOString(),
+        procedureDate: dateStr,
+      },
+      dateStr
+    )
+  }
+
+  // Single entry point for every tooth click: routes to batch-select, brush-apply, or the modal.
+  const handleToothClick = (toothNum: number) => {
+    setSelectedToothFilter(toothNum)
+    if (editingLocked) return
+
+    if (isMultiSelectMode) {
+      setSelectedTeeth((prev) => (prev.includes(toothNum) ? prev.filter((t) => t !== toothNum) : [...prev, toothNum]))
+      return
+    }
+
+    if (quickCondition) {
+      const currentCond = getToothEntry(toothNum)?.condition || 'healthy'
+      // 2nd click on a tooth that already has the brushed condition → undo (pop its latest change).
+      if (currentCond === quickCondition) {
+        onUndoTeeth?.([toothNum])
+        setUndoStack((prev) => {
+          const idx = [...prev].reverse().findIndex((set) => set.length === 1 && set[0] === toothNum)
+          if (idx === -1) return prev
+          const realIdx = prev.length - 1 - idx
+          return prev.filter((_, i) => i !== realIdx)
+        })
+        return
+      }
+      applyQuick(toothNum, quickCondition)
+      return
+    }
+
+    handleOpenTooth(toothNum)
+  }
+
+  const canUndo = undoStack.length > 0
+
+  const handleUndo = () => {
+    if (undoStack.length === 0) return
+    const last = undoStack[undoStack.length - 1]
+    setUndoStack((prev) => prev.slice(0, prev.length - 1))
+    onUndoTeeth?.(last)
+  }
+
+  // Keyboard: Ctrl/Cmd+Z undoes; Escape exits brush / clears batch selection.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        if (selectedTooth !== null) return // let the modal's own inputs handle undo
+        e.preventDefault()
+        handleUndo()
+      } else if (e.key === 'Escape') {
+        if (quickCondition) setQuickCondition(null)
+        if (selectedTeeth.length > 0) setSelectedTeeth([])
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoStack, quickCondition, selectedTeeth, selectedTooth])
+
   const handleSaveTooth = () => {
     if (selectedTooth === null) return
+    pushUndo([selectedTooth])
     onUpdateTooth(
       {
         toothNumber: selectedTooth,
@@ -145,6 +239,53 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
       procedureDate
     )
     setSelectedTooth(null)
+  }
+
+  const handleResetToHealthy = () => {
+    if (selectedTooth === null) return
+    pushUndo([selectedTooth])
+    onUpdateTooth(
+      {
+        toothNumber: selectedTooth,
+        condition: 'healthy',
+        surfaces: [],
+        notes: 'Reset to healthy natural',
+        updatedAt: new Date().toISOString(),
+        procedureDate,
+      },
+      procedureDate
+    )
+    setSelectedTooth(null)
+  }
+
+  // ── Batch (multi-select) actions ──
+  const selectAllUpper = () => setSelectedTeeth(isDeciduousOnly ? PRIMARY_UPPER : PERMANENT_UPPER)
+  const selectAllLower = () => setSelectedTeeth(isDeciduousOnly ? PRIMARY_LOWER : PERMANENT_LOWER)
+  const selectAllMolars = () =>
+    setSelectedTeeth(
+      isDeciduousOnly ? [55, 54, 64, 65, 85, 84, 74, 75] : [18, 17, 16, 26, 27, 28, 48, 47, 46, 36, 37, 38]
+    )
+
+  const applyBatch = (cond: ToothCondition) => {
+    if (selectedTeeth.length === 0) return
+    const dateStr = new Date().toISOString().split('T')[0]
+    const label = CONDITION_STYLES[cond].label
+    const batchEntries: DentalChartEntry[] = selectedTeeth.map((num) => ({
+      toothNumber: num,
+      condition: cond,
+      surfaces: [],
+      notes: cond === 'healthy' ? 'Batch reset to healthy natural' : `Batch applied: ${label}`,
+      updatedAt: new Date().toISOString(),
+      procedureDate: dateStr,
+    }))
+    pushUndo([...selectedTeeth])
+    if (onBatchUpdateTeeth) {
+      onBatchUpdateTeeth(batchEntries, dateStr)
+    } else {
+      batchEntries.forEach((entry) => onUpdateTooth(entry, dateStr))
+    }
+    setSelectedTeeth([])
+    setIsMultiSelectMode(false)
   }
 
   const PRIMARY_SOLO_SLOT_X = [170, 222, 274, 326, 378, 442, 494, 546, 598, 650]
@@ -175,13 +316,13 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
     const style = CONDITION_STYLES[cond]
     const isExtracted = cond === 'extracted'
     const isMissing = cond === 'missing'
-    const isSelected = selectedTooth === toothNum
+    const isSelected = isHighlighted(toothNum)
     const R = 11.5
 
     return (
       <g
         key={`dot-${toothNum}`}
-        onClick={() => handleOpenTooth(toothNum)}
+        onClick={() => handleToothClick(toothNum)}
         className="cursor-pointer group select-none"
         transform={scale !== 1 ? `translate(${cx}, ${cy}) scale(${scale}) translate(${-cx}, ${-cy})` : undefined}
       >
@@ -260,14 +401,14 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
 
   /** Panoramic straight-row anatomical tooth. */
   const renderPanoramicTooth = (tooth: AnatomicalToothDef, isUpper: boolean, customBaseY?: number, customScale = 1) => {
-    const isSelected = selectedTooth === tooth.num
+    const isSelected = isHighlighted(tooth.num)
     const cond = getToothEntry(tooth.num)?.condition || 'healthy'
     const baseY = customBaseY ?? (isUpper ? 96 : 322)
 
     return (
       <g
         key={tooth.num}
-        onClick={() => handleOpenTooth(tooth.num)}
+        onClick={() => handleToothClick(tooth.num)}
         className="cursor-pointer group select-none transition-all duration-150"
       >
         <title>{`Tooth #${tooth.num} — ${tooth.name} (${cond.replace('_', ' ').toUpperCase()})`}</title>
@@ -301,7 +442,7 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold text-slate-900 tracking-tight">Anatomical Odontogram</h3>
+            <h3 className="text-base font-bold text-slate-900 tracking-tight">Odontogram</h3>
             <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
               {viewPerspective === 'panoramic'
                 ? isMixed
@@ -313,30 +454,71 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
           <p className="text-xs font-semibold text-primary mt-0.5">{getDentitionLabel(ageForLabel, dentitionType)}</p>
         </div>
 
-        {/* View Perspective Switcher */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
-          <button
-            type="button"
-            onClick={() => setViewPerspective('panoramic')}
-            className={cn(
-              'px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1',
-              viewPerspective === 'panoramic' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            )}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Panoramic (Anatomic)
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewPerspective('arch')}
-            className={cn(
-              'px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1',
-              viewPerspective === 'arch' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            )}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            Arch (Occlusal)
-          </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {!editingLocked && (
+            <>
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                title="Undo last tooth change (Ctrl+Z)"
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-colors',
+                  canUndo
+                    ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    : 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                )}
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span>Undo</span>
+                <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">(Ctrl+Z)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMultiSelectMode((v) => !v)
+                  setSelectedTeeth([])
+                  setQuickCondition(null)
+                }}
+                title="Select several teeth and apply one condition at once"
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-colors',
+                  isMultiSelectMode
+                    ? 'border-sky-600 bg-sky-600 text-white shadow-xs'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                )}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                Multi-Select
+              </button>
+            </>
+          )}
+
+          {/* View Perspective Switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => setViewPerspective('panoramic')}
+              className={cn(
+                'px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1',
+                viewPerspective === 'panoramic' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Panoramic (Anatomic)
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewPerspective('arch')}
+              className={cn(
+                'px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1',
+                viewPerspective === 'arch' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              )}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Arch (Occlusal)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -360,6 +542,63 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
             <RotateCcw className="w-3 h-3" />
             Return to Live Chart
           </button>
+        </div>
+      )}
+
+      {/* Quick-Apply brush banner */}
+      {quickCondition && !editingLocked && !isMultiSelectMode && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+          <div className="flex items-center gap-2">
+            <Paintbrush className="w-4 h-4 text-sky-600 shrink-0" />
+            <div>
+              <strong>Quick-Apply Tool Active: {CONDITION_STYLES[quickCondition].label}</strong> — tap any tooth to apply
+              directly. Tap it again to undo.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setQuickCondition(null)}
+            className="flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-lg bg-sky-600 text-white hover:bg-sky-700 transition-colors shadow-xs self-end sm:self-auto"
+          >
+            <X className="w-3 h-3" />
+            Exit Tool (Esc)
+          </button>
+        </div>
+      )}
+
+      {/* Multi-select batch action bar */}
+      {isMultiSelectMode && !editingLocked && (
+        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <CheckSquare className="w-3.5 h-3.5 text-sky-600" />
+              Multi-Select — {selectedTeeth.length} {selectedTeeth.length === 1 ? 'tooth' : 'teeth'} selected
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button type="button" onClick={selectAllUpper} className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">Upper Arch</button>
+              <button type="button" onClick={selectAllLower} className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">Lower Arch</button>
+              <button type="button" onClick={selectAllMolars} className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">All Molars</button>
+              <button type="button" onClick={() => setSelectedTeeth([])} className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50">Clear</button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={batchCondition}
+              onChange={(e) => setBatchCondition(e.target.value as ToothCondition)}
+              className="text-sm rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              {(Object.keys(CONDITION_STYLES) as ToothCondition[]).map((key) => (
+                <option key={key} value={key}>{CONDITION_STYLES[key].label}</option>
+              ))}
+            </select>
+            <Button size="sm" variant="primary" disabled={selectedTeeth.length === 0} onClick={() => applyBatch(batchCondition)}>
+              Apply to {selectedTeeth.length} {selectedTeeth.length === 1 ? 'tooth' : 'teeth'}
+            </Button>
+            <Button size="sm" variant="outline" disabled={selectedTeeth.length === 0} onClick={() => applyBatch('healthy')}>
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              Revert to Healthy
+            </Button>
+          </div>
         </div>
       )}
 
@@ -395,28 +634,28 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
                   {/* Tier 1: Upper Permanent */}
                   {mixedUpperPermanent.map((tooth) => renderPanoramicTooth(tooth, true, 75, 0.84))}
                   {mixedUpperPermanent.map((tooth) => (
-                    <text key={`lu-perm-${tooth.num}`} x={tooth.slotX} y="124" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`lu-perm-${tooth.num}`} x={tooth.slotX} y="124" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {mixedUpperPermanent.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 145, 0.84))}
 
                   {/* Tier 2: Upper Primary */}
                   {mixedUpperPrimary.map((tooth) => renderPanoramicTooth(tooth, true, 215, 0.74))}
                   {mixedUpperPrimary.map((tooth) => (
-                    <text key={`lu-prim-${tooth.num}`} x={tooth.slotX} y="262" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '600'} fill={selectedTooth === tooth.num ? '#0284C7' : '#0F766E'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`lu-prim-${tooth.num}`} x={tooth.slotX} y="262" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '600'} fill={selectedTooth === tooth.num ? '#0284C7' : '#0F766E'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {mixedUpperPrimary.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 285, 0.82))}
 
                   {/* Tier 3: Lower Primary */}
                   {mixedLowerPrimary.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 355, 0.82))}
                   {mixedLowerPrimary.map((tooth) => (
-                    <text key={`ll-prim-${tooth.num}`} x={tooth.slotX} y="378" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '600'} fill={selectedTooth === tooth.num ? '#0284C7' : '#0F766E'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`ll-prim-${tooth.num}`} x={tooth.slotX} y="378" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '600'} fill={selectedTooth === tooth.num ? '#0284C7' : '#0F766E'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {mixedLowerPrimary.map((tooth) => renderPanoramicTooth(tooth, false, 425, 0.74))}
 
                   {/* Tier 4: Lower Permanent */}
                   {mixedLowerPermanent.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 495, 0.84))}
                   {mixedLowerPermanent.map((tooth) => (
-                    <text key={`ll-perm-${tooth.num}`} x={tooth.slotX} y="516" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`ll-perm-${tooth.num}`} x={tooth.slotX} y="516" textAnchor="middle" fontSize="10" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {mixedLowerPermanent.map((tooth) => renderPanoramicTooth(tooth, false, 565, 0.84))}
                 </svg>
@@ -429,13 +668,13 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
 
                   {upperTeeth.map((tooth) => renderPanoramicTooth(tooth, true))}
                   {upperTeeth.map((tooth) => (
-                    <text key={`lu-${tooth.num}`} x={tooth.slotX} y="156" textAnchor="middle" fontSize="10.5" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`lu-${tooth.num}`} x={tooth.slotX} y="156" textAnchor="middle" fontSize="10.5" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {upperTeeth.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 180))}
 
                   {lowerTeeth.map((tooth) => renderStatusDot(tooth.num, tooth.slotX, 240))}
                   {lowerTeeth.map((tooth) => (
-                    <text key={`ll-${tooth.num}`} x={tooth.slotX} y="266" textAnchor="middle" fontSize="10.5" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleOpenTooth(tooth.num)}>{tooth.num}</text>
+                    <text key={`ll-${tooth.num}`} x={tooth.slotX} y="266" textAnchor="middle" fontSize="10.5" fontFamily="monospace" fontWeight={selectedTooth === tooth.num ? 'bold' : '500'} fill={selectedTooth === tooth.num ? '#0284C7' : '#64748B'} className="cursor-pointer select-none" onClick={() => handleToothClick(tooth.num)}>{tooth.num}</text>
                   ))}
                   {lowerTeeth.map((tooth) => renderPanoramicTooth(tooth, false))}
                 </svg>
@@ -448,25 +687,48 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
           <p className="font-semibold text-center text-slate-700 text-xs mb-1.5">{getDentitionLabel(ageForLabel, dentitionType)}</p>
           <AnatomicArch
             dentitionType={dentitionType}
-            onToothClick={handleOpenTooth}
-            isSelected={(num) => selectedTooth === num}
+            onToothClick={handleToothClick}
+            isSelected={(num) => isHighlighted(num)}
             getToothTitle={(num) => `Tooth #${num} — ${getFDIToothName(num)}`}
-            renderToothBody={(def, num) => renderToothLayers(def, num, def.arch === 'upper', selectedTooth === num)}
+            renderToothBody={(def, num) => renderToothLayers(def, num, def.arch === 'upper', isHighlighted(num))}
           />
         </div>
       )}
 
-      {/* Condition Legend */}
-      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100">
-        {(Object.keys(CONDITION_STYLES) as ToothCondition[]).map((key) => {
-          const c = CONDITION_STYLES[key]
-          return (
-            <div key={key} className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold', c.badgeBg, c.badgeText)}>
-              <span className="w-2.5 h-2.5 rounded-full border border-current opacity-80" style={{ backgroundColor: c.circleFill }} />
-              <span>{c.label}</span>
-            </div>
-          )
-        })}
+      {/* Condition Legend — also doubles as the Quick-Apply brush picker */}
+      <div className="pt-3 border-t border-slate-100 space-y-1.5">
+        {!editingLocked && (
+          <p className="text-[11px] text-slate-400">Tap a condition to activate a quick-apply brush, then tap teeth to mark them.</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {(Object.keys(CONDITION_STYLES) as ToothCondition[]).map((key) => {
+            const c = CONDITION_STYLES[key]
+            const active = quickCondition === key
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={editingLocked}
+                onClick={() => {
+                  setIsMultiSelectMode(false)
+                  setSelectedTeeth([])
+                  setQuickCondition((prev) => (prev === key ? null : key))
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all',
+                  c.badgeBg,
+                  c.badgeText,
+                  active ? 'ring-2 ring-sky-600 scale-105 shadow-xs' : 'hover:brightness-95',
+                  editingLocked ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                )}
+              >
+                <span className="w-2.5 h-2.5 rounded-full border border-current opacity-80" style={{ backgroundColor: c.circleFill }} />
+                <span>{c.label}</span>
+                {active && <span className="text-[9px] bg-sky-600 text-white rounded px-1 py-0.5 font-bold uppercase">Active</span>}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Tooth History & Procedure Log */}
@@ -565,9 +827,20 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
                 )
               })()}
 
-              <div className="flex justify-between items-center pt-3 border-t border-gray-200">
-                <Button variant="outline" onClick={() => setSelectedTooth(null)}>Cancel</Button>
-                <Button variant="primary" onClick={handleSaveTooth}>Save Diagnosis</Button>
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={handleResetToHealthy}
+                  className="flex items-center gap-1 px-3 py-2 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                  title="Reset this tooth to healthy natural"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Revert to Healthy
+                </button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setSelectedTooth(null)}>Cancel</Button>
+                  <Button variant="primary" onClick={handleSaveTooth}>Save Diagnosis</Button>
+                </div>
               </div>
             </div>
           </div>
