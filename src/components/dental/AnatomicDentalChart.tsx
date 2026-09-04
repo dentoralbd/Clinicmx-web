@@ -48,7 +48,7 @@ const CONDITION_STYLES: Record<
   filled: { label: 'Restored / Therapy', code: 'FIL', rootFill: '#C7D2FE', crownFill: '#EEF2FF', stroke: '#4F46E5', circleFill: '#E0E7FF', badgeBg: 'bg-indigo-100', badgeText: 'text-indigo-700' },
   crown: { label: 'Full Crown / Cap', code: 'CRW', rootFill: '#E2E8F0', crownFill: '#FEF08A', stroke: '#CA8A04', circleFill: '#FEF9C3', badgeBg: 'bg-yellow-100', badgeText: 'text-yellow-800' },
   decayed: { label: 'Caries / Decayed', code: 'CAR', rootFill: '#E2E8F0', crownFill: '#FED7AA', stroke: '#EA580C', circleFill: '#FFEDD5', badgeBg: 'bg-orange-100', badgeText: 'text-orange-700' },
-  missing: { label: 'Missing Tooth', code: 'MIS', rootFill: '#64748B', crownFill: '#64748B', stroke: '#475569', circleFill: '#64748B', badgeBg: 'bg-slate-200', badgeText: 'text-slate-800' },
+  missing: { label: 'Missing Tooth', code: 'MIS', rootFill: '#F1F5F9', crownFill: '#F8FAFC', stroke: '#CBD5E1', circleFill: '#F1F5F9', badgeBg: 'bg-slate-50', badgeText: 'text-slate-500' },
   extracted: { label: 'Extracted', code: 'EXT', rootFill: '#64748B', crownFill: '#64748B', stroke: '#475569', circleFill: '#64748B', badgeBg: 'bg-slate-200', badgeText: 'text-slate-800' },
   implant: { label: 'Dental Implant', code: 'IMP', rootFill: '#99F6E4', crownFill: '#F0FDFA', stroke: '#0D9488', circleFill: '#CCFBF1', badgeBg: 'bg-teal-100', badgeText: 'text-teal-800' },
   bridge: { label: 'Bridge Abutment', code: 'BRG', rootFill: '#A7F3D0', crownFill: '#ECFDF5', stroke: '#059669', circleFill: '#D1FAE5', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700' },
@@ -173,7 +173,8 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
     const entry = getToothEntry(toothNum)
     const cond = entry?.condition || 'healthy'
     const style = CONDITION_STYLES[cond]
-    const isFullSilhouette = cond === 'missing' || cond === 'extracted'
+    const isExtracted = cond === 'extracted'
+    const isMissing = cond === 'missing'
     const isSelected = selectedTooth === toothNum
     const R = 11.5
 
@@ -190,9 +191,11 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
           cx={cx}
           cy={cy}
           r={R}
-          fill={isFullSilhouette ? '#64748B' : style.circleFill}
-          stroke={isFullSilhouette ? '#475569' : style.stroke}
+          fill={isExtracted ? '#64748B' : style.circleFill}
+          stroke={isExtracted ? '#475569' : style.stroke}
           strokeWidth="1.1"
+          strokeDasharray={isMissing ? '3 2' : undefined}
+          opacity={isMissing ? 0.6 : 1}
           className="group-hover:opacity-85 transition-opacity"
         />
       </g>
@@ -204,14 +207,16 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
     const entry = getToothEntry(toothNum)
     const cond = entry?.condition || 'healthy'
     const style = CONDITION_STYLES[cond]
-    const isSilhouette = cond === 'missing' || cond === 'extracted'
+    const isExtracted = cond === 'extracted' // solid dark silhouette
+    const isMissing = cond === 'missing' // faded ghost tooth (reads as "not present")
     const isImplant = cond === 'implant'
     const isRCT = cond === 'root_canal'
+    const dash = isMissing ? '3 3' : undefined
 
-    return (
+    const body = (
       <>
-        {tooth.secondaryRootPath && !isSilhouette && (
-          <path d={tooth.secondaryRootPath} fill={isRCT ? '#FECDD3' : '#CBD5E1'} stroke="#94A3B8" strokeWidth="0.9" opacity="0.75" />
+        {tooth.secondaryRootPath && !isExtracted && (
+          <path d={tooth.secondaryRootPath} fill={isRCT ? '#FECDD3' : isMissing ? '#F1F5F9' : '#CBD5E1'} stroke="#CBD5E1" strokeWidth="0.9" opacity={isMissing ? 0.6 : 0.75} />
         )}
         <path
           d={tooth.rootPath}
@@ -220,7 +225,8 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
           strokeWidth={isSelected ? '2' : '1.1'}
           strokeLinejoin="round"
           strokeLinecap="round"
-          opacity={isSilhouette ? 0.9 : 0.85}
+          strokeDasharray={dash}
+          opacity={isExtracted ? 0.9 : 0.85}
         />
         {isRCT && (
           <line x1="0" y1={isUpper ? -50 : 50} x2="0" y2={isUpper ? -8 : 8} stroke="#E11D48" strokeWidth="2.6" strokeLinecap="round" />
@@ -232,7 +238,7 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
             ))}
           </g>
         )}
-        {!isSilhouette && (
+        {!isExtracted && (
           <path d={tooth.cervicalCurve} fill="none" stroke="#CBD5E1" strokeWidth="0.8" strokeLinecap="round" />
         )}
         <path
@@ -241,10 +247,15 @@ export const AnatomicDentalChart: React.FC<AnatomicDentalChartProps> = ({
           stroke={isSelected ? '#0284C7' : style.stroke}
           strokeWidth={isSelected ? '2.4' : '1.3'}
           strokeLinejoin="round"
+          strokeDasharray={dash}
           className="filter drop-shadow-2xs group-hover:brightness-95 transition-all"
         />
       </>
     )
+
+    // A missing tooth is drawn as a faint, dashed ghost so it recedes into the chart
+    // background — visually distinct from the solid dark Extracted silhouette.
+    return isMissing ? <g opacity={0.45}>{body}</g> : body
   }
 
   /** Panoramic straight-row anatomical tooth. */

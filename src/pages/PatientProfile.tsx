@@ -3530,7 +3530,7 @@ export function PatientProfile() {
       'Root Canal': 'bg-rose-500',
       Crown: 'bg-yellow-500',
       Bridge: 'bg-emerald-500',
-      Missing: 'bg-gray-500',
+      Missing: 'bg-slate-300',
       Implant: 'bg-teal-500',
       Extracted: 'bg-slate-600',
       Impacted: 'bg-amber-500',

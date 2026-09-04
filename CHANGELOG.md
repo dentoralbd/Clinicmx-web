@@ -4,6 +4,14 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — Distinguish Missing vs Extracted on the odontogram
+
+Missing and Extracted teeth previously rendered as the same solid dark silhouette. Missing now
+draws as a faint, dashed **ghost** tooth (light background tone, ~45% opacity) so it recedes as
+"not present", while Extracted keeps the solid dark slate silhouette — with matching legend
+swatches, status dots, and summary/history dot colors. UI-only (`AnatomicDentalChart.tsx`,
+`ToothHistoryList.tsx`, `PatientProfile.tsx` dot colors); no schema change.
+
 ## 2026-09-04 — Catalog-driven treatment→chart mapping (migration 069)
 
 The tooth-chart condition each procedure auto-applies is now defined **in the Catalog** (`/catalog`

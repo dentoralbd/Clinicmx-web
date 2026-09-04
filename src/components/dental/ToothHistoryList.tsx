@@ -18,7 +18,7 @@ const CONDITION_COLORS: Record<
   healthy: { label: 'Healthy', bg: 'bg-slate-100', text: 'text-slate-700', dot: '#94A3B8' },
   decayed: { label: 'Caries / Cavity', bg: 'bg-rose-100', text: 'text-rose-700', dot: '#E11D48' },
   filled: { label: 'Restored / Filled', bg: 'bg-indigo-100', text: 'text-indigo-700', dot: '#6366F1' },
-  missing: { label: 'Missing', bg: 'bg-slate-200', text: 'text-slate-700', dot: '#475569' },
+  missing: { label: 'Missing', bg: 'bg-slate-50', text: 'text-slate-500', dot: '#CBD5E1' },
   root_canal: { label: 'Root Canal (RCT)', bg: 'bg-pink-100', text: 'text-pink-700', dot: '#F43F5E' },
   crown: { label: 'Crown', bg: 'bg-amber-100', text: 'text-amber-800', dot: '#F59E0B' },
   bridge: { label: 'Bridge', bg: 'bg-emerald-100', text: 'text-emerald-800', dot: '#10B981' },
