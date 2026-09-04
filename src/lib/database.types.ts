@@ -1640,6 +1640,7 @@ export interface Database {
           name: string
           default_fee: number | null
           default_duration_mins: number | null
+          chart_condition: string | null
           sort_order: number
           created_at: string
           updated_at: string
@@ -1650,6 +1651,7 @@ export interface Database {
           name: string
           default_fee?: number | null
           default_duration_mins?: number | null
+          chart_condition?: string | null
           sort_order?: number
           created_at?: string
           updated_at?: string
@@ -1660,6 +1662,7 @@ export interface Database {
           name?: string
           default_fee?: number | null
           default_duration_mins?: number | null
+          chart_condition?: string | null
           sort_order?: number
           created_at?: string
           updated_at?: string

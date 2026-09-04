@@ -19,6 +19,11 @@ const LABEL_TO_CONDITION: Record<string, ToothCondition> = {
   Impacted: 'impacted',
 }
 
+/** All chart conditions, in the order shown in pickers/legends. */
+export const ALL_TOOTH_CONDITIONS: ToothCondition[] = [
+  'healthy', 'decayed', 'filled', 'root_canal', 'crown', 'bridge', 'implant', 'missing', 'extracted', 'impacted',
+]
+
 const CONDITION_TO_LABEL: Record<ToothCondition, string> = {
   healthy: 'Healthy',
   decayed: 'Decayed',

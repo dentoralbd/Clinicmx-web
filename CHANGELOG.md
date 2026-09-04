@@ -4,6 +4,18 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — Catalog-driven treatment→chart mapping (migration 069)
+
+The tooth-chart condition each procedure auto-applies is now defined **in the Catalog** (`/catalog`
+→ Procedures → new *Tooth-chart result* dropdown per item), stored in
+`treatment_catalog_items.chart_condition`. Since treatment types are chosen from the catalog, this
+lets the clinic control the mapping per procedure instead of relying only on the keyword guess.
+Precedence in `src/lib/toothChartSync.ts`: explicit catalog mapping → the "No chart change"
+sentinel (`'__none__'`) → keyword fallback (unmapped items and legacy free-text types). No
+`dental_record_history` change. **Requires migration 069** — until it's applied the auto-sync
+silently falls back to keywords, and adding/editing a catalog procedure will fail (the new column
+is written on save).
+
 ## 2026-09-04 — Treatment plan → tooth chart auto-sync
 
 When a **tooth-linked** treatment reaches **In Progress** or **Completed**, the Anatomic

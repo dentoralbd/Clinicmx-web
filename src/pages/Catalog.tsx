@@ -20,6 +20,8 @@ import {
   type CustomMedication,
   type TreatmentCatalogItem,
 } from '@/lib/catalog'
+import { ALL_TOOTH_CONDITIONS, conditionToLabel } from '@/lib/toothConditions'
+import type { ToothCondition } from '@/types/dentalChart'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong'
@@ -174,7 +176,7 @@ function ProcedureForm({
 }: {
   categories: CatalogCategory[]
   editing: TreatmentCatalogItem | null
-  onSave: (input: { category_id: string; name: string; default_fee: number | null; default_duration_mins: number | null }) => void
+  onSave: (input: { category_id: string; name: string; default_fee: number | null; default_duration_mins: number | null; chart_condition: string | null }) => void
   onCancel: () => void
   isBusy: boolean
 }) {
@@ -184,6 +186,7 @@ function ProcedureForm({
   const [durationMins, setDurationMins] = useState(
     editing?.default_duration_mins != null ? String(editing.default_duration_mins) : ''
   )
+  const [chartCondition, setChartCondition] = useState<string>(editing?.chart_condition ?? '')
 
   return (
     <div className="border border-gray-200 rounded-lg p-3 space-y-2">
@@ -221,6 +224,27 @@ function ProcedureForm({
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
+      <div className="grid sm:grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-text-secondary">
+            Tooth-chart result (auto-sync when In Progress / Completed)
+          </span>
+          <select
+            value={chartCondition}
+            onChange={(e) => setChartCondition(e.target.value)}
+            title="When a treatment of this type is set In Progress or Completed, the linked tooth is set to this condition on the dental chart. Leave as Auto to guess from the name."
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Auto (guess from name)</option>
+            <option value="__none__">No chart change</option>
+            {ALL_TOOTH_CONDITIONS.map((c) => (
+              <option key={c} value={c}>
+                {conditionToLabel(c as ToothCondition)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="flex items-center gap-2">
         <Button
           type="button"
@@ -232,6 +256,7 @@ function ProcedureForm({
               name: name.trim(),
               default_fee: fee.trim() ? Number(fee) : null,
               default_duration_mins: durationMins.trim() ? Number(durationMins) : null,
+              chart_condition: chartCondition === '' ? null : chartCondition,
             })
           }
         >
@@ -352,6 +377,14 @@ function ProceduresSection() {
                     )}
                     {item.default_duration_mins != null && (
                       <span className="text-xs text-gray-500 ml-2">{item.default_duration_mins}m chair time</span>
+                    )}
+                    {item.chart_condition && item.chart_condition !== '__none__' && (
+                      <span className="text-[11px] text-primary bg-primary/10 rounded-full px-2 py-0.5 ml-2">
+                        → {conditionToLabel(item.chart_condition as ToothCondition)}
+                      </span>
+                    )}
+                    {item.chart_condition === '__none__' && (
+                      <span className="text-[11px] text-gray-400 ml-2">→ no chart change</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
