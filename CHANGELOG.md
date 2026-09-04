@@ -4,6 +4,15 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-04 — "Add from odontogram" on the Patient Profile Rx form + modal z-index fix
+
+Extended the "Add from odontogram" On Examination checkbox to the **Patient Profile → New
+Prescription** form (its own `PrescriptionFormModal`, separate from the Prescriptions page) — there
+it builds the findings straight from the patient's already-loaded `dental_records`, no fetch. Also
+fixed the New Prescription modal rendering **behind the sidebar** on desktop (its overlay was
+`z-50`, under the sidebar's `z-[60]`): both prescription modals now use `z-[70]` so the modal sits
+above the sidebar. UI-only.
+
 ## 2026-09-04 — "Add from odontogram" for prescription On Examination
 
 A checkbox above the On Examination field on the Prescriptions page pulls the selected patient's

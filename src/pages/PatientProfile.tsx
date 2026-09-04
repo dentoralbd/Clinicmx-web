@@ -35,7 +35,7 @@ import { syncInvoiceForTreatmentChange, advanceTreatmentStatusOnBilling } from '
 import { ToothSelector } from '@/components/ToothSelector'
 import { TreatmentTypeSelect } from '@/components/TreatmentTypeSelect'
 import { AnatomicDentalChart } from '@/components/dental/AnatomicDentalChart'
-import { labelToCondition, conditionToLabel } from '@/lib/toothConditions'
+import { labelToCondition, conditionToLabel, buildExaminationEntriesFromDentalRecords } from '@/lib/toothConditions'
 import { syncToothChartFromTreatment, syncToothChartFromTreatments } from '@/lib/toothChartSync'
 import { supabase } from '@/lib/supabase'
 import { MEMORY_KEYS, rememberItem } from '@/lib/prescriptionMemory'
@@ -5526,6 +5526,7 @@ export function PatientProfile() {
           formData={prescriptionForm}
           setFormData={setPrescriptionForm}
           dentitionType={patientDentition}
+          dentalRecords={dentalRecords}
           onSubmit={handlePrescriptionSubmit}
           onClose={() => { setShowPrescriptionForm(false); setEditingPrescriptionId(null); setShowMedTemplates(false); setShowInvTemplates(false) }}
           onPreview={openPrescriptionPreview}
@@ -6703,11 +6704,58 @@ function PrescriptionFormModal({
   setMedicalHistoryForm,
   patientDOB,
   dentitionType,
+  dentalRecords,
   aiPanelOpenIndex,
   setAiPanelOpenIndex,
 }: any) {
   const [showComplaintTemplates, setShowComplaintTemplates] = useState(false)
   const [showExamTemplates, setShowExamTemplates] = useState(false)
+  // "Add from odontogram" toggle for On Examination — builds entries straight from the patient's
+  // already-loaded dental_records (no fetch needed here).
+  const [addFromOdontogram, setAddFromOdontogram] = useState(false)
+  const [odoSnapshots, setOdoSnapshots] = useState<{ id: string; text: string; teeth: number[] }[]>([])
+  const [odoEmptyNote, setOdoEmptyNote] = useState(false)
+
+  function odoEntriesEqual(a: { text: string; teeth: number[] }, b: { text: string; teeth: number[] }) {
+    const t = (arr: number[]) => arr.slice().sort((x, y) => x - y).join(',')
+    return a.text.trim() === b.text.trim() && t(a.teeth) === t(b.teeth)
+  }
+
+  function toggleOdontogram(next: boolean) {
+    setOdoEmptyNote(false)
+    if (!next) {
+      const snapById = new Map(odoSnapshots.map((s) => [s.id, s]))
+      setFormData((prev: any) => {
+        const kept = prev.on_examination_entries.filter((e: ClinicalEntry) => {
+          const snap = snapById.get(e.id)
+          return !snap || !odoEntriesEqual(e, snap)
+        })
+        return { ...prev, on_examination_entries: kept.length > 0 ? kept : [createEmptyEntry()] }
+      })
+      setOdoSnapshots([])
+      setAddFromOdontogram(false)
+      return
+    }
+    const findings = buildExaminationEntriesFromDentalRecords(
+      (dentalRecords || []).map((r: any) => ({ tooth_number: r.tooth_number, condition: r.condition }))
+    )
+    setAddFromOdontogram(true)
+    if (findings.length === 0) {
+      setOdoEmptyNote(true)
+      setOdoSnapshots([])
+      return
+    }
+    const existing: ClinicalEntry[] = formData.on_examination_entries
+    const key = (t: string, teeth: number[]) => `${t.trim()}|${teeth.slice().sort((a, b) => a - b).join(',')}`
+    const existingKeys = new Set(existing.filter((e) => e.text.trim()).map((e) => key(e.text, e.teeth)))
+    const added: ClinicalEntry[] = findings
+      .filter((f) => !existingKeys.has(key(f.text, f.teeth)))
+      .map((f) => ({ ...createEmptyEntry(), text: f.text, teeth: f.teeth }))
+    const base = existing.length === 1 && !existing[0].text.trim() && existing[0].teeth.length === 0 ? [] : existing
+    const nextEntries = [...base, ...added]
+    setFormData((prev: any) => ({ ...prev, on_examination_entries: nextEntries.length > 0 ? nextEntries : [createEmptyEntry()] }))
+    setOdoSnapshots(added.map((e) => ({ id: e.id, text: e.text, teeth: e.teeth })))
+  }
   const [complaintTemplates, setComplaintTemplates] = useState<Array<SectionTemplate<string>>>([])
   const [examinationTemplates, setExaminationTemplates] = useState<Array<SectionTemplate<string>>>([])
   const [savedMedicationTemplates, setSavedMedicationTemplates] = useState<Array<SectionTemplate<MedicationTemplateItem[]>>>([])
@@ -6893,7 +6941,7 @@ function PrescriptionFormModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full my-8 overflow-hidden">
         {/* ── Header ── */}
         <div className="bg-gradient-to-r from-primary via-[#1b4e70] to-slate-900 px-6 py-5 flex items-center justify-between">
@@ -6958,6 +7006,16 @@ function PrescriptionFormModal({
           />
 
           {/* ── On Examination ── */}
+          <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer select-none w-fit">
+            <input
+              type="checkbox"
+              checked={addFromOdontogram}
+              onChange={(e) => toggleOdontogram(e.target.checked)}
+              className="rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            <span>🦷 Add from odontogram</span>
+            {addFromOdontogram && odoEmptyNote && <span className="text-gray-400">— no chart findings for this patient</span>}
+          </label>
           <MultiEntryClinicalField
             label="On Examination"
             entries={formData.on_examination_entries}
