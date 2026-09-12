@@ -183,7 +183,7 @@ export function PayInvoicePickerModal({ patientId, invoices, onClose, onChanged 
       {printJob && (
         <InvoicePrint
           invoices={printJob.invoices}
-          patient={printJob.patient}
+          patient={{ ...printJob.patient, id: printJob.invoices[0]?.patient_id }}
           doctor={printJob.doctor}
           onClose={() => {
             setPrintJob(null)

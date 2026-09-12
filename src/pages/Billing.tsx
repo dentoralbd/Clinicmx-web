@@ -1140,7 +1140,7 @@ export function Billing() {
       {printJob && (
         <InvoicePrint
           invoices={printJob.invoices}
-          patient={printJob.patient}
+          patient={{ ...printJob.patient, id: printJob.invoices[0]?.patient_id }}
           doctor={doctorProfile}
           initialDueOnly={printJob.initialDueOnly}
           onClose={() => setPrintJob(null)}

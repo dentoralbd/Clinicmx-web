@@ -42,6 +42,7 @@ interface InvoicePrintProps {
   /** One invoice = single invoice print; several = combined statement for the patient */
   invoices: PrintableInvoice[]
   patient: {
+    id?: string | null
     first_name: string
     last_name: string
     phone?: string | null
@@ -398,7 +399,12 @@ export function InvoicePrint({ invoices, patient, doctor, initialDueOnly, onClos
   const [groupSimilar, setGroupSimilar] = useState(false)
   const [payments, setPayments] = useState<StatementPaymentRow[]>([])
 
-  const qrPayload = patient.patient_code ? buildPrescriptionQrPayload({ patientCode: patient.patient_code }) : null
+  // Build from patient id (and code when present) so the QR still appears for a patient who has
+  // no PT- code yet — matching prescriptions and keeping every shared document scannable.
+  const qrPayload =
+    patient.id || patient.patient_code
+      ? buildPrescriptionQrPayload({ patientId: patient.id ?? undefined, patientCode: patient.patient_code ?? undefined })
+      : null
 
   const visibleInvoices = combined && dueOnly ? invoices.filter((invoice) => getInvoiceDue(invoice) > 0) : invoices
   const grandTotal = visibleInvoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)

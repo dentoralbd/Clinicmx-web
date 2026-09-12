@@ -119,6 +119,14 @@ interface PrescriptionPrintProps {
     logo_data?: string
   }
   onClose: () => void
+  /**
+   * Preview (unsaved) only: called before Print/Share when the prescription has no `id`.
+   * The parent saves the draft and reopens the SAVED print view; returning `true` means
+   * "handled — stop here, the user will Print/Share from the saved view" (so the sent PDF is
+   * always backed by a real record + carries its Prescription ID). Returning `false` (save
+   * failed / validation) lets the caller fall through and export the draft as-is.
+   */
+  ensureSaved?: () => Promise<boolean>
 }
 
 function calcAge(dob?: string): string {
@@ -130,7 +138,7 @@ function calcAge(dob?: string): string {
   }
 }
 
-export function PrescriptionPrint({ prescription, patient, doctor, onClose }: PrescriptionPrintProps) {
+export function PrescriptionPrint({ prescription, patient, doctor, onClose, ensureSaved }: PrescriptionPrintProps) {
   // Legacy rows have no `language` value — keep translating those (matches the
   // behavior this render-time fix originally shipped with). Only an explicit 'en'
   // (from the language toggle) skips translation, honoring an intentionally-English prescription.
@@ -140,8 +148,11 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   const { items: historyChecks, other: historyOther } = getMedicalHistoryChecks(patient.medical_history)
   const checkedHistoryLabels = historyChecks.filter((item) => item.checked).map((item) => item.label)
 
+  // The QR only encodes the patient (id + code) as a clinic-site URL — it does NOT need a saved
+  // prescription id. Gating it on `prescription.id` used to blank it out on unsaved previews
+  // (which is how a shared PDF went out with no QR); build it whenever a patient id is known.
   const qrPayload =
-    prescription.id && prescription.patient_id
+    prescription.patient_id
       ? buildPrescriptionQrPayload({
           patientId: prescription.patient_id,
           patientCode: patient.patient_code,
@@ -193,7 +204,12 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
     }
   }, [])
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    // Unsaved draft: save first so the printed copy is a real, id-carrying record (and gets its QR).
+    if (!prescription.id && ensureSaved) {
+      const handled = await ensureSaved()
+      if (handled) return
+    }
     const namePart = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim().replace(/\s+/g, '_') || 'Patient'
     const idPart = prescription.id ? prescription.id.slice(0, 8).toUpperCase() : 'Prescription'
     document.title = `Prescription_${namePart}_${idPart}`.replace(/[\\/:*?"<>|]/g, '-')
@@ -211,6 +227,12 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose }: Pr
   }, [showShareMenu])
 
   async function sharePrescription(channel: 'email' | 'whatsapp') {
+    // Unsaved draft: save first so the shared copy is a real, id-carrying record (and gets its QR).
+    if (!prescription.id && ensureSaved) {
+      setShowShareMenu(false)
+      const handled = await ensureSaved()
+      if (handled) return
+    }
     const email = patient.email
     const waNumber = patient.phone ? toWhatsAppNumber(patient.phone) : null
 

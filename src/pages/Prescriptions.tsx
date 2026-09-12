@@ -419,6 +419,22 @@ export function Prescriptions() {
     setCostDialogEntries(planEntries)
   }
 
+  // Preview → Print/Share on an UNSAVED draft: run the normal save with print-after-save so the
+  // sent copy is always a real record (with its id + QR). Reuses handleSubmit's exact flow
+  // (validation + treatment-plan cost dialog); the saved print view opens on success, from which
+  // the user completes Print/Share. Returns true = "handled, stop the draft export".
+  async function ensurePrescriptionSavedForShare(): Promise<boolean> {
+    printAfterSaveRef.current = true
+    setPreviewOpen(false)
+    try {
+      await handleSubmit({ preventDefault: () => {} } as unknown as React.FormEvent)
+    } catch (err) {
+      console.error('Save-before-share failed:', err)
+      printAfterSaveRef.current = false
+    }
+    return true
+  }
+
   // Same required-field checks as handleSubmit/savePrescription, but opens
   // the print overlay on the current unsaved draft instead of saving.
   function openPreview() {
@@ -2211,6 +2227,7 @@ export function Prescriptions() {
           patient={buildPreviewPatient()}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => setPreviewOpen(false)}
+          ensureSaved={ensurePrescriptionSavedForShare}
         />
       )}
 

@@ -370,7 +370,7 @@ export function Treatments() {
       {printJob && (
         <InvoicePrint
           invoices={printJob.invoices}
-          patient={printJob.patient}
+          patient={{ ...printJob.patient, id: printJob.invoices[0]?.patient_id }}
           doctor={doctorProfile}
           onClose={() => setPrintJob(null)}
         />

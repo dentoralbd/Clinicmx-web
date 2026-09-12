@@ -2259,6 +2259,22 @@ export function PatientProfile() {
     setRxCostDialogEntries(planEntries)
   }
 
+  // Preview → Print/Share on an UNSAVED prescription draft: run the normal save with
+  // print-after-save so the sent copy is a real record (with its id + QR). Reuses
+  // handlePrescriptionSubmit's flow (validation + treatment-plan cost dialog); the saved print
+  // opens on success. Returns true = "handled, stop the draft export".
+  async function ensurePrescriptionSavedForShare(): Promise<boolean> {
+    printPrescriptionAfterSaveRef.current = true
+    setPreviewPrescriptionOpen(false)
+    try {
+      await handlePrescriptionSubmit({ preventDefault: () => {} } as unknown as React.FormEvent)
+    } catch (err) {
+      console.error('Save-before-share failed:', err)
+      printPrescriptionAfterSaveRef.current = false
+    }
+    return true
+  }
+
   // Opens the print overlay on the current unsaved prescription draft
   // instead of saving — no validation needed beyond `patient` already being
   // loaded, since this page is always scoped to one specific patient.
@@ -5607,6 +5623,7 @@ export function PatientProfile() {
           patient={buildPreviewPrescriptionPatient()}
           doctor={doctorProfile || { full_name: '', degrees: '', designation: '', workplace: '' }}
           onClose={() => setPreviewPrescriptionOpen(false)}
+          ensureSaved={ensurePrescriptionSavedForShare}
         />
       )}
 
@@ -5797,6 +5814,7 @@ export function PatientProfile() {
         <InvoicePrint
           invoices={invoicePrintJob.invoices}
           patient={{
+            id: patient.id,
             first_name: patient.first_name,
             last_name: patient.last_name,
             phone: patient.phone,

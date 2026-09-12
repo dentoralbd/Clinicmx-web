@@ -4,6 +4,23 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-09-12 — Shared documents always carry their QR (+ save-before-share)
+
+Fixed prescriptions/invoices going out (e.g. via WhatsApp) with **no QR code**. The QR only encodes
+the patient (id + code → a `dentoralbd.com` URL), but it was gated on a saved document id, so sharing
+a prescription from the unsaved **Preview** dropped it. Now site-wide, the QR renders whenever a
+patient id is known:
+- `PrescriptionPrint.tsx` — build `qrPayload` from `prescription.patient_id` (drop the `prescription.id` gate); the "Prescription ID:" caption stays gated on a saved id.
+- `InvoicePrint.tsx` — build from `patient.id` (added to the prop, threaded from all 4 call sites) with `patient_code` as a bonus, so the QR shows even for a patient with no PT code.
+
+Also added **save-before-share** for prescriptions: Print/Share on an unsaved Preview first runs the
+normal save (via the existing submit + print-after-save path, incl. the treatment-plan cost dialog)
+and opens the saved print view, so every sent prescription is a real record with its id + QR
+(`ensureSaved` prop on `PrescriptionPrint`, wired from both the Prescriptions page and Patient
+Profile; the frozen patient-selection flow is untouched). Note: the **Patient ID** line still shows
+only when the patient has a `patient_code` — a patient created without one shows no ID on any print
+(separate data item to check/backfill). No schema change.
+
 ## 2026-09-04 — "Add from odontogram" on the Patient Profile Rx form + modal z-index fix
 
 Extended the "Add from odontogram" On Examination checkbox to the **Patient Profile → New
