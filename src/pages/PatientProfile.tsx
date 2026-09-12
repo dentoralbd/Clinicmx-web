@@ -9,7 +9,7 @@ import { queryClient } from '@/lib/queryClient'
 import { isOfflineFailure } from '@/lib/supabaseErrors'
 import { recordInvoicePayment } from '@/lib/payments'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock, QrCode } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar as CalendarIcon, FileText, Activity, DollarSign, Pill, Trash2, Lightbulb, Pencil, Upload, Image, X, User, UserCheck, FolderOpen, MessageSquare, FlaskConical, CheckCircle, Stethoscope, Printer, Sparkles, Phone, CheckSquare, Square, ChevronDown, ChevronUp, ScrollText, Lock, QrCode, ClipboardList, ClipboardPlus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PatientHeader } from '@/components/PatientHeader'
 import { ActivityTimeline, type TimelineItem } from '@/components/ActivityTimeline'
@@ -6372,9 +6372,17 @@ function VisitFormModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10 flex items-center justify-between">
-          <h2 className="font-display text-xl font-bold">Add Visit</h2>
-          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+        <div className="bg-gradient-to-r from-primary via-[#1b4e70] to-slate-900 px-6 py-5 flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+              <ClipboardPlus className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">Add Visit</h2>
+              <p className="text-blue-200 text-xs">Clinical Visit Record</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-white/70 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -7915,9 +7923,17 @@ function TreatmentPlanModal({ formData, setFormData, dentitionType, existingPlan
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h2 className="font-display text-xl font-bold">New Treatment Plan</h2>
-          <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+        <div className="bg-gradient-to-r from-primary via-[#1b4e70] to-slate-900 px-6 py-5 flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+              <ClipboardList className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">New Treatment Plan</h2>
+              <p className="text-blue-200 text-xs">Treatment Plan Details</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-white/70 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
