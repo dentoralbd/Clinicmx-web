@@ -261,6 +261,11 @@ export function PrescriptionPrint({ prescription, patient, doctor, onClose, ensu
       {/* Toolbar – sticky, hidden on print */}
       <div className="print:hidden sticky top-0 z-[101] bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
         <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 sm:px-4 sm:py-3">
+          {!prescription.id && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 text-xs font-semibold">
+              ● Unsaved draft{ensureSaved ? ' — Print/Share saves it first' : ''}
+            </span>
+          )}
           <div className="flex items-center bg-gray-100 rounded-xl p-1 mr-auto text-sm font-medium">
             <button
               type="button"
