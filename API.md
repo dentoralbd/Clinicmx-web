@@ -33,7 +33,15 @@ ClinicMx has **no REST API of its own**. The client talks to Supabase directly w
 
 ## 2. Cloudflare Pages Functions (`functions/api/`)
 
-Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev dist`. Shared Google Drive OAuth helpers in `_lib.ts`. Env (Cloudflare dashboard, encrypted): `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` (same four as the nightly backup — OAuth, not a service account, because personal Gmail can't grant service accounts Drive quota).
+Deployed with the site; local testing via `.dev.vars` + `npx wrangler pages dev dist`. Shared Google Drive OAuth helpers in `_lib.ts`.
+
+**Google calls are fault-tolerant (2026-10-01).** These rules apply to every Google response in `_lib.ts`:
+
+- **Parsing.** Responses are parsed with `readGoogleJson()`, which never throws. They are turned into readable errors with `describeGoogleFailure()`, so a plain-text body no longer surfaces as a JSON `SyntaxError` ("Unexpected token 'S', "Service Unavailable" is not valid JSON" reached the bell this way, 2026-09-29).
+- **Retries.** Idempotent calls (token refresh, list/GET, PATCH update, DELETE) go through `googleFetch()`, which retries a network error or a 429/5xx response twice (about 1s, then 3s).
+- **Temporary failures.** These raise `GoogleTransientError`.
+- **File-creating POSTs.** `uploadNew`'s POST is never blindly retried, because a retry could leave a duplicate file. Instead, `upload-backup.ts` `saveToDrive()` makes one more full attempt about 2s later. That attempt re-lists the file by name first, so a create that actually landed is updated in place.
+- **Status codes.** `upload-backup.ts` answers **503** for a temporary Google outage and **502** for a real rejection. Env (Cloudflare dashboard, encrypted): `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` (same four as the nightly backup — OAuth, not a service account, because personal Gmail can't grant service accounts Drive quota).
 
 | Endpoint | Method | Purpose |
 |---|---|---|

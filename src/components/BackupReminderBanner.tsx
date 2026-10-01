@@ -9,14 +9,25 @@ import {
   isBannerDismissedFor,
   shouldNotifyFor,
   markNotified,
+  clearNotified,
   dismissBannerFor,
   fireBrowserNotification,
   shouldNudgeRestoreDrill,
   markRestoreDrillNudged,
   claimBackupUpload,
+  releaseBackupClaim,
+  isAutoRetryDue,
+  getAutoUploadAttempts,
+  recordAutoUploadFailure,
+  clearAutoRetry,
   type BackupCategory,
 } from '@/lib/backupReminders'
-import { buildSerializedBackup, uploadSerializedBackup, getDriveBackupStatus } from '@/lib/deviceBackup'
+import {
+  buildSerializedBackup,
+  uploadSerializedBackup,
+  getDriveBackupStatus,
+  describeBackupError,
+} from '@/lib/deviceBackup'
 import { addNotification, addNotificationOnce } from '@/lib/notifications'
 
 const CATEGORY_LABEL: Record<BackupCategory, string> = {
@@ -71,17 +82,34 @@ export function BackupReminderBanner() {
             if (!isBannerDismissedFor(category, instant)) visible.push({ category, instant })
             continue
           }
-          // Mark as attempted before the (possibly slow) upload runs, so an
-          // overlapping tick can't fire the same scheduled instant twice.
-          markNotified(category, instant)
 
           if (autoUpload) {
+            // An earlier attempt at this same instant failed and its backoff
+            // (2/5/15/30 min, see backupReminders.ts) hasn't elapsed yet —
+            // keep showing the overdue banner, but don't claim or upload.
+            if (!isAutoRetryDue(category, instant)) {
+              if (!isBannerDismissedFor(category, instant)) visible.push({ category, instant })
+              continue
+            }
+
             // Cross-session guard: without this, two sessions that both see
             // "not done yet" in the same poll window both build + upload —
             // found live 2026-08-12 (two near-identical files 10s apart).
             // Losing the claim means another session already has it; skip
             // entirely, no notification (it'll post its own on success).
             if (!(await claimBackupUpload(category, instant))) continue
+
+            // Marked only now (claim in hand), not before — markNotified()
+            // used to run unconditionally before this block, so losing the
+            // claim, a thrown upload, or the tab closing mid-request
+            // permanently downgraded this instant to manual-banner-only in
+            // this browser (shouldNotifyFor() would never see it un-notified
+            // again). Found live 2026-08-22. The catch block below rolls
+            // this back on failure — while retries remain — so a later check
+            // tick genuinely retries; once AUTO_UPLOAD_MAX_ATTEMPTS is used
+            // up the marker stays and the instant falls back to the banner.
+            markNotified(category, instant)
+            const priorFailures = getAutoUploadAttempts(category, instant)
 
             try {
               // Smart upload runs unattended: a suspicious count drop can't ask
@@ -105,29 +133,59 @@ export function BackupReminderBanner() {
               })
               if (!serialized) throw new Error('Backup was cancelled.')
               const result = await uploadSerializedBackup(serialized, category)
+              clearAutoRetry(category)
+              const retryNote = priorFailures > 0 ? ` Succeeded on retry ${priorFailures}.` : ''
               addNotification({
                 title: `${CATEGORY_LABEL[category]} backup uploaded${result.verified ? ' ✓ verified' : ''}`,
                 message: result.verified
-                  ? `Automatically backed up to Google Drive as ${result.name} (integrity verified).`
-                  : `Automatically backed up to Google Drive as ${result.name}, but integrity could not be verified — consider re-uploading manually.`,
+                  ? `Automatically backed up to Google Drive as ${result.name} (integrity verified).${retryNote}`
+                  : `Automatically backed up to Google Drive as ${result.name}, but integrity could not be verified — consider re-uploading manually.${retryNote}`,
                 linkTo: '/backup',
               })
             } catch (error) {
-              addNotification({
-                title: `${CATEGORY_LABEL[category]} auto-upload failed`,
-                message:
-                  error instanceof Error
-                    ? error.message
-                    : 'Unknown error — back up manually from Backup & Restore.',
-                linkTo: '/backup',
-              })
-              fireBrowserNotification(
-                `${CATEGORY_LABEL[category]} backup failed`,
-                'Automatic upload to Drive failed — open ClinicMx to back up manually.'
-              )
+              const reason = describeBackupError(error)
+              const retry = recordAutoUploadFailure(category, instant)
+              await releaseBackupClaim(category, instant)
+              if (retry.nextAt) {
+                // Retries remain: roll back the local marker so the check
+                // tick after the backoff treats this instant as un-notified
+                // again. Only the FIRST failure posts — the follow-up retries
+                // stay quiet (no per-minute notification/push spam), and
+                // addNotificationOnce keyed by the instant dedups across
+                // devices too.
+                clearNotified(category)
+                if (retry.attempts === 1) {
+                  void addNotificationOnce(
+                    {
+                      title: `${CATEGORY_LABEL[category]} auto-upload failed — retrying`,
+                      message: `${reason} Retrying automatically — next try around ${format(retry.nextAt, 'HH:mm')}.`,
+                      linkTo: '/backup',
+                    },
+                    instant.toISOString()
+                  )
+                }
+              } else {
+                // Retries used up: leave the marker set so this instant falls
+                // back to the manual overdue banner, and alert loudly once.
+                void addNotificationOnce(
+                  {
+                    title: `${CATEGORY_LABEL[category]} auto-upload failed`,
+                    message: `${reason} Gave up after ${retry.attempts} attempts — back up manually from Backup & Restore.`,
+                    linkTo: '/backup',
+                  },
+                  instant.toISOString()
+                )
+                fireBrowserNotification(
+                  `${CATEGORY_LABEL[category]} backup failed`,
+                  'Automatic upload to Drive failed — open ClinicMx to back up manually.'
+                )
+              }
               visible.push({ category, instant })
             }
           } else {
+            // Marked here (not before the if/else split) — see the comment
+            // above the autoUpload branch's own markNotified() for why.
+            markNotified(category, instant)
             // addNotificationOnce: two devices open at the same overdue
             // instant both reach this branch — dedup by title+instant so
             // only one shared row gets posted, not one per device.

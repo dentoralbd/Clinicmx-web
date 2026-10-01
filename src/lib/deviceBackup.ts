@@ -19,6 +19,7 @@ import {
 } from './backupReminders'
 import { sha256Hex } from './backupCrypto'
 import { getAdminDeviceToken } from './adminOtp'
+import { isConnectivityError } from './supabaseErrors'
 
 /** Auth header for upload-backup.ts and list-backups.ts, gated by
  * requireStaffSession server-side since 2026-08-03 (any signed-in staff
@@ -148,16 +149,76 @@ function selectColumnsFor(table: string): string {
   return TABLE_SELECT_COLUMNS[table] ?? '*'
 }
 
+// A backup reads ~36 tables page by page; on flaky clinic wifi one dropped
+// read used to fail the whole run with "Failed to fetch edit_history:
+// TypeError: Failed to fetch" (seen live 2026-09-28 on a Weekly auto-upload).
+// postgrest-js (2.108) already retries a failed GET itself (1s/2s/4s, ~7s),
+// so that error means the connection was down longer than that. One more
+// full attempt after a 5s pause stretches the window to ~20s before the
+// whole backup is abandoned (Smart upload then retries on its own 2/5/15/30-
+// minute backoff — see backupReminders.ts). ONLY a genuine connectivity
+// failure is retried (status 0 — see supabaseErrors.ts); a real server
+// rejection (RLS, missing column) still fails immediately.
+const CONNECTIVITY_RETRY_DELAYS_MS = [5000]
+
+interface SupabaseRead {
+  data: unknown
+  count?: number | null
+  error: { message?: string } | null
+  status?: number
+}
+
+async function withConnectivityRetry(run: () => PromiseLike<SupabaseRead>): Promise<SupabaseRead> {
+  for (let attempt = 0; ; attempt++) {
+    const result = await run()
+    if (
+      !result.error ||
+      attempt >= CONNECTIVITY_RETRY_DELAYS_MS.length ||
+      !isConnectivityError(result.error, result.status)
+    ) {
+      return result
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONNECTIVITY_RETRY_DELAYS_MS[attempt]))
+  }
+}
+
+function readFailure(verb: string, table: string, error: { message?: string }, status?: number): Error {
+  return isConnectivityError(error, status)
+    ? new Error(`Network connection dropped while ${verb} ${table}.`)
+    : new Error(`Failed to ${verb === 'reading' ? 'fetch' : 'count'} ${table}: ${error.message}`)
+}
+
+/**
+ * Turns a backup/upload failure into a plain sentence for the notification
+ * bell. Raw runtime text like `Unexpected token 'S', "Service Unavailable" is
+ * not valid JSON` or `TypeError: Failed to fetch` means nothing to clinic
+ * staff; anything already readable is passed through unchanged.
+ */
+export function describeBackupError(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  if (!message) return 'Unknown error.'
+  if (/is not valid JSON|Unexpected token|JSON\.parse|Unexpected end of JSON/i.test(message)) {
+    return 'Google Drive sent an unexpected response (usually a temporary outage).'
+  }
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    const table = /Failed to (?:fetch|count) (\w+):/.exec(message)?.[1]
+    return `Network connection dropped${table ? ` while reading ${table}` : ''}.`
+  }
+  return message
+}
+
 export async function fetchAllRows(table: string, onPage?: (fetched: number) => void): Promise<Row[]> {
   const pageSize = 1000
   const rows: Row[] = []
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await (supabase as any)
-      .from(table)
-      .select(selectColumnsFor(table))
-      .order('id', { ascending: true })
-      .range(from, from + pageSize - 1)
-    if (error) throw new Error(`Failed to fetch ${table}: ${error.message}`)
+    const { data, error, status } = await withConnectivityRetry(() =>
+      (supabase as any)
+        .from(table)
+        .select(selectColumnsFor(table))
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1)
+    )
+    if (error) throw readFailure('reading', table, error, status)
     rows.push(...(data as Row[]))
     onPage?.(rows.length)
     if ((data as Row[]).length < pageSize) break
@@ -237,10 +298,10 @@ function saveLastBackupCounts(counts: Record<string, number>) {
 export async function fetchTableCounts(): Promise<Record<string, number>> {
   const entries = await Promise.all(
     BACKUP_TABLES.map(async (table) => {
-      const { count, error } = await (supabase as any)
-        .from(table)
-        .select('id', { count: 'exact', head: true })
-      if (error) throw new Error(`Failed to count ${table}: ${error.message}`)
+      const { count, error, status } = await withConnectivityRetry(() =>
+        (supabase as any).from(table).select('id', { count: 'exact', head: true })
+      )
+      if (error) throw readFailure('counting', table, error, status)
       return [table, count ?? 0] as const
     })
   )

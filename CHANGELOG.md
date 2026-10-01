@@ -4,6 +4,32 @@ Curated from git history (302 commits). No semantic versioning — the app deplo
 
 ---
 
+## 2026-10-01 — Smart upload: readable errors, retry with backoff, no more silently skipped Weekly
+
+Two failed auto-uploads in the bell showed raw runtime errors and were never retried:
+
+- **Daily: "Unexpected token 'S', "Service Unavailable" is not valid JSON"**
+  - Google answered a Drive call with a plain-text 503.
+  - `functions/api/_lib.ts` parsed every Google response with a bare `res.json()`, so the `SyntaxError` went straight to the client.
+  - Fix: every Google response is now parsed safely (`readGoogleJson`) and turned into a readable error (`describeGoogleFailure`).
+  - Idempotent calls retry 429/5xx and network errors twice (`googleFetch`).
+  - `upload-backup.ts` gets one re-list-then-retry (`saveToDrive`) that can't duplicate a file, and answers 503 for temporary outages.
+- **Weekly: "Failed to fetch edit_history: TypeError: Failed to fetch"**
+  - The connection dropped mid-backup, for longer than postgrest-js's own ~7s GET retry.
+  - Fix: `deviceBackup.ts` `fetchAllRows`/`fetchTableCounts` make one more attempt after 5s, for connectivity failures only. Final errors are plain sentences (`describeBackupError`).
+
+Consistency fixes behind them:
+
+- **A failed Weekly was silently dropped.** On Monday 2026-09-28 the Daily upload succeeded and the Weekly right after it failed. Because any backup satisfied every schedule, the Daily file counted as the Weekly on the next check, so the Weekly was never retried and no weekly-tagged file was made.
+  - Smart-upload schedules now count only their own category's backups (`getOverdueCategories`).
+  - Reminder-only schedules are unchanged.
+- **Failed uploads now retry with a cap.**
+  - Before, a failure left the scheduled time stuck on manual-banner-only. The interim fix retried every minute and posted a fresh failure notification and push each time.
+  - Now retries run after 2/5/15/30 minutes (5 attempts). One "failed — retrying" notice is posted per scheduled time, deduplicated across devices. Retries stay quiet; the result is either "uploaded (succeeded on retry N)" or one final "failed" notice plus a push, after which the manual banner takes over.
+- **Claim release fixed.** `releaseBackupClaim()` set `claimed_at` to NULL, which migration 060's NOT NULL column rejects, so the claim stayed held for 10 minutes. It now resets to the epoch.
+
+No schema change. Files: `functions/api/_lib.ts`, `functions/api/upload-backup.ts`, `src/lib/deviceBackup.ts`, `src/lib/backupReminders.ts`, `src/components/BackupReminderBanner.tsx`.
+
 ## 2026-09-12 — Shared documents always carry their QR (+ save-before-share)
 
 Fixed prescriptions/invoices going out (e.g. via WhatsApp) with **no QR code**. The QR only encodes

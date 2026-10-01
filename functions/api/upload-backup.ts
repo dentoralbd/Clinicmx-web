@@ -32,6 +32,7 @@ import {
   updateExisting,
   getWebViewLink,
   driveDelete,
+  isTransientGoogleError,
 } from './_lib'
 import { requireStaffSession } from './_authLib'
 
@@ -210,20 +211,7 @@ export const onRequestPost = async (context: { request: Request; env: AuthedEnv 
     const folderId = await ensureSubfolder(token, env.GOOGLE_DRIVE_FOLDER_ID)
     const contentType = contentTypeFor(filename)
 
-    const existing = await driveList(
-      token,
-      `name = '${filename}' and '${folderId}' in parents and trashed = false`
-    )
-    let fileId: string
-    let sha256Checksum: string | undefined
-    if (existing.length) {
-      fileId = existing[0].id
-      ;({ sha256Checksum } = await updateExisting(token, fileId, content, contentType))
-    } else {
-      const uploaded = await uploadNew(token, folderId, filename, content, contentType)
-      fileId = uploaded.id
-      sha256Checksum = uploaded.sha256Checksum
-    }
+    const { fileId, sha256Checksum } = await saveToDrive(token, folderId, filename, content, contentType)
 
     await pruneOldUploads(token, folderId, prune)
 
@@ -231,6 +219,42 @@ export const onRequestPost = async (context: { request: Request; env: AuthedEnv 
     return json(200, { ok: true, name: filename, webViewLink, id: fileId, sha256: sha256Checksum })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed.'
-    return json(502, { ok: false, error: message })
+    // 503 for a temporary Google outage (the client may simply retry later),
+    // 502 for a real rejection from Google.
+    return json(isTransientGoogleError(err) ? 503 : 502, { ok: false, error: message })
+  }
+}
+
+/**
+ * Find-by-name, then update-in-place or create. A temporary Google failure
+ * (429/5xx, network) gets one more full attempt ~2s later — and that attempt
+ * re-lists by name first, so if the first uploadNew actually landed despite
+ * the error response, the retry updates that file instead of creating a
+ * duplicate (uploadNew itself is never auto-retried — see _lib.ts googleFetch).
+ */
+async function saveToDrive(
+  token: string,
+  folderId: string,
+  filename: string,
+  content: Uint8Array | string,
+  contentType: string
+): Promise<{ fileId: string; sha256Checksum?: string }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const existing = await driveList(
+        token,
+        `name = '${filename}' and '${folderId}' in parents and trashed = false`
+      )
+      if (existing.length) {
+        const fileId = existing[0].id
+        const { sha256Checksum } = await updateExisting(token, fileId, content, contentType)
+        return { fileId, sha256Checksum }
+      }
+      const uploaded = await uploadNew(token, folderId, filename, content, contentType)
+      return { fileId: uploaded.id, sha256Checksum: uploaded.sha256Checksum }
+    } catch (err) {
+      if (attempt >= 1 || !isTransientGoogleError(err)) throw err
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
   }
 }

@@ -187,6 +187,21 @@ Device backup download (JSON, encrypted option), dry-run-first restore, restore-
 
 **Operator scope is Upload-only** (narrowed same day, on reflection): operator sees the page, the encryption/passphrase settings, and the schedule config, and can **Upload to Google Drive** — but "Download backup" (local export) and the whole "Restore from a backup file" card (can overwrite live data) are admin-only, hidden entirely rather than disabled. Gated client-side in `BackupRestore.tsx` (`appRole === 'admin'`), and matched at the API layer (see API.md §2): `download-backup.ts` (returns actual backup content) is back to admin-only, while `upload-backup.ts` and `list-backups.ts` (filenames/dates only, feeds the Dashboard tile) stay open to any staff session.
 
+**Scheduled backups and Smart upload (`BackupReminderBanner.tsx` + `backupReminders.ts`).** These rules apply to each Daily/Weekly/Monthly schedule (shared `backup_settings` row):
+
+- **Overdue detection.** Every open admin/operator session checks the schedules every minute. A schedule is overdue when its scheduled time has passed with no qualifying backup in Drive since then.
+  - A **reminder-only** schedule counts any backup, including a plain manual upload.
+  - A **Smart-upload** schedule counts only files tagged with its own category (`clinicmx-backup-weekly-…`). Since 2026-10-01, a same-day Daily upload no longer "satisfies" a failed Weekly, so the Weekly is retried and its own 5-deep retention pool keeps filling.
+- **Smart upload.** One session claims the scheduled time (`backup_upload_claims`, migration 060), builds the backup, and uploads it.
+- **On failure:**
+  - The claim is released immediately (`claimed_at` back to the epoch).
+  - The upload is retried after **2, 5, 15 and 30 minutes** (5 attempts in total, per browser).
+  - The bell gets one "auto-upload failed — retrying" entry on the first failure, deduplicated across devices. The retries themselves stay quiet.
+  - A success on retry posts the normal "backup uploaded" entry, noting the retry.
+  - After the last attempt, one "auto-upload failed" entry plus a browser push is posted, and the schedule falls back to the manual overdue banner.
+  - A manual upload tagged with that category clears any pending retries.
+- **Error messages are plain sentences.** A dropped connection reads "Network connection dropped while reading <table>." A Google outage reads "Google Drive is temporarily unavailable (HTTP 503)…". Raw runtime text such as "Unexpected token…is not valid JSON" or "TypeError: Failed to fetch" is no longer shown.
+
 ## 15. Clinic Analytics (`/analytics`, admin-only)
 
 Charts (recharts) over live data with a **6M / 12M / All** range selector (client-side filter, no refetch) and Refresh. Strictly read-only. Metric definitions:

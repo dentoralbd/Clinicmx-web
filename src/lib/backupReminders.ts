@@ -166,6 +166,7 @@ export function markBackupDone(category?: BackupCategory) {
     if (category) {
       localStorage.removeItem(notifiedForKey(category))
       localStorage.removeItem(bannerDismissedForKey(category))
+      localStorage.removeItem(autoRetryKey(category))
     }
   } catch {
     // ignore
@@ -221,6 +222,7 @@ const DEVICE_ID_KEY = 'clinicmx_device_id'
 // session died mid-upload instead of wedging it forever. Same value as the
 // offline-sync outbox's claimMutation() (offlineSync.ts) for consistency.
 const CLAIM_STALE_MS = 10 * 60 * 1000
+const CLAIM_RELEASED_AT = '1970-01-01T00:00:00Z'
 
 /** Stable per-browser id, shared with offlineSync.ts (same localStorage key)
  * — diagnostics/claim-ownership only, never security-relevant (RLS never
@@ -264,6 +266,34 @@ export async function claimBackupUpload(category: BackupCategory, instant: Date)
   }
 }
 
+/**
+ * Releases a claim this device took but then failed to upload, so a retry
+ * (this device on its next check, or another device) isn't blocked by our
+ * own claim until CLAIM_STALE_MS passes. Mirrors offlineSync.ts's
+ * releaseClaim() for the same release-on-failure reasoning. Only clears the
+ * row if this device is still the one holding it (claimed_by_device match)
+ * — never steal/clear a claim another device has since taken. Best-effort;
+ * never throws.
+ *
+ * claimed_at goes back to the epoch (migration 060's own seed value), NOT
+ * null: the column is NOT NULL, so a null update is rejected outright and
+ * the claim silently stays held. The epoch also satisfies claimBackupUpload's
+ * `claimed_at.lt.<stale>` test, so the instant is re-claimable immediately.
+ */
+export async function releaseBackupClaim(category: BackupCategory, instant: Date): Promise<void> {
+  try {
+    const { error } = await (supabase as any)
+      .from('backup_upload_claims')
+      .update({ claimed_at: CLAIM_RELEASED_AT, claimed_by_device: null })
+      .eq('category', category)
+      .eq('instant', instant.toISOString())
+      .eq('claimed_by_device', getDeviceId())
+    if (error) console.warn('[BackupReminders] Could not release backup claim:', error.message)
+  } catch (err) {
+    console.warn('[BackupReminders] Could not release backup claim:', err)
+  }
+}
+
 /** Shape of deviceBackup.ts's DriveBackupStatus, duplicated here (not
  * imported) to avoid a circular dependency between the two modules. */
 export interface DriveBackupTimes {
@@ -278,6 +308,15 @@ export interface DriveBackupTimes {
  * agrees on, not each device's own memory. Baselines against
  * settings.updated_at too, so enabling a schedule never instantly flags an
  * instant from before it was configured.
+ *
+ * Smart-upload (autoUpload) schedules only count their OWN category's
+ * backups. Before 2026-10-01 any backup counted for every schedule, which
+ * silently dropped failed scheduled uploads: on Monday 2026-09-28 the Daily
+ * upload succeeded, the Weekly one right after it failed, and on the next
+ * check that Daily file "satisfied" the Weekly — so it was never retried and
+ * no weekly-tagged file (which upload-backup.ts retains separately, 5 deep)
+ * was made that week. Reminder-only schedules keep "any backup counts": a
+ * manual upload is a perfectly good answer to a "please back up" nudge.
  */
 export function getOverdueCategories(
   settings: BackupSettings,
@@ -292,14 +331,20 @@ export function getOverdueCategories(
     if (!schedule.enabled) continue
 
     const prev = getPreviousScheduledInstant(category, schedule, now)
-    // Any backup counts toward "am I overdue" — a plain manual Download/Upload
-    // (untagged, or from any other device) reasonably satisfies a pending
-    // Daily/Weekly/Monthly nudge too, not just a category-tagged one from
-    // this same device. Baseline is the latest of: this category's own last
-    // Drive backup, the overall last Drive backup, and when the schedule was
-    // (re)configured.
+    // Reminder-only schedules: any backup counts toward "am I overdue" — a
+    // plain manual Download/Upload (untagged, or from any other device)
+    // reasonably satisfies a pending Daily/Weekly/Monthly nudge too. Baseline
+    // is the latest of: this category's own last Drive backup, the overall
+    // last Drive backup, and when the schedule was (re)configured.
+    // Smart-upload schedules skip the "overall last backup" term — see above.
     let baseline = drive.perCategory[category]
-    if (drive.lastBackupAt && (!baseline || isAfter(drive.lastBackupAt, baseline))) baseline = drive.lastBackupAt
+    if (
+      !schedule.autoUpload &&
+      drive.lastBackupAt &&
+      (!baseline || isAfter(drive.lastBackupAt, baseline))
+    ) {
+      baseline = drive.lastBackupAt
+    }
     if (settingsUpdated && (!baseline || isAfter(settingsUpdated, baseline))) baseline = settingsUpdated
 
     if (!baseline || isAfter(prev, baseline)) {
@@ -331,6 +376,94 @@ export function shouldNotifyFor(category: BackupCategory, instant: Date) {
 
 export function markNotified(category: BackupCategory, instant: Date) {
   writeInstantMarker(notifiedForKey(category), instant)
+}
+
+/**
+ * Rolls back markNotified() when an auto-upload attempt fails after being
+ * marked — without this, a transient failure (lost claim, thrown upload,
+ * tab closed mid-request) permanently downgrades that scheduled instant to
+ * manual-banner-only in this browser, since shouldNotifyFor() would
+ * otherwise never see it as un-notified again. Found live 2026-08-22.
+ */
+export function clearNotified(category: BackupCategory) {
+  try {
+    localStorage.removeItem(notifiedForKey(category))
+  } catch {
+    // ignore
+  }
+}
+
+// --- Smart-upload retry backoff --------------------------------------------
+// A failed auto-upload is retried after 2, 5, 15 and 30 minutes (5 attempts
+// in all), then gives up to the manual overdue banner. Without a cap, a
+// lasting outage (Google down, clinic offline) retried — and posted a fresh
+// "auto-upload failed" notification + browser push — every single minute.
+// Per-browser state: each device backs off on its own; the claim (above)
+// still stops two devices from uploading the same instant at once.
+
+const AUTO_RETRY_DELAYS_MIN = [2, 5, 15, 30]
+export const AUTO_UPLOAD_MAX_ATTEMPTS = AUTO_RETRY_DELAYS_MIN.length + 1
+const autoRetryKey = (c: BackupCategory) => `clinicmx_backup_autoretry_${c}`
+
+interface AutoRetryState {
+  instant: string
+  attempts: number
+  nextAt: string | null
+}
+
+function readAutoRetry(category: BackupCategory, instant: Date): AutoRetryState | null {
+  try {
+    const raw = localStorage.getItem(autoRetryKey(category))
+    const state = raw ? (JSON.parse(raw) as AutoRetryState) : null
+    // State from an older scheduled instant is irrelevant to this one.
+    return state && state.instant === instant.toISOString() ? state : null
+  } catch {
+    return null
+  }
+}
+
+/** Failed attempts so far for this scheduled instant (0 if none). */
+export function getAutoUploadAttempts(category: BackupCategory, instant: Date): number {
+  return readAutoRetry(category, instant)?.attempts ?? 0
+}
+
+/** True unless an earlier attempt at this same instant failed and its backoff hasn't elapsed. */
+export function isAutoRetryDue(category: BackupCategory, instant: Date, now: Date = new Date()): boolean {
+  const state = readAutoRetry(category, instant)
+  if (!state) return true
+  if (!state.nextAt) return false // retries used up
+  return now.getTime() >= new Date(state.nextAt).getTime()
+}
+
+/** Records one failed attempt. `nextAt` is when to try again, or null once
+ * AUTO_UPLOAD_MAX_ATTEMPTS is reached (fall back to the manual banner). */
+export function recordAutoUploadFailure(
+  category: BackupCategory,
+  instant: Date,
+  now: Date = new Date()
+): { attempts: number; nextAt: Date | null } {
+  const attempts = getAutoUploadAttempts(category, instant) + 1
+  const delayMin = AUTO_RETRY_DELAYS_MIN[attempts - 1]
+  const nextAt = delayMin !== undefined ? new Date(now.getTime() + delayMin * 60_000) : null
+  try {
+    const state: AutoRetryState = {
+      instant: instant.toISOString(),
+      attempts,
+      nextAt: nextAt ? nextAt.toISOString() : null,
+    }
+    localStorage.setItem(autoRetryKey(category), JSON.stringify(state))
+  } catch {
+    // ignore — without storage this device just retries on the next check
+  }
+  return { attempts, nextAt }
+}
+
+export function clearAutoRetry(category: BackupCategory) {
+  try {
+    localStorage.removeItem(autoRetryKey(category))
+  } catch {
+    // ignore
+  }
 }
 
 export function isBannerDismissedFor(category: BackupCategory, instant: Date) {
